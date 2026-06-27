@@ -129,3 +129,13 @@
   - view consistency 诊断：所有 6 个 normal run 的 high-low bucket consistency gap 均为正，范围约 0.076716 到 0.128259，说明当前 reliability 排序和跨视图 consistency 有对应关系；但 shuffled control 的 accuracy 差异仍不稳定，不能据此声称机制已经充分成立。
   - 当前解释：Texas 有轻微信号，Wisconsin 暂无正向性能信号；这仍属于 early-stage sanity run，需要扩大 seed、加入 GRACE 对照和更长训练后再判断方法有效性。
   - 下一步建议：优先跑 GRACE 与 RW-GCL normal/shuffled 的同配置对照，或将 seeds 扩展到 0-9 后做 paired mean/std；同时实现 baseline-vs-method 的汇总脚本，避免只比较 normal 与 shuffled。
+- 2026-06-27 reliability 对照扩展到 10 seeds 并加入 GRACE：
+  - 已执行 RW-GCL 扩展实验：`DATASETS="Texas Wisconsin" SEEDS="3 4 5 6 7 8 9" WARMUP_EPOCHS=20 STAGE2_EPOCHS=50 EVAL_EPOCHS=50 PAIRS_PATH=results/diagnostics/reliability_pair_runs_texas_wisconsin_s3-9.csv SUMMARY_PATH=results/diagnostics/reliability_pair_summary_texas_wisconsin_s3-9.csv bash scripts/run_small_reliability_study.sh`。
+  - 合并 `s0-2` 与 `s3-9` 后，已生成 `results/diagnostics/reliability_pair_summary_texas_wisconsin_s0-9.csv` 与 `results/diagnostics/reliability_pair_aggregate_texas_wisconsin_s0-9.csv`。
+  - RW-GCL normal vs shuffled（10 seeds）：Texas normal accuracy mean=0.710811、shuffled mean=0.681081、delta mean=+0.029730，6/10 为正、2/10 持平、2/10 为负；Wisconsin normal mean=0.490196、shuffled mean=0.494118、delta mean=-0.003922，2/10 为正、5/10 持平、3/10 为负。
+  - view consistency gap 仍为正：Texas mean=0.101067，范围 0.076716-0.167452；Wisconsin mean=0.116375，范围 0.091445-0.151050。说明 reliability 排序和跨视图一致性诊断相关，但不保证 accuracy 增益。
+  - 已补跑 GRACE baseline：Texas/Wisconsin × seeds 0-9，`--epochs 70 --eval-epochs 50`，共 20 个 run，全部 status=completed；run id 清单写入 `results/diagnostics/grace_runs_texas_wisconsin_s0-9.csv`。
+  - 已生成 RW-GCL vs GRACE 对齐结果：`results/diagnostics/rw_gcl_vs_grace_texas_wisconsin_s0-9.csv` 与 `results/diagnostics/rw_gcl_vs_grace_aggregate_texas_wisconsin_s0-9.csv`。
+  - RW-GCL normal vs GRACE（10 seeds）：Texas GRACE mean=0.686487，RW-GCL normal - GRACE mean=+0.024324，6/10 为正、4/10 持平、0/10 为负；Wisconsin GRACE mean=0.517647，RW-GCL normal - GRACE mean=-0.027451，2/10 为正、1/10 持平、7/10 为负。
+  - 当前解释：Texas 出现比较一致的正向信号，同时 normal > shuffled 且 normal > GRACE；Wisconsin 出现负向/不稳定信号，提示当前 reliability weighting 不是通用 heterophily 提升器，需要进一步扩展到 Cornell/Actor/Chameleon/Squirrel，并分析 Wisconsin 失败原因。
+  - 下一步建议：实现一个正式 `summarize_method_comparison.py` 脚本固化 RW-GCL/GRACE/shuffled 的对齐汇总；随后跑 Cornell 与 Actor 的 10-seed 小实验，判断 Texas 信号是偶然还是某类数据集上的稳定现象。
