@@ -65,4 +65,4 @@
   - [INSIGHT] 2x2 closed-loop ablation、high/low-pass gate 分析、超参数敏感性、聚类可视化、runtime/复杂度分析可根据结果进入附录或主文补充。
 - 当前推荐主 RQ：在无标签节点分类的 Graph Contrastive Learning 中，能否通过跨视图 embedding stability 与 prediction consistency 估计 pair reliability，并用 reliability-weighted contrastive loss 削弱不可靠正样本与疑似 false negative 的影响，从而在部分 heterophily graphs 上提升稳健性，同时不显著损害 homophily graphs 上的性能？
 - 下一步执行建议：进入 experiment-agent 或手动实验规划阶段，先实现 two-stage reliability-weighted GCL 最小原型，再做 shuffled reliability 与 false negative mass 诊断。
-- GitHub 上传记录：已开始将当前目录初始化为 Git 仓库，并准备创建/绑定 GitHub 私有仓库 `coinrainy/Auto_Research` 后推送 `main` 分支。
+- GitHub 上传记录：已将当前目录初始化为 Git 仓库，创建并绑定 GitHub 私有仓库 `coinrainy/Auto_Research`，已推送 `main` 分支。
