@@ -1,0 +1,19 @@
+name: main_heterophily
+datasets:
+  - Texas
+  - Wisconsin
+  - Cornell
+  - Actor
+  - Chameleon
+  - Squirrel
+methods:
+  - configs/methods/grace.yaml
+  - configs/methods/bgrl.yaml
+  - configs/methods/cca_ssg.yaml
+  - configs/methods/rw_gcl_two_stage.yaml
+seeds:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4

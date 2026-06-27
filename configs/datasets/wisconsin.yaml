@@ -1,0 +1,7 @@
+name: Wisconsin
+group: heterophily
+loader: WebKB
+metric: accuracy
+root: data/WebKB
+split: geom-gcn
+notes: Small heterophilic WebKB graph.

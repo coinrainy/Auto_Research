@@ -1,0 +1,7 @@
+name: Actor
+group: heterophily
+loader: Actor
+metric: accuracy
+root: data/Actor
+split: geom-gcn
+notes: Actor co-occurrence graph from Geom-GCN benchmark family.

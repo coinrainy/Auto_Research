@@ -1,0 +1,7 @@
+name: CiteSeer
+group: homophily
+loader: Planetoid
+metric: accuracy
+root: data/Planetoid
+split: public
+notes: Homophilic citation graph.

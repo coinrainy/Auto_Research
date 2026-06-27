@@ -1,0 +1,7 @@
+name: Texas
+group: heterophily
+loader: WebKB
+metric: accuracy
+root: data/WebKB
+split: geom-gcn
+notes: Small heterophilic graph for smoke diagnostics.

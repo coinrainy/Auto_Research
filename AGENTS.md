@@ -78,3 +78,9 @@
   - 已创建实验计划文档：`docs/two_stage_reliability_weighted_gcl_experiment_plan.md`。
   - 计划覆盖代码结构、数据集、baseline、two-stage 方法定义、核心指标、shuffled reliability、weighted false negative mass、view consistency、核心 ablation 与第一周任务表。
   - 下一步建议：按计划先创建实验仓库骨架，再实现数据加载、GRACE smoke baseline 和 RW-GCL two-stage 最小原型。
+- 2026-06-27 实验骨架创建：
+  - 已按计划创建 `configs/`、`src/rwgcl/`、`scripts/`、`results/`、`train.py`、`eval.py`、`diagnose.py` 与 `requirements.txt`。
+  - 当前实现是 scaffold/dry-run：验证配置、创建 run 目录、写入 `train_log.csv`、`main_results.csv`、`summary.csv` 与三个 diagnostics 占位 CSV，但尚未执行真实 GCL 训练。
+  - 已确认图学习主实现路线应采用 PyTorch Geometric；当前配置已按 PyG dataset loader 命名，下一步需要在 `src/rwgcl/data.py` 中接入真实 `Planetoid/WebKB/Actor/WikipediaNetwork` loader。
+  - 已验证命令：`python train.py --help`、`python eval.py --help`、`python diagnose.py --help`、`python train.py --config configs/methods/grace.yaml --dataset Cora --seed 0`、`python train.py --config configs/methods/rw_gcl_two_stage.yaml --dataset Texas --seed 0`、`python eval.py`、`python diagnose.py --run_id <rw_gcl_run_id> --diagnostics shuffled_reliability false_negative_mass view_consistency`、`python -m compileall train.py eval.py diagnose.py src`。
+  - 下一步建议：实现 PyG 数据加载与数据统计打印，随后接入 GRACE 的真实 smoke baseline。

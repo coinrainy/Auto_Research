@@ -1,0 +1,7 @@
+name: Squirrel
+group: heterophily
+loader: WikipediaNetwork
+metric: accuracy
+root: data/WikipediaNetwork
+split: geom-gcn
+notes: Larger WikipediaNetwork heterophily benchmark; watch GPU memory.
