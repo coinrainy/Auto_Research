@@ -13,7 +13,7 @@
 - 目标：在 2026 年投稿/发表一篇图对比学习方向的顶会或顶刊论文。
 - 主要任务：节点分类。
 - 当前状态：已收敛到 pair reliability-weighted GCL 方向，并形成 two-stage 最小实验计划。
-- 当前工作流：`academic-research-suite` -> `experiment-agent` -> `plan` mode。
+- 当前工作流：`academic-research-suite` -> `experiment-agent` -> `run/validate` mode。
 
 ## 本轮任务记录
 
@@ -139,3 +139,17 @@
   - RW-GCL normal vs GRACE（10 seeds）：Texas GRACE mean=0.686487，RW-GCL normal - GRACE mean=+0.024324，6/10 为正、4/10 持平、0/10 为负；Wisconsin GRACE mean=0.517647，RW-GCL normal - GRACE mean=-0.027451，2/10 为正、1/10 持平、7/10 为负。
   - 当前解释：Texas 出现比较一致的正向信号，同时 normal > shuffled 且 normal > GRACE；Wisconsin 出现负向/不稳定信号，提示当前 reliability weighting 不是通用 heterophily 提升器，需要进一步扩展到 Cornell/Actor/Chameleon/Squirrel，并分析 Wisconsin 失败原因。
   - 下一步建议：实现一个正式 `summarize_method_comparison.py` 脚本固化 RW-GCL/GRACE/shuffled 的对齐汇总；随后跑 Cornell 与 Actor 的 10-seed 小实验，判断 Texas 信号是偶然还是某类数据集上的稳定现象。
+- 2026-06-27 Cornell/Actor 扩展实验与正式汇总脚本：
+  - 已新增 `summarize_method_comparison.py`，用于将 `summarize_reliability_pairs.py` 生成的 normal/shuffled RW-GCL pair summary 与 baseline run 清单按 dataset/seed 对齐，并输出逐 seed 对照表与 dataset 聚合表。
+  - 已验证该脚本能完全复现既有 Texas/Wisconsin 临时结果：`results/diagnostics/rw_gcl_vs_grace_texas_wisconsin_s0-9.csv` 与 `results/diagnostics/rw_gcl_vs_grace_aggregate_texas_wisconsin_s0-9.csv`。
+  - 已新增 `scripts/run_baseline_study.sh`，支持通过环境变量配置 `DATASETS`、`SEEDS`、`METHOD_CONFIG`、`METHOD_NAME`、`EPOCHS`、`EVAL_EPOCHS`、`DEVICE`、`RUNS_PATH`，用于批量运行 GRACE 等 baseline 并记录 run id。
+  - 已执行 RW-GCL Cornell/Actor 扩展实验：`DATASETS="Cornell Actor" SEEDS="0 1 2 3 4 5 6 7 8 9" WARMUP_EPOCHS=20 STAGE2_EPOCHS=50 EVAL_EPOCHS=50 PAIRS_PATH=results/diagnostics/reliability_pair_runs_cornell_actor_s0-9.csv SUMMARY_PATH=results/diagnostics/reliability_pair_summary_cornell_actor_s0-9.csv bash scripts/run_small_reliability_study.sh`。
+  - 已执行 GRACE Cornell/Actor baseline：`DATASETS="Cornell Actor" SEEDS="0 1 2 3 4 5 6 7 8 9" METHOD_CONFIG=configs/methods/grace.yaml METHOD_NAME=grace EPOCHS=70 EVAL_EPOCHS=50 RUNS_PATH=results/diagnostics/grace_runs_cornell_actor_s0-9.csv bash scripts/run_baseline_study.sh`。
+  - 已生成 Cornell/Actor 对齐结果：`results/diagnostics/rw_gcl_vs_grace_cornell_actor_s0-9.csv` 与 `results/diagnostics/rw_gcl_vs_grace_aggregate_cornell_actor_s0-9.csv`，20/20 行 status=computed。
+  - Cornell（10 seeds）：RW-GCL normal accuracy mean=0.413513，shuffled mean=0.427027，GRACE mean=0.429729；normal - GRACE mean=-0.016216，normal - shuffled mean=-0.013514，3/10 为正、2/10 持平、5/10 为负。
+  - Actor（10 seeds）：RW-GCL normal accuracy mean=0.276447，shuffled mean=0.277237，GRACE mean=0.273947；normal - GRACE mean=+0.002500，normal - shuffled mean=-0.000790，6/10 为正、0/10 持平、4/10 为负。
+  - 已生成四个异配数据集合并汇总：`results/diagnostics/rw_gcl_vs_grace_aggregate_texas_wisconsin_cornell_actor_s0-9.csv`。
+  - 四数据集当前结论：Texas 保持相对稳定正向信号；Actor 近零且 normal 未优于 shuffled；Cornell 与 Wisconsin 负向或不稳定。当前方法更适合表述为“条件性有效 + 机制诊断相关”，不能声称是通用 heterophily 提升器。
+  - view consistency gap 在四个数据集上均为正：Texas mean=0.101067，Wisconsin mean=0.116375，Cornell mean=0.112930，Actor mean=0.092376。这说明 reliability 排序仍与跨视图一致性相关，但该机制信号尚未稳定转化为 accuracy 增益。
+  - 已验证命令：`python summarize_method_comparison.py --help`、`python summarize_method_comparison.py --rw-summary results/diagnostics/reliability_pair_summary_texas_wisconsin_s0-9.csv --baseline-runs results/diagnostics/grace_runs_texas_wisconsin_s0-9.csv --baseline-method grace --out /tmp/rw_gcl_vs_grace_check.csv --aggregate-out /tmp/rw_gcl_vs_grace_aggregate_check.csv`、`python -m compileall train.py eval.py diagnose.py summarize_reliability_pairs.py summarize_method_comparison.py src`、`bash -n scripts/run_baseline_study.sh`。
+  - 下一步建议：先不要继续声称方法有效，应转入 failure analysis：比较 Texas vs Wisconsin/Cornell/Actor 的局部 homophily、degree、class/split 分布与 reliability bucket 的标签一致性；随后再决定是加入局部图类型 gate，还是收缩为机制诊断论文。
