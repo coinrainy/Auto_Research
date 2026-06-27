@@ -356,3 +356,8 @@
   - 用户明确表示不再打算引入 PU learning，并希望回退到上一轮“从其他领域借鉴什么机制”的问题。
   - 上一条关于 PU learning 的方向记录标记为已回退，不再作为当前默认路线；false negative contamination 是否继续作为核心痛点仍需重新确认。
   - 下一步建议：重新选择外部方法来源，可优先确认是否保留 uncertainty estimation，或是否改向 causal representation、distributionally robust optimization、optimal transport、masked/denoising modeling、curriculum/self-paced learning 等机制。
+- 2026-06-27 新方向边界再次修正：
+  - 用户明确要求先删除“外部机制借鉴”这一设定，不再以 PU learning 或其他外部领域方法作为当前构思入口。
+  - [INSIGHT] false negative contamination 仍保留为当前 GCL/GSSL 新方法论文的核心痛点。
+  - 当前收敛焦点改为：在不预设外部方法来源的情况下，重新定义 GCL/GSSL 中 false negative contamination 的问题形态、发生条件、可观测信号与可证伪实验。
+  - 下一步建议：优先回答 false negative contamination 发生在什么训练对象上、为什么现有 debiased / hard-negative / mining 方法仍不足、以及新方法应改变 loss、sampling、queue/memory、augmentation 还是训练日程。
