@@ -92,3 +92,10 @@
   - 已验证真实 GRACE smoke baseline：`python train.py --config configs/methods/grace.yaml --dataset Cora --seed 0 --mode execute --epochs 5 --eval-epochs 20` 与 `python train.py --config configs/methods/grace.yaml --dataset Texas --seed 0 --mode execute --epochs 5 --eval-epochs 20`。
   - 已验证端到端 smoke：`bash scripts/run_smoke.sh` 与 `python -m compileall train.py eval.py diagnose.py src`。
   - 下一步建议：实现 RW-GCL two-stage execute 路径，先做 positive reliability weighting only，然后接 shuffled reliability 诊断。
+- 2026-06-27 RW-GCL two-stage execute 初版：
+  - 已实现 RW-GCL 最小真实训练路径：warm-up 阶段使用标准 InfoNCE；stage2 使用 teacher-student embedding stability 与 cross-view prediction consistency 估计 positive pair reliability；loss 使用 positive reliability-weighted InfoNCE。
+  - 当前明确只实现 positive reliability weighting only，尚未实现 negative weighting、false negative mass 真诊断、closed-loop augmentation 或 high/low-pass gate。
+  - 已新增 `--warmup-epochs`、`--stage2-epochs`、`--shuffled-reliability` 参数，支持 normal reliability 与 shuffled reliability control。
+  - 已更新 `scripts/run_smoke.sh`：数据统计 -> GRACE Cora/Texas execute -> RW-GCL Texas execute -> RW-GCL Texas shuffled execute -> eval 聚合。
+  - 已验证：`bash scripts/run_smoke.sh`、`python -m compileall train.py eval.py diagnose.py src`。
+  - 最近 smoke 结果显示 RW-GCL normal 与 shuffled 均能 completed，并保存 `positive_reliability` 到 `embeddings.pt`；下一步建议实现诊断汇总脚本，对 normal vs shuffled reliability 做自动配对比较。

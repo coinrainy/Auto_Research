@@ -28,6 +28,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="auto", help="Device for execute mode: auto, cpu, cuda, cuda:0.")
     parser.add_argument("--epochs", type=int, default=None, help="Override training epochs for smoke runs.")
     parser.add_argument("--eval-epochs", type=int, default=None, help="Override linear probe epochs.")
+    parser.add_argument("--warmup-epochs", type=int, default=None, help="Override RW-GCL warm-up epochs.")
+    parser.add_argument("--stage2-epochs", type=int, default=None, help="Override RW-GCL stage-2 epochs.")
+    parser.add_argument("--shuffled-reliability", action="store_true", help="Shuffle reliability scores as a control.")
     parser.add_argument("--split-index", type=int, default=0, help="Column index for Geom-GCN style split masks.")
     parser.add_argument("--describe-data", action="store_true", help="Load the PyG dataset and print graph stats only.")
     parser.add_argument(
@@ -45,8 +48,15 @@ def main() -> int:
     method_config = load_method_config(args.config)
     if args.epochs is not None:
         method_config.setdefault("training", {})["epochs"] = args.epochs
+        method_config.setdefault("training", {})["stage2_epochs"] = args.epochs
     if args.eval_epochs is not None:
         method_config.setdefault("evaluation", {})["eval_epochs"] = args.eval_epochs
+    if args.warmup_epochs is not None:
+        method_config.setdefault("training", {})["warmup_epochs"] = args.warmup_epochs
+    if args.stage2_epochs is not None:
+        method_config.setdefault("training", {})["stage2_epochs"] = args.stage2_epochs
+    if args.shuffled_reliability:
+        method_config.setdefault("reliability", {})["shuffled_control"] = True
     dataset_spec = get_dataset_spec(args.dataset)
     if args.describe_data:
         dataset = load_pyg_dataset(dataset_spec)

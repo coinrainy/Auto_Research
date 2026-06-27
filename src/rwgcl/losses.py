@@ -13,8 +13,8 @@ def loss_summary(method_config: dict[str, Any]) -> dict[str, Any]:
     if method_name == "rw_gcl_two_stage":
         return {
             "name": "reliability_weighted_infonce",
-            "implemented": False,
-            "status": "scaffold_only",
+            "implemented": True,
+            "status": "positive_weighting_only",
         }
     if method_name == "bgrl":
         return {"name": "bootstrap_prediction_loss", "implemented": False, "status": "scaffold_only"}
@@ -28,3 +28,21 @@ def info_nce_loss(z1: torch.Tensor, z2: torch.Tensor, temperature: float) -> tor
     logits_21 = z2 @ z1.t() / temperature
     labels = torch.arange(z1.size(0), device=z1.device)
     return 0.5 * (F.cross_entropy(logits_12, labels) + F.cross_entropy(logits_21, labels))
+
+
+def weighted_info_nce_loss(
+    z1: torch.Tensor,
+    z2: torch.Tensor,
+    temperature: float,
+    positive_weights: torch.Tensor,
+) -> torch.Tensor:
+    z1 = F.normalize(z1, dim=1)
+    z2 = F.normalize(z2, dim=1)
+    weights = positive_weights.detach().to(device=z1.device, dtype=z1.dtype).clamp_min(1e-6)
+    logits_12 = z1 @ z2.t() / temperature
+    logits_21 = z2 @ z1.t() / temperature
+    labels = torch.arange(z1.size(0), device=z1.device)
+    loss_12 = F.cross_entropy(logits_12, labels, reduction="none")
+    loss_21 = F.cross_entropy(logits_21, labels, reduction="none")
+    pair_loss = 0.5 * (loss_12 + loss_21)
+    return (weights * pair_loss).sum() / weights.sum()
