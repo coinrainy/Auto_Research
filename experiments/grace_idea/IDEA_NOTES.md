@@ -24,6 +24,7 @@
 - `--method pccl`：Prototype Consistency Contrastive Learning，已降级为失败原型/诊断资产。
 - `--method rr_gcl`：Redundancy-Reduced GCL，保留为条件性线索/诊断资产，尚非 active SOTA candidate。
 - `--method hybrid_rr_gcl`：GRACE InfoNCE + RR 小权重正则，已降级为条件性诊断资产，提示 RR 可能改善 macro/少数类覆盖但全局固定权重不稳。
+- `--method cbr_gcl`：Cluster-Balanced Redundancy-Reduced GCL，当前最值得保留的 RR 条件性候选，但仍需 anti-degradation gate 后才可能成为主方法。
 
 `es_weighted` 的设计边界：
 
@@ -132,6 +133,23 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `hybrid_rr_weight=0.001` 保留 Cornell/Wisconsin macro 信号，但 Texas micro/macro 均退化，Cornell normal 仍未稳定优于 shuffled。
 - 当前结论：固定全局 RR 正则不能作为 active SOTA candidate；它揭示的有效线索是 RR 可能改善类别覆盖/少数类，但必须改成 adaptive / class-sensitive / region-sensitive RR 才值得继续。
 
+`cbr_gcl` 的设计边界：
+
+- warm-up 前等同 GRACE；
+- warm-up 后使用 GRACE InfoNCE 主损失；
+- 用两个 view 的 consensus embedding 做无监督 KMeans；
+- 通过 inverse cluster-size 权重计算 cluster-balanced RR cross-correlation；
+- `--shuffle-weights` 只打乱 RR positive correspondence，InfoNCE 和 cluster weights 不变；
+- 默认 `--cbr-rr-weight 0.001`，cluster 数默认等于 dataset.num_classes。
+
+`cbr_gcl` 当前研究判断：
+
+- split0-2 sanity 显示 Texas/Cornell/Wisconsin 均为正，Actor 小负；Texas normal-vs-shuffled 从 Hybrid RR 的负信号转为正信号。
+- split0-9 复核显示：Texas F1Mi/F1Ma +0.005405/+0.010329；Wisconsin +0.003922/+0.029514；Cornell +0.000000/+0.008028；Actor -0.000789/-0.002619。
+- normal-vs-shuffled：Texas +0.005405/+0.008799；Wisconsin +0.009804/+0.032024；Cornell -0.002703/+0.013165；Actor -0.000329/-0.001300。
+- 当前结论：CBR 是目前 RR 方向最值得继续的条件性候选，支持“cluster-balanced RR 改善少数/弱类覆盖”的机制线索；但 Actor 近零略负、Cornell micro control 不稳，不能作为 SOTA-ready 主方法。
+- 下一步必须实现 anti-degradation gate，而不是继续全局调 `cbr_rr_weight`。
+
 正式实验前仍需补齐：
 
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
@@ -155,6 +173,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `pccl` 支持 `--pccl-num-prototypes`、`--pccl-kmeans-iters`、`--pccl-prototype-temperature`、`--pccl-target-temperature`、`--pccl-consistency-weight`、`--pccl-balance-weight`。
 - `rr_gcl` 支持 `--rr-offdiag-weight` 与 `--rr-loss-scale`，并复用 `--shuffle-weights` 做 positive correspondence control。
 - `hybrid_rr_gcl` 支持 `--hybrid-rr-weight`，并复用 RR 参数与 positive correspondence control。
+- `cbr_gcl` 支持 `--cbr-rr-weight`、`--cbr-num-clusters`、`--cbr-kmeans-iters`、`--cbr-min-weight`、`--cbr-max-weight`，并记录 cluster balance diagnostics。
 
 示例 split-aware 命令：
 
@@ -173,5 +192,6 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - 暂停 PCCL 扩展，不继续跑 10 splits；简单 KMeans prototype soft-target consistency 已被 shuffled control 证伪。
 - 暂不扩裸 RR-GCL 到 10 splits；先实现 hybrid objective 或 adaptive mixing，检验能否保留 Cornell 的 class-level 收益同时减少 Actor/Texas/Wisconsin 退化。
 - 暂停固定全局 hybrid RR 权重搜索；`0.01` 和 `0.001` 均未通过 Texas / normal-vs-shuffled 机制压力测试。
-- 下一轮应优先尝试 cluster-balanced / class-sensitive / region-level adaptive redundancy reduction，而不是继续调全局 RR 权重。
+- 已实现并复核 `cbr_gcl`，不建议继续简单调 `cbr_rr_weight`。
+- 下一轮应优先实现 `gated_cbr_gcl`：用 cluster compactness/confidence、RR diagnostic 或 local graph context 决定何时启用 CBR，以保留 Texas/Wisconsin macro 信号并避免 Actor 退化。
 - 本目录中的 SGFN / context-gated SGFN 只作为负结果、诊断工具和消融资产保留。

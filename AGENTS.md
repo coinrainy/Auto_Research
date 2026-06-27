@@ -493,3 +493,21 @@
   - 当前判断：固定全局 Hybrid RR 正则不能作为 active SOTA candidate。它显示 RR 辅助可能改善 Cornell/Wisconsin macro 或少数类覆盖，但 micro accuracy 与 normal-vs-shuffled 机制对照不稳，Texas 明确失败。
   - 下一步建议：停止继续调全局 `hybrid_rr_weight`；下一轮优先实现 `cluster-balanced / class-sensitive / region-sensitive adaptive RR`，例如在 consensus clusters 内或 cluster-balanced samples 上计算 RR，并用 normal-vs-shuffled gate control 证明不是随机正则扰动。
   - 已验证命令：`python -m py_compile train.py summarize_runs.py model.py`、`bash -n scripts/run_split_study.sh`、`python train.py --dataset Texas --method hybrid_rr_gcl --seed 0 --split-index 0 --epochs 3 --save-dir /tmp/hybrid_rr_smoke --overwrite --skip-eval --log-every 1`、`python summarize_runs.py --runs-dir runs/hybrid_rr_gcl_w001_splits0-2_seed0_e100 --target-method hybrid_rr_gcl --paired-out runs/summaries/hybrid_rr_gcl_w001_splits0-2_seed0_e100_paired.csv --aggregate-out runs/summaries/hybrid_rr_gcl_w001_splits0-2_seed0_e100_aggregate.csv`。
+- 2026-06-28 CBR-GCL 实现与 10 split 复核：
+  - 已新增研究日志：`docs/cbr_gcl_candidate_research_log.md`。
+  - 已在 `experiments/grace_idea/train.py` 中新增 `--method cbr_gcl`：warm-up 前等同 GRACE；warm-up 后使用 GRACE InfoNCE + cluster-balanced RR regularizer。
+  - CBR 机制：用两个 view 的 consensus embedding 做 KMeans；按 inverse cluster-size 生成节点权重；用加权标准化和加权 cross-correlation 计算 RR loss；`--shuffle-weights` 只打乱 RR positive correspondence。
+  - 新增参数：`--cbr-rr-weight`、`--cbr-num-clusters`、`--cbr-kmeans-iters`、`--cbr-min-weight`、`--cbr-max-weight`。
+  - 新增日志：`cbr_rr_loss`、`cbr_num_active_clusters`、`cbr_cluster_entropy`、`cbr_weight_mean/std/min/max/ess/ess_ratio`。
+  - 已更新 `scripts/run_split_study.sh` 与 `summarize_runs.py`，支持 CBR normal/shuffled 批跑和汇总。
+  - smoke 验证：`python train.py --dataset Texas --method cbr_gcl --seed 0 --split-index 0 --epochs 3 --warmup-epochs 1 --save-dir /tmp/cbr_gcl_smoke --overwrite --skip-eval --log-every 1`，第 2 epoch 后进入 `cluster_balanced_rr`。
+  - split0-2 sanity：Texas/Cornell/Wisconsin/Actor × splits 0-2 × seed0 × 100 epochs，共 36 个 run，输出 `runs/summaries/cbr_gcl_splits0-2_seed0_e100_aggregate.csv`。
+  - split0-2 normal vs GRACE：Texas F1Mi/F1Ma +0.036036/+0.016573；Cornell +0.036036/+0.047113；Wisconsin +0.013072/+0.004736；Actor -0.002851/-0.006628。
+  - split0-2 normal - shuffled：Texas +0.027027/+0.030177；Cornell 约 0/+0.011886；Wisconsin +0.039216/-0.011451；Actor -0.001535/-0.000296。
+  - 已执行 10 split 复核：`DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="grace cbr_gcl" ES_CONTROLS="normal shuffled" EPOCHS=100 WARMUP_EPOCHS=20 SAVE_DIR="runs/cbr_gcl_splits0-9_seed0_e100" MANIFEST_PATH="runs/cbr_gcl_splits0-9_seed0_e100/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 scripts/run_split_study.sh`，共 120 个 run，全部 completed。
+  - 10 split 汇总文件：`runs/summaries/cbr_gcl_splits0-9_seed0_e100_paired.csv` 与 `runs/summaries/cbr_gcl_splits0-9_seed0_e100_aggregate.csv`。
+  - 10 split normal vs GRACE：Texas F1Mi/F1Ma +0.005405/+0.010329；Wisconsin +0.003922/+0.029514；Cornell +0.000000/+0.008028；Actor -0.000789/-0.002619。
+  - 10 split normal - shuffled：Texas +0.005405/+0.008799；Wisconsin +0.009804/+0.032024；Cornell -0.002703/+0.013165；Actor -0.000329/-0.001300。
+  - 当前判断：CBR-GCL 是目前 RR 方向最值得保留的条件性候选，比固定 Hybrid RR 更干净，尤其 Texas/Wisconsin 的 normal-vs-shuffled 不再系统性失败；但效果偏小且 Actor 近零略负，Cornell micro control 不稳，仍不是 SOTA-ready 主方法。
+  - 下一步建议：实现 `gated_cbr_gcl`，用 cluster compactness/confidence、RR diagnostic 或 local graph context 决定何时启用 CBR；目标是在保留 Texas/Wisconsin macro 信号的同时避免 Actor 退化。
+  - 已验证命令：`python -m py_compile train.py summarize_runs.py model.py`、`bash -n scripts/run_split_study.sh`、`python summarize_runs.py --runs-dir runs/cbr_gcl_splits0-9_seed0_e100 --target-method cbr_gcl --paired-out runs/summaries/cbr_gcl_splits0-9_seed0_e100_paired.csv --aggregate-out runs/summaries/cbr_gcl_splits0-9_seed0_e100_aggregate.csv`。

@@ -45,6 +45,7 @@ def parse_args():
                             'pccl',
                             'rr_gcl',
                             'hybrid_rr_gcl',
+                            'cbr_gcl',
                         ])
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--epochs', type=int, default=None)
@@ -91,6 +92,11 @@ def parse_args():
     parser.add_argument('--rr-offdiag-weight', type=float, default=0.005)
     parser.add_argument('--rr-loss-scale', type=float, default=1.0)
     parser.add_argument('--hybrid-rr-weight', type=float, default=0.01)
+    parser.add_argument('--cbr-rr-weight', type=float, default=0.001)
+    parser.add_argument('--cbr-num-clusters', type=int, default=0)
+    parser.add_argument('--cbr-kmeans-iters', type=int, default=10)
+    parser.add_argument('--cbr-min-weight', type=float, default=0.25)
+    parser.add_argument('--cbr-max-weight', type=float, default=4.0)
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -124,13 +130,15 @@ def validate_args(args):
     if args.shuffle_weights and args.random_weights:
         raise ValueError('Use at most one of --shuffle-weights and --random-weights.')
     if (args.shuffle_weights or args.random_weights) and args.method not in [
-            'es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl', 'hybrid_rr_gcl']:
+            'es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl', 'hybrid_rr_gcl',
+            'cbr_gcl']:
         raise ValueError('Weight controls are only valid with weighted methods.')
 
 
 def weight_control_name(args):
     if args.method not in [
-            'es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl', 'hybrid_rr_gcl']:
+            'es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl', 'hybrid_rr_gcl',
+            'cbr_gcl']:
         return 'none'
     if args.shuffle_weights:
         return 'shuffled'
@@ -666,6 +674,88 @@ def redundancy_reduction_objective(model, z1, z2, args, epoch):
     return loss, diagnostics
 
 
+@torch.no_grad()
+def cluster_balance_weights(z1, z2, args, epoch):
+    consensus = (z1.detach() + z2.detach()) * 0.5
+    assignments = kmeans_assignments(
+        consensus,
+        args.resolved_cbr_num_clusters,
+        args.cbr_kmeans_iters,
+        args,
+        epoch,
+    )
+    counts = torch.bincount(
+        assignments,
+        minlength=args.resolved_cbr_num_clusters,
+    ).to(consensus.device, dtype=consensus.dtype)
+    used_counts = counts[counts > 0]
+    if used_counts.numel() == 0:
+        weights = torch.ones(consensus.size(0), device=consensus.device)
+    else:
+        weights = used_counts.mean() / counts[assignments].clamp_min(1.0)
+        weights = weights / weights.mean().clamp_min(1e-12)
+        weights = weights.clamp(
+            min=max(args.cbr_min_weight, 0.0),
+            max=max(args.cbr_max_weight, args.cbr_min_weight),
+        )
+        weights = weights / weights.mean().clamp_min(1e-12)
+    usage = counts / counts.sum().clamp_min(1.0)
+    active = (counts > 0).sum()
+    entropy = -(usage[usage > 0] * usage[usage > 0].log()).sum()
+    diagnostics = {
+        'cbr_num_active_clusters': active.item(),
+        'cbr_cluster_entropy': entropy.item(),
+        'cbr_weight_mean': weights.mean().item(),
+        'cbr_weight_std': weights.std(unbiased=False).item(),
+        'cbr_weight_min': weights.min().item(),
+        'cbr_weight_max': weights.max().item(),
+    }
+    diagnostics.update({
+        f'cbr_{key}': value for key, value in weight_diagnostics(weights).items()
+    })
+    return weights.detach(), diagnostics
+
+
+def weighted_standardize(values, weights):
+    weights = weights.to(values.device, dtype=values.dtype).view(-1, 1)
+    denom = weights.sum().clamp_min(1e-12)
+    mean = (weights * values).sum(0, keepdim=True) / denom
+    centered = values - mean
+    var = (weights * centered.pow(2)).sum(0, keepdim=True) / denom
+    return centered / var.sqrt().clamp_min(1e-4)
+
+
+def cluster_balanced_redundancy_reduction_objective(model, z1, z2, args, epoch):
+    weights, diagnostics = cluster_balance_weights(z1, z2, args, epoch)
+    h1 = model.projection(z1)
+    h2 = model.projection(z2)
+    if args.shuffle_weights:
+        generator = make_control_generator(args, epoch)
+        permutation = torch.randperm(h2.size(0), generator=generator).to(h2.device)
+        h2 = h2[permutation]
+    elif args.random_weights:
+        generator = make_control_generator(args, epoch)
+        h2 = torch.randn(h2.shape, generator=generator).to(h2.device, dtype=h2.dtype)
+
+    weights = weights.to(h1.device, dtype=h1.dtype)
+    h1 = weighted_standardize(h1, weights)
+    h2 = weighted_standardize(h2, weights)
+    weighted_h2 = h2 * weights.view(-1, 1)
+    cross_correlation = torch.mm(h1.t(), weighted_h2) / weights.sum().clamp_min(1e-12)
+    on_diag = (torch.diagonal(cross_correlation) - 1.0).pow(2).sum()
+    off_diag = off_diagonal(cross_correlation).pow(2).sum()
+    loss = args.rr_loss_scale * (on_diag + args.rr_offdiag_weight * off_diag)
+    diagnostics.update({
+        'rr_on_diag_loss': on_diag.item(),
+        'rr_off_diag_loss': off_diag.item(),
+        'rr_cross_corr_diag_mean': torch.diagonal(cross_correlation).mean().item(),
+        'rr_cross_corr_offdiag_mean_abs': (
+            off_diagonal(cross_correlation).abs().mean().item()
+        ),
+    })
+    return loss, diagnostics
+
+
 def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     model.train()
     optimizer.zero_grad()
@@ -703,6 +793,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     )
     pair_denominator_weights = weights if args.method == 'sgfn' else None
     rr_loss = z1.new_tensor(0.0)
+    cbr_rr_loss = z1.new_tensor(0.0)
     rr_diagnostics = {}
     if args.method == 'rr_gcl':
         contrastive_loss, rr_diagnostics = redundancy_reduction_objective(
@@ -729,6 +820,16 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
                 args,
                 epoch,
             )
+        elif args.method == 'cbr_gcl' and epoch > args.warmup_epochs:
+            cbr_rr_loss, rr_diagnostics = (
+                cluster_balanced_redundancy_reduction_objective(
+                    model,
+                    z1,
+                    z2,
+                    args,
+                    epoch,
+                )
+            )
         else:
             rr_loss = z1.new_tensor(0.0)
     attraction_loss = z1.new_tensor(0.0)
@@ -750,6 +851,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     loss = (
         contrastive_loss
         + args.hybrid_rr_weight * rr_loss
+        + args.cbr_rr_weight * cbr_rr_loss
         + args.fn_attraction_weight * attraction_loss
         + args.pccl_consistency_weight * prototype_consistency_loss
         + args.pccl_balance_weight * prototype_balance_loss
@@ -767,10 +869,13 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         stage = 'redundancy_reduction'
     if args.method == 'hybrid_rr_gcl':
         stage = 'contrastive_plus_rr'
+    if args.method == 'cbr_gcl' and epoch > args.warmup_epochs:
+        stage = 'cluster_balanced_rr'
     log = {
         'loss': loss.item(),
         'contrastive_loss': contrastive_loss.item(),
         'rr_loss': rr_loss.item(),
+        'cbr_rr_loss': cbr_rr_loss.item(),
         'fn_attraction_loss': attraction_loss.item(),
         'prototype_consistency_loss': prototype_consistency_loss.item(),
         'prototype_balance_loss': prototype_balance_loss.item(),
@@ -830,6 +935,7 @@ def prepare_save_dir(args, seed):
             'pccl',
             'rr_gcl',
             'hybrid_rr_gcl',
+            'cbr_gcl',
         ] and control != 'normal'
         else ''
     )
@@ -855,6 +961,7 @@ def append_train_log(run_dir, row):
         'loss',
         'contrastive_loss',
         'rr_loss',
+        'cbr_rr_loss',
         'fn_attraction_loss',
         'prototype_consistency_loss',
         'prototype_balance_loss',
@@ -865,6 +972,14 @@ def append_train_log(run_dir, row):
         'rr_off_diag_loss',
         'rr_cross_corr_diag_mean',
         'rr_cross_corr_offdiag_mean_abs',
+        'cbr_num_active_clusters',
+        'cbr_cluster_entropy',
+        'cbr_weight_mean',
+        'cbr_weight_std',
+        'cbr_weight_min',
+        'cbr_weight_max',
+        'cbr_weight_ess',
+        'cbr_weight_ess_ratio',
         'stage',
         'weight_mean',
         'weight_std',
@@ -999,6 +1114,12 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'rr_offdiag_weight': args.rr_offdiag_weight,
         'rr_loss_scale': args.rr_loss_scale,
         'hybrid_rr_weight': args.hybrid_rr_weight,
+        'cbr_rr_weight': args.cbr_rr_weight,
+        'cbr_num_clusters': args.cbr_num_clusters,
+        'resolved_cbr_num_clusters': args.resolved_cbr_num_clusters,
+        'cbr_kmeans_iters': args.cbr_kmeans_iters,
+        'cbr_min_weight': args.cbr_min_weight,
+        'cbr_max_weight': args.cbr_max_weight,
         'pair_shuffle_mode': args.pair_shuffle_mode,
         'pair_normalization': args.pair_normalization,
         'pair_reallocation_alpha': args.pair_reallocation_alpha,
@@ -1063,6 +1184,10 @@ def main():
         args.pccl_num_prototypes if args.pccl_num_prototypes > 0
         else dataset.num_classes
     )
+    args.resolved_cbr_num_clusters = (
+        args.cbr_num_clusters if args.cbr_num_clusters > 0
+        else dataset.num_classes
+    )
     teacher = build_teacher(model) if args.method in ['es_weighted', 'sgfn'] else None
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -1117,6 +1242,15 @@ def main():
             f'(I) | rr_offdiag_weight={args.rr_offdiag_weight}, '
             f'rr_loss_scale={args.rr_loss_scale}, '
             f'hybrid_rr_weight={args.hybrid_rr_weight}, '
+            f'positive_control={weight_control_name(args)}'
+        )
+    if args.method == 'cbr_gcl':
+        print(
+            f'(I) | warmup_epochs={args.warmup_epochs}, '
+            f'cbr_num_clusters={args.resolved_cbr_num_clusters}, '
+            f'cbr_kmeans_iters={args.cbr_kmeans_iters}, '
+            f'cbr_rr_weight={args.cbr_rr_weight}, '
+            f'rr_offdiag_weight={args.rr_offdiag_weight}, '
             f'positive_control={weight_control_name(args)}'
         )
     if args.method == 'spectral_mix':
