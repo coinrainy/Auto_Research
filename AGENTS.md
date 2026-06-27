@@ -168,3 +168,8 @@
   - failure analysis 初步线索：Chameleon/Squirrel 的 high-reliability bucket 倾向高 degree 节点（high-low degree gap 分别 +5.603426、+2.691801），Actor 也为 +1.163126；Texas/Cornell/Wisconsin 为负。Texas 的 high-reliability bucket class entropy gap 最大（+0.241309），低可靠桶 majority class fraction 很高（0.691803），提示 reliability weighting 可能在 Texas 上缓解了低可靠区域的类别集中/偏置；但该线索还不是因果证据。
   - 当前保守结论：two-stage positive reliability weighting 的收益具有明显 dataset 条件性；目前更像“可靠性诊断稳定 + 性能收益条件性出现”，不能作为通用 heterophily SOTA 方法来写。
   - 下一步建议：进入需要研究取舍的节点：A) 加入局部图类型/degree-aware gate，验证是否改善 Chameleon/Squirrel/Actor 但不伤 Texas；或 B) 暂不加模块，转为机制诊断论文路线，补强 false negative mass/negative weighting 与 homophily non-degradation。
+- 2026-06-27 决策备忘录：
+  - 已新增 ARS 风格实验决策备忘录：`docs/reliability_weighting_decision_memo.md`。
+  - 备忘录将当前证据边界写清楚：reliability ranking -> view consistency 的机制诊断在 6 个 heterophily 数据集上稳定成立，但 accuracy 收益只在 Texas/Chameleon 明显为正。
+  - 备忘录明确了路线 A（最小 degree/local-graph-aware gate 方法实验）与路线 B（机制诊断论文路线）的成功标准、停止标准与建议命令。
+  - 当前推荐但需用户人工确认：先走路线 A 的 degree-only gate ablation，限制为 Texas/Chameleon/Squirrel/Actor × seeds 0-2；若不满足成功标准，立即停止方法扩展并切换路线 B。
