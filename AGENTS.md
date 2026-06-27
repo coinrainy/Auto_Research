@@ -366,3 +366,7 @@
   - [INSIGHT] 后续图对比学习/GSSL 实验进入实现前，必须先设置“实验协议确认门”：确认代码基底、baseline 来源、dataset split、evaluation protocol、seed 数量、hyperparameter tuning 范围、指标与结果汇总方式。
   - 当前原则：新方法可以自行实现核心模块，但 baseline、数据划分和评估方式应优先对齐目标论文/公开框架；若选择自实现，必须明确记录原因、偏差风险和 sanity check。
   - 下一步建议：在继续实现任何新 false-negative 方法前，先产出一份 `experiment protocol checklist`，由用户确认后再写代码或跑实验。
+- 2026-06-27 GCL 实验协议网页调研：
+  - 已根据公开论文、官方代码和框架文档整理实验注意事项，新增文档：`docs/gcl_experiment_protocol_checklist.md`。
+  - 重点风险包括：自实现 baseline 与官方实现不一致、Planetoid/WebKB/WikipediaNetwork split 混用、linear evaluation 细节不透明、downstream validation set 参与 pretraining 超参选择、baseline 调参预算不公平、negative set/augmentation/objective 组件未隔离、false-negative claim 缺少污染度诊断。
+  - 后续任何新 GCL/GSSL 方法实验，在写代码或跑正式实验前必须先按该 checklist 向用户确认协议。
