@@ -51,9 +51,11 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 
 当前研究判断：
 
-- 主候选收敛为 `sgfn` 默认设置，即 false-negative attenuation。
+- 默认 `sgfn` false-negative attenuation 已不再作为最终主候选。10-split 复核显示 Texas 稳定正向，但 Wisconsin 退化、Actor 近零、Cornell normal 不稳定优于 shuffled。
+- `--fn-consensus feature` 在 Texas/Cornell 上有局部改善，但 Wisconsin/Actor 仍失败，也不能作为主方法。
+- 当前保留的是 pair-level denominator attenuation、shuffled pair mapping control 与 label-only false-negative pressure 诊断；下一代方法必须先判断“何时不应 attenuation”，而不是继续增强全局 attenuation。
 - `row_mean` reallocation 机制更干净但性能弱；`blend_row_mean` 与 `fn_attraction_weight=0.1` 在 4 个 heterophily 数据集 sanity 中整体负向。
-- 当前结果还不足以声称 SOTA，需要继续做 10 split / 多 seed 与更强 baseline 对照。
+- 当前方向应转为 context-gated false-negative calibration；若门控版仍不能避免 Wisconsin/Actor 退化，则放弃 false-negative attenuation 主线，重新构思 GCL idea。
 
 正式实验前仍需补齐：
 
@@ -84,6 +86,6 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 
 近期需要补齐：
 
-- reliability 与 downstream error、degree、local homophily 的独立诊断；
-- Chameleon/Squirrel 接入；
-- ProGCL / GRAPE / GraphRank 可复现对照。
+- context-gated false-negative calibration 的最小实现；
+- gate 与 downstream error、degree、local structure 的独立诊断；
+- 若 gate 版通过 Texas/Cornell/Wisconsin/Actor 的 3-split 筛选，再接 Chameleon/Squirrel 和 ProGCL / GRAPE / GraphRank 对照。

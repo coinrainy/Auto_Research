@@ -386,3 +386,18 @@
   - false-negative attraction 消融整体失败：F1Mi mean 为 Texas -0.027027、Cornell -0.009009、Wisconsin -0.006536、Actor -0.008553；部分 split 中 shuffled attraction 更强，说明该模块不能支撑强机制叙事。
   - 当前保守结论：唯一值得继续扩展的是默认 SGFN attenuation + shuffled-pair control + false-negative pressure 诊断；尚不能称为 SOTA，也不能称为通用 heterophily 方法。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="grace sgfn" ES_CONTROLS="normal shuffled" EPOCHS=100 WARMUP_EPOCHS=20 SAVE_DIR="runs/sgfn_attenuation_hetero_splits0-9_seed0_e100" MANIFEST_PATH="runs/sgfn_attenuation_hetero_splits0-9_seed0_e100/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 scripts/run_split_study.sh`。
+- 2026-06-28 SGFN 放弃/降级决策：
+  - 已完成默认 SGFN attenuation 的 Texas/Cornell/Wisconsin/Actor × splits 0-9 × seed0 × 100 epochs 复核，共 120 个 run，生成 paired/aggregate 与 pair-weight 机制诊断表。
+  - 默认 SGFN normal - GRACE（F1Mi mean）：Texas +0.027027、Cornell +0.005405、Wisconsin -0.011765、Actor +0.001053。
+  - 默认 SGFN normal - shuffled（F1Mi mean）：Texas +0.029730、Cornell -0.013514、Wisconsin -0.003922、Actor +0.001908。
+  - 机制诊断：Texas/Cornell/Wisconsin 上 normal 均能降低 label-only false-negative pressure，shuffled 接近 0；Actor 机制信号弱。
+  - 决策：默认 SGFN 不能作为最终主方法继续推进，原因是跨数据集泛化不足、Cornell normal 不稳定优于 shuffled、Wisconsin micro 退化、Actor 近零；按用户新增规则，将其降级为机制诊断原型和后续组件。
+  - 已筛选 `--fn-consensus feature` 版本：Texas/Cornell/Wisconsin/Actor × splits 0-2 × seed0 × 100 epochs，共 36 个 run。
+  - feature-consensus normal - GRACE（F1Mi mean）：Texas +0.027027、Cornell +0.018018、Wisconsin -0.019608、Actor -0.002193。
+  - feature-consensus normal - shuffled（F1Mi mean）：Texas 0.000000、Cornell +0.027027、Wisconsin -0.019608、Actor -0.002851。
+  - 决策：feature-consensus 也不能作为主方法；它在 Texas/Cornell 有局部正向，但 Wisconsin/Actor 失败。
+  - 当前保留资产：pair-level denominator attenuation、shuffled pair mapping control、label-only false-negative pressure 诊断、Texas/Cornell 的正向现象。
+  - 当前放弃主张：纯 teacher similarity 或 feature-consensus 就足以估计 false-negative risk 并形成通用 SOTA GCL 方法。
+  - 下一轮方向：实现 `context-gated false-negative calibration`，核心是先判断节点/区域是否适合 attenuation，再局部启用；若门控版仍不能避免 Wisconsin/Actor 退化，则放弃 false-negative attenuation 主线，重新构思新的 GCL idea。
+  - 已验证命令：`python -m py_compile train.py model.py eval.py summarize_runs.py analyze_pair_weights.py`、`bash -n scripts/run_split_study.sh`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2" SEEDS="0" METHODS="grace sgfn" ES_CONTROLS="normal shuffled" EPOCHS=100 WARMUP_EPOCHS=20 SAVE_DIR="runs/next_context_gated_sgfn_sanity" MANIFEST_PATH="runs/next_context_gated_sgfn_sanity/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 TRAIN_EXTRA_ARGS="<next-gate-args>" scripts/run_split_study.sh`。

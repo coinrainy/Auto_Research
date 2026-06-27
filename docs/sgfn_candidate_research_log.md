@@ -125,20 +125,88 @@ SGFN normal - GRACE（F1Mi mean）：
 
 ## 当前决策
 
-主线收敛为：SGFN attenuation + 机制诊断，而不是 row-mean reallocation、blend reallocation 或 attraction。
+2026-06-28 追加 10-split 验证后，当前决策更新为：默认 SGFN attenuation 不能作为最终主方法继续推进。它保留为机制诊断原型和后续方法组件，而不是论文主 idea。
 
-论文定位若继续推进，应保守设为“false-negative pressure calibration / diagnostic-aware GCL method”，而不是通用 heterophily SOTA。下一步必须用更严格协议验证是否有足够强的投稿潜力。
+### 10-split 复核：默认 SGFN attenuation
+
+设置：Texas/Cornell/Wisconsin/Actor × splits 0-9 × seed0 × 100 epochs；normal 与 shuffled 成对。
+
+输出文件：
+
+- `runs/summaries/sgfn_attenuation_hetero_splits0-9_seed0_e100_aggregate.csv`
+- `runs/summaries/sgfn_attenuation_hetero_splits0-9_seed0_e100_pair_weights_aggregate.csv`
+- `runs/summaries/sgfn_attenuation_hetero_splits0-9_seed0_e100_pair_weights_controls.csv`
+
+SGFN normal - GRACE：
+
+- Texas：F1Mi +0.027027，F1Ma +0.020583；8/10 split micro 正向，0/10 负向。
+- Cornell：F1Mi +0.005405，F1Ma +0.009356；但 normal - shuffled 的 F1Mi 为 -0.013514。
+- Wisconsin：F1Mi -0.011765，F1Ma +0.001649；5/10 split micro 负向。
+- Actor：F1Mi +0.001053，F1Ma -0.003048；幅度接近噪声。
+
+机制诊断仍然成立：normal 在 Texas/Cornell/Wisconsin 上稳定降低 label-only false-negative pressure，而 shuffled control 接近 0；Actor 机制信号很弱。
+
+判断：
+
+- 默认 SGFN 在 Texas 上有稳定正向，但跨数据集泛化不足。
+- Cornell 出现 normal 不如 shuffled 的问题，削弱了 pair mapping 的因果解释。
+- Wisconsin micro 退化，Actor 近零，说明当前 teacher-similarity risk 不足以支撑“兼具创新和 SOTA 能力”的主方法。
+- 因此，按“当确定当前 idea 无法成功时应该学会放弃”的规则，默认 SGFN 不再作为最终 idea 扩展多 seed 或大规模 baseline。
+
+### feature-consensus SGFN 筛选
+
+动机：用 `--fn-consensus feature` 要求 teacher embedding risk 与原始特征相似性同时支持，减少 self-confirming teacher similarity 的误判。
+
+设置：Texas/Cornell/Wisconsin/Actor × splits 0-2 × seed0 × 100 epochs。
+
+输出文件：
+
+- `runs/summaries/sgfn_feature_consensus_hetero_splits0-2_seed0_e100_aggregate.csv`
+- `runs/summaries/sgfn_feature_consensus_hetero_splits0-2_seed0_e100_pair_weights_aggregate.csv`
+
+SGFN feature-consensus normal - GRACE：
+
+- Texas：F1Mi +0.027027，F1Ma +0.055202。
+- Cornell：F1Mi +0.018018，F1Ma -0.005436。
+- Wisconsin：F1Mi -0.019608，F1Ma +0.008334。
+- Actor：F1Mi -0.002193，F1Ma -0.007769。
+
+normal - shuffled：
+
+- Texas：F1Mi 0.000000，F1Ma +0.031376。
+- Cornell：F1Mi +0.027027，F1Ma +0.003040。
+- Wisconsin：F1Mi -0.019608，F1Ma +0.016112。
+- Actor：F1Mi -0.002851，F1Ma -0.007860。
+
+判断：
+
+- feature-consensus 提升了 Texas/Cornell 的局部表现，并让 attenuation 更保守。
+- 但它没有解决 Wisconsin micro 退化，也在 Actor 上低于 GRACE 与 shuffled。
+- 因此 feature-consensus 也不能作为主方法，只能作为后续“风险触发条件”或 ablation。
+
+### 当前放弃与保留
+
+放弃：
+
+- 放弃“纯 teacher 相似度即可估计 false-negative risk 并通用提升 GCL”的主张。
+- 放弃把默认 SGFN 或 feature-consensus SGFN 直接包装成 2026 顶会/顶刊主方法。
+- 暂停继续扩展 SGFN 到更多 seed 或更强 baseline，因为当前条件性失败已经足够明确。
+
+保留：
+
+- 保留 pair-level denominator attenuation 的代码资产。
+- 保留 shuffled pair mapping control 与 label-only false-negative pressure 诊断。
+- 保留 Texas/Cornell 的正向现象作为下一代方法的诊断靶点。
+
+下一轮应转向：先判定节点/区域是否适合 false-negative attenuation，再局部启用 attenuation。候选名称可暂定为 `context-gated false-negative calibration`，其核心不应是“更强 attenuation”，而应是“何时不做 attenuation”。
 
 ## 下一步建议命令
 
 ```bash
 cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
-DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="grace sgfn" ES_CONTROLS="normal shuffled" EPOCHS=100 WARMUP_EPOCHS=20 SAVE_DIR="runs/sgfn_attenuation_hetero_splits0-9_seed0_e100" MANIFEST_PATH="runs/sgfn_attenuation_hetero_splits0-9_seed0_e100/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 scripts/run_split_study.sh
-python summarize_runs.py --runs-dir runs/sgfn_attenuation_hetero_splits0-9_seed0_e100 --target-method sgfn --paired-out runs/summaries/sgfn_attenuation_hetero_splits0-9_seed0_e100_paired.csv --aggregate-out runs/summaries/sgfn_attenuation_hetero_splits0-9_seed0_e100_aggregate.csv
-python analyze_pair_weights.py --runs-dir runs/sgfn_attenuation_hetero_splits0-9_seed0_e100 --out runs/summaries/sgfn_attenuation_hetero_splits0-9_seed0_e100_pair_weights.csv --aggregate-out runs/summaries/sgfn_attenuation_hetero_splits0-9_seed0_e100_pair_weights_aggregate.csv --control-paired-out runs/summaries/sgfn_attenuation_hetero_splits0-9_seed0_e100_pair_weights_controls.csv
+DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2" SEEDS="0" METHODS="grace sgfn" ES_CONTROLS="normal shuffled" EPOCHS=100 WARMUP_EPOCHS=20 SAVE_DIR="runs/next_context_gated_sgfn_sanity" MANIFEST_PATH="runs/next_context_gated_sgfn_sanity/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 TRAIN_EXTRA_ARGS="<next-gate-args>" scripts/run_split_study.sh
 ```
 
 停止标准：
 
-- 若 10 split 下 Texas/Cornell/Wisconsin/Actor 的平均 F1Mi/F1Ma 仍无至少 2 个数据集正向，或 normal 不稳定优于 shuffled，则停止 SGFN 方法线，转向机制/负结果论文或重新构思。
-
+- 若下一代 context-gated 版本不能同时满足：Texas 不低于默认 SGFN、Wisconsin/Actor 不退化、normal 至少在 3/4 个数据集上不低于 shuffled，则继续放弃该 false-negative attenuation 主线，重新构思新的 GCL idea。
