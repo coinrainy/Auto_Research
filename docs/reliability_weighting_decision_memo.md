@@ -134,8 +134,10 @@ python train.py --config configs/methods/rw_gcl_degree_gate.yaml --dataset Texas
 如果 smoke 成功，再跑：
 
 ```bash
-DATASETS="Texas Chameleon Squirrel Actor" SEEDS="0 1 2" WARMUP_EPOCHS=20 STAGE2_EPOCHS=50 EVAL_EPOCHS=50 bash scripts/run_small_reliability_study.sh
+METHOD_CONFIG=configs/methods/rw_gcl_degree_gate.yaml METHOD_NAME=rw_gcl_degree_gate DATASETS="Texas Chameleon Squirrel Actor" SEEDS="0 1 2" WARMUP_EPOCHS=20 STAGE2_EPOCHS=50 EVAL_EPOCHS=50 PAIRS_PATH=results/diagnostics/reliability_pair_runs_degree_gate_tiny.csv SUMMARY_PATH=results/diagnostics/reliability_pair_summary_degree_gate_tiny.csv bash scripts/run_small_reliability_study.sh
 ```
+
+`scripts/run_small_reliability_study.sh` 已支持 `METHOD_CONFIG` 与 `METHOD_NAME` 环境变量；默认仍是 `configs/methods/rw_gcl_two_stage.yaml`，因此旧命令不受影响。
 
 ## 路线 B：机制诊断论文实验
 

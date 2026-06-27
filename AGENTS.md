@@ -181,3 +181,9 @@
   - Homophily RW-GCL normal vs GRACE（10 seeds）：Cora +0.003300；CiteSeer +0.000100；PubMed -0.011200。
   - Homophily RW-GCL normal vs shuffled：Cora +0.001600；CiteSeer -0.002700；PubMed +0.002800。
   - 当前解释：Cora/CiteSeer 基本支持 non-degradation；PubMed 有约 1.12 个百分点下降，仍在早期 1-2 个百分点观察带内，但不能声称完全无退化。路线 A 的 gate 若继续推进，应把 PubMed 退化不超过 0.015 作为安全约束。
+- 2026-06-27 paired reliability runner 泛化：
+  - 已将 `scripts/run_small_reliability_study.sh` 从 hard-coded `configs/methods/rw_gcl_two_stage.yaml` 泛化为支持 `METHOD_CONFIG` 与 `METHOD_NAME` 环境变量；默认值仍为 `configs/methods/rw_gcl_two_stage.yaml` 与 `rw_gcl_two_stage`，旧命令不受影响。
+  - 新增 `TRAIN_EXTRA_ARGS` 环境变量，可在不改脚本的情况下向 `train.py` 追加额外参数。
+  - 已验证：`bash -n scripts/run_small_reliability_study.sh`。
+  - 已做默认行为 smoke：`DATASETS=Texas SEEDS=0 WARMUP_EPOCHS=1 STAGE2_EPOCHS=1 EVAL_EPOCHS=5 PAIRS_PATH=results/diagnostics/reliability_pair_runs_runner_smoke.csv SUMMARY_PATH=results/diagnostics/reliability_pair_summary_runner_smoke.csv bash scripts/run_small_reliability_study.sh`，normal/shuffled 均 completed，并成功生成 paired summary。
+  - 该改动不等于选择路线 A 或 B，只是为后续 degree gate、random reliability、negative weighting 等变体复用同一 paired normal/shuffled 实验流程。
