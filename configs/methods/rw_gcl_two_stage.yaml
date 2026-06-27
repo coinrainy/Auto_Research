@@ -16,6 +16,8 @@ reliability:
   positive:
     embedding_stability_weight: 0.5
     prediction_consistency_weight: 0.5
+    prediction_temperature: 0.2
+    prediction_confidence_power: 0.25
   negative:
     enabled: false
     samples_per_anchor: 256

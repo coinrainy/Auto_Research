@@ -13,6 +13,7 @@ from .logging_utils import ensure_dir, write_csv
 
 
 AVAILABLE_DIAGNOSTICS = {
+    "reliability_summary",
     "shuffled_reliability",
     "false_negative_mass",
     "view_consistency",
@@ -62,8 +63,11 @@ def write_view_consistency(output_dir: str | Path, results_dir: str | Path, run_
                 "bucket": "not_available",
                 "count": 0,
                 "reliability_mean": "",
+                "reliability_std": "",
                 "embedding_stability_mean": "",
+                "embedding_stability_std": "",
                 "prediction_consistency_mean": "",
+                "prediction_consistency_std": "",
                 "status": "missing_artifact",
                 "notes": f"missing={','.join(missing)}",
             }
@@ -83,8 +87,11 @@ def write_view_consistency(output_dir: str | Path, results_dir: str | Path, run_
                     "bucket": label,
                     "count": int(idx.numel()),
                     "reliability_mean": f"{float(reliability[idx].mean().item()):.6f}",
+                    "reliability_std": f"{float(reliability[idx].std(unbiased=False).item()):.6f}",
                     "embedding_stability_mean": f"{float(stability[idx].mean().item()):.6f}",
+                    "embedding_stability_std": f"{float(stability[idx].std(unbiased=False).item()):.6f}",
                     "prediction_consistency_mean": f"{float(consistency[idx].mean().item()):.6f}",
+                    "prediction_consistency_std": f"{float(consistency[idx].std(unbiased=False).item()):.6f}",
                     "status": "computed",
                     "notes": "bucketed by positive_reliability",
                 }
@@ -97,12 +104,66 @@ def write_view_consistency(output_dir: str | Path, results_dir: str | Path, run_
             "bucket",
             "count",
             "reliability_mean",
+            "reliability_std",
             "embedding_stability_mean",
+            "embedding_stability_std",
             "prediction_consistency_mean",
+            "prediction_consistency_std",
             "status",
             "notes",
         ],
     )
+    return out_path
+
+
+def write_reliability_summary(output_dir: str | Path, results_dir: str | Path, run_id: str) -> Path:
+    out_dir = ensure_dir(output_dir)
+    out_path = out_dir / "reliability_summary.csv"
+    payload = load_run_payload(results_dir, run_id)
+    meta = load_run_metadata(results_dir, run_id)
+    fields = [
+        "run_id",
+        "shuffled_reliability",
+        "component",
+        "mean",
+        "std",
+        "min",
+        "max",
+        "status",
+        "notes",
+    ]
+    rows = []
+    for key in ["positive_reliability", "embedding_stability", "prediction_consistency"]:
+        if key not in payload:
+            rows.append(
+                {
+                    "run_id": run_id,
+                    "shuffled_reliability": meta.get("shuffled_reliability", ""),
+                    "component": key,
+                    "mean": "",
+                    "std": "",
+                    "min": "",
+                    "max": "",
+                    "status": "missing_artifact",
+                    "notes": f"{key} not found in embeddings.pt",
+                }
+            )
+            continue
+        values = payload[key].float()
+        rows.append(
+            {
+                "run_id": run_id,
+                "shuffled_reliability": meta.get("shuffled_reliability", ""),
+                "component": key,
+                "mean": f"{float(values.mean().item()):.6f}",
+                "std": f"{float(values.std(unbiased=False).item()):.6f}",
+                "min": f"{float(values.min().item()):.6f}",
+                "max": f"{float(values.max().item()):.6f}",
+                "status": "computed",
+                "notes": "positive-only reliability components",
+            }
+        )
+    write_csv(out_path, rows, fields)
     return out_path
 
 
@@ -197,6 +258,8 @@ def run_diagnostic(
         raise ValueError(f"Unknown diagnostic: {diagnostic}")
     if diagnostic == "view_consistency":
         return write_view_consistency(output_dir, results_dir, run_id)
+    if diagnostic == "reliability_summary":
+        return write_reliability_summary(output_dir, results_dir, run_id)
     if diagnostic == "shuffled_reliability":
         return write_shuffled_reliability(output_dir, results_dir, run_id, compare_run_id)
     if diagnostic == "false_negative_mass":

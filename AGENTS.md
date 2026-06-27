@@ -107,3 +107,10 @@
   - 已更新 `scripts/run_smoke.sh` 自动抓取 RW-GCL normal/shuffled run_id 并运行诊断。
   - 已验证：`bash scripts/run_smoke.sh`、`python -m compileall train.py eval.py diagnose.py src`；最近 smoke 中 normal/shuffled accuracy 暂时持平，但诊断链路已打通。
   - 下一步建议：做更长 epoch 与多 seed 的 Texas/Wisconsin 小实验，或改进 prediction consistency 信号以避免过高且区分度不足。
+- 2026-06-27 reliability 信号修正：
+  - 已将 `prediction_consistency` 从普通 softmax L1 agreement 改为 sharpened distribution agreement × entropy confidence，避免均匀预测分布产生虚高一致性。
+  - 已在 `configs/methods/rw_gcl_two_stage.yaml` 中加入 `prediction_temperature: 0.2` 与 `prediction_confidence_power: 0.25`。
+  - 已新增 `reliability_summary` 诊断，输出 positive reliability、embedding stability、prediction consistency 的 mean/std/min/max。
+  - `view_consistency` 诊断已补充各 bucket 的 std。
+  - 已验证：`bash scripts/run_smoke.sh`、`python -m compileall train.py eval.py diagnose.py src`。
+  - 最近 smoke 中 `prediction_consistency_mean` 从此前接近 0.999 降至约 0.188，`positive_reliability_mean` 约 0.549；low/mid/high bucket 的 stability 与 consistency 均呈递增趋势，但 normal/shuffled accuracy 仍持平，需要后续多 seed/更长 epoch 评估。

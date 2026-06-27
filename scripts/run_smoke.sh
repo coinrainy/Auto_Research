@@ -12,4 +12,4 @@ shuffled_output=$(python train.py --config configs/methods/rw_gcl_two_stage.yaml
 echo "$shuffled_output"
 shuffled_run_id=$(printf '%s\n' "$shuffled_output" | awk -F= '/^run_id=/ {print $2}')
 python eval.py
-python diagnose.py --run_id "$rw_run_id" --compare-run-id "$shuffled_run_id" --diagnostics shuffled_reliability false_negative_mass view_consistency
+python diagnose.py --run_id "$rw_run_id" --compare-run-id "$shuffled_run_id" --diagnostics reliability_summary shuffled_reliability false_negative_mass view_consistency
