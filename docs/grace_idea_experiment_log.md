@@ -201,3 +201,64 @@ Overall mean over 12 paired runs:
 ```bash
 python summarize_runs.py --runs-dir runs/hetero_splits0-2_seed0_e100 --paired-out runs/summaries/hetero_splits0-2_seed0_e100_paired.csv --aggregate-out runs/summaries/hetero_splits0-2_seed0_e100_aggregate.csv
 ```
+
+## 2026-06-27 Split control sanity early stop
+
+本轮目的：
+
+- 使用新加入的 `--shuffle-weights` 与 `--random-weights` 检查 `es_weighted` 的正向信号是否确实来自 embedding-stability reliability。
+- 按用户要求，若出现和预期不符的结果立即停止继续扩展实验。
+
+预期停止条件：
+
+- Texas 上 normal `es_weighted` 不应系统性输给 shuffled/random control。
+- 若 random control 明显强于 normal，则说明当前收益可能来自一般 anchor reweighting / 正则化，而不是 reliability 本身。
+
+执行命令：
+
+```bash
+cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
+DATASETS="Texas Cornell" SPLITS="0 1 2" SEEDS="0" METHODS="grace es_weighted" ES_CONTROLS="normal shuffled random" EPOCHS=100 WARMUP_EPOCHS=20 SAVE_DIR="runs/split_control_texas_cornell_s0_splits0-2_e100" MANIFEST_PATH="runs/split_control_texas_cornell_s0_splits0-2_e100/run_manifest.csv" LOG_EVERY=100 scripts/run_split_study.sh
+```
+
+### Early Stop 触发点
+
+Texas split 0 完整完成了 GRACE、normal、shuffled、random 四组：
+
+| Dataset | Split | Method / Control | F1Mi | F1Ma | Weight mean | Weight std |
+|---|---:|---|---:|---:|---:|---:|
+| Texas | 0 | GRACE | 0.648649 | 0.321429 |  |  |
+| Texas | 0 | ES normal | 0.675676 | 0.341133 | 0.966826 | 0.015075 |
+| Texas | 0 | ES shuffled | 0.594595 | 0.250000 | 0.966207 | 0.015710 |
+| Texas | 0 | ES random | 0.702703 | 0.389254 | 0.519213 | 0.267754 |
+
+关键 delta：
+
+- ES normal - GRACE：F1Mi +0.027027，F1Ma +0.019704。
+- ES normal - shuffled：F1Mi +0.081081，F1Ma +0.091133。
+- ES normal - random：F1Mi -0.027027，F1Ma -0.048121。
+
+因此，random control 在 Texas split 0 上反而优于 normal reliability。该结果和“embedding-stability reliability 非随机有效”的当前预期不符，已按用户要求中止后续批跑。
+
+中断时已额外完成 Texas split 1 的 GRACE、normal、shuffled 三组；random split 1 尚未完成。部分汇总文件：
+
+```bash
+python summarize_runs.py --runs-dir runs/split_control_texas_cornell_s0_splits0-2_e100 --paired-out runs/summaries/split_control_texas_cornell_partial_paired.csv --aggregate-out runs/summaries/split_control_texas_cornell_partial_aggregate.csv
+```
+
+输出：`loaded_runs=7 paired_rows=2 aggregate_rows=1`。
+
+### 当前解释
+
+- shuffled control 在 Texas split 0 明显低于 normal，说明“同一权重分布但打乱节点对应”会伤害结果，这一项仍支持 reliability-node 对应有一定信息。
+- random control 明显高于 normal，说明当前 normal 权重太接近全 1，实际扰动较弱；而随机宽分布权重可能产生了更强的 anchor reweighting / regularization。
+- 该结果削弱了“当前 reliability 本身带来收益”的强主张。至少需要补一个 distribution-matched random control，或将 random control 的权重分布匹配到 normal reliability 后再判断。
+- 在修正控制设计前，不应继续扩大 Texas/Cornell/Actor 的多 seed / 多 split 实验。
+
+### 下一步建议
+
+优先修正 control 设计，而不是继续跑大矩阵：
+
+- 新增 `--random-permute-distribution` 或将现有 `--random-weights` 改为可选 distribution-matched random：从 normal raw weights 采样/置乱/分位数匹配，而不是 uniform random。
+- 增加权重强度控制：例如报告 effective sample size、weight std、min/max，并做 `weight_power` 的小范围 sanity。
+- 复跑 Texas split 0：GRACE、normal、shuffled、distribution-matched random、uniform-random，确认 random 反超是否来自宽分布正则化。

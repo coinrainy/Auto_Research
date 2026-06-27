@@ -306,3 +306,14 @@
   - 已完成短 smoke：`DATASETS=Cora SPLITS=0 SEEDS=0 METHODS=es_weighted ES_CONTROLS="normal shuffled random" EPOCHS=1 WARMUP_EPOCHS=0 SAVE_DIR=/tmp/grace_split_runner_smoke MANIFEST_PATH=/tmp/grace_split_runner_smoke/run_manifest.csv OVERWRITE=1 TRAIN_EXTRA_ARGS="--skip-eval" scripts/run_split_study.sh`，三种控制组均 completed。
   - 已验证防污染逻辑：对 `/tmp/grace_split_runner_smoke/Cora_es_weighted_seed0` 不带 `--overwrite` 重跑会按预期抛出 `FileExistsError`。
   - 剩余优先项：confusion matrix delta 自动摘要、downstream error bucket、label-based false-negative pressure、degree/local structure 诊断，以及 Chameleon/Squirrel 数据集接入。
+- 2026-06-27 split control sanity early stop：
+  - 按用户要求继续实验直到出现和预期不符结果；本轮启动 Texas/Cornell × splits 0/1/2 × seed0 × GRACE/ES-normal/ES-shuffled/ES-random，100 epochs。
+  - 命令：`DATASETS="Texas Cornell" SPLITS="0 1 2" SEEDS="0" METHODS="grace es_weighted" ES_CONTROLS="normal shuffled random" EPOCHS=100 WARMUP_EPOCHS=20 SAVE_DIR="runs/split_control_texas_cornell_s0_splits0-2_e100" MANIFEST_PATH="runs/split_control_texas_cornell_s0_splits0-2_e100/run_manifest.csv" LOG_EVERY=100 scripts/run_split_study.sh`。
+  - 预期：Texas 上 normal `es_weighted` 应至少不输给 shuffled/random control；若 random 明显强于 normal，则说明当前收益可能来自一般 anchor reweighting / regularization，而不是 reliability 本身。
+  - Early stop 触发：Texas split0 random control 反超 normal。GRACE F1Mi/F1Ma=0.648649/0.321429；ES-normal=0.675676/0.341133；ES-shuffled=0.594595/0.250000；ES-random=0.702703/0.389254。
+  - 关键 delta：normal - GRACE = +0.027027/+0.019704；normal - shuffled = +0.081081/+0.091133；normal - random = -0.027027/-0.048121。
+  - random control 的最终权重均值/标准差为 0.519213/0.267754，而 normal raw/final 权重标准差约 0.013-0.015，说明 random 反超很可能来自更强的随机 anchor reweighting 正则化，而不是可靠性排序。
+  - 已中断后续批跑；中断时完成 7 个 run：Texas split0 四组完整，Texas split1 完成 GRACE/normal/shuffled，random split1 未完成。
+  - 已生成部分汇总：`runs/summaries/split_control_texas_cornell_partial_paired.csv` 与 `runs/summaries/split_control_texas_cornell_partial_aggregate.csv`，输出 `loaded_runs=7 paired_rows=2 aggregate_rows=1`。
+  - 当前结论：在修正 random control 为 distribution-matched random 或补充权重强度控制前，不应继续扩大多 seed / 多 split 实验；当前 reliability 叙事不能越过这个反例。
+  - 下一步建议：先实现 distribution-matched random control，并复跑 Texas split0 的 GRACE、normal、shuffled、distribution-matched random、uniform-random 小实验。
