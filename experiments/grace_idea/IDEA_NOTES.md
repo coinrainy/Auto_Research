@@ -22,6 +22,7 @@
 - `--method spectral_mix`：Adaptive Spectral Mix GCL，已降级为失败原型/诊断资产。
 - `--method pbcl`：Prototype-Balanced Contrastive Learning，已降级为失败原型/诊断资产。
 - `--method pccl`：Prototype Consistency Contrastive Learning，已降级为失败原型/诊断资产。
+- `--method rr_gcl`：Redundancy-Reduced GCL，保留为条件性线索/诊断资产，尚非 active SOTA candidate。
 
 `es_weighted` 的设计边界：
 
@@ -104,6 +105,19 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - normal 不稳定优于 shuffled；Cornell 与 Texas 上 normal-shuffled 均值为负。
 - 当前结论：当前 KMeans soft target 不可靠，prototype consistency objective 不能作为主候选；保留为 prototype-level objective 诊断资产。
 
+`rr_gcl` 的设计边界：
+
+- 使用 GRACE 原增强视图，但不用 InfoNCE。
+- 对两个 view 的 projection features 做 cross-correlation redundancy reduction。
+- 对角项逼近 1，非对角项逼近 0。
+- `--shuffle-weights` 在 RR-GCL 中表示打乱 positive node correspondence，用作机制 control。
+
+`rr_gcl` 当前研究判断：
+
+- Cornell split0-2 上相对 GRACE 有 F1Mi/F1Ma +0.036036/+0.082584，且 normal 优于 shuffled。
+- Actor/Texas/Wisconsin 不稳，尤其 macro 退化明显。
+- 当前结论：negative-free redundancy reduction 是比 prototype 路线更有价值的条件性线索，但裸 RR objective 不能作为主候选；下一步应尝试 GRACE InfoNCE + small RR regularizer 或 adaptive mixing。
+
 正式实验前仍需补齐：
 
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
@@ -125,6 +139,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `spectral_mix` 支持 `--spectral-mix-mode adaptive|low|high|random`、`--spectral-mix-temperature`、`--spectral-mix-jitter` 与 `--spectral-high-scale`。
 - `pbcl` 支持 `--pbcl-num-prototypes`、`--pbcl-kmeans-iters`、`--pbcl-weight-power`、`--pbcl-min-weight`、`--pbcl-max-weight`。
 - `pccl` 支持 `--pccl-num-prototypes`、`--pccl-kmeans-iters`、`--pccl-prototype-temperature`、`--pccl-target-temperature`、`--pccl-consistency-weight`、`--pccl-balance-weight`。
+- `rr_gcl` 支持 `--rr-offdiag-weight` 与 `--rr-loss-scale`，并复用 `--shuffle-weights` 做 positive correspondence control。
 
 示例 split-aware 命令：
 
@@ -141,5 +156,6 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - 若继续 spectral 方向，只做小消融定位失败机制：`adaptive` vs `low` vs `high` vs `random`。
 - 暂停 PBCL 扩展，不继续跑 10 splits；简单 anchor reweighting 已被 shuffled control 证伪。
 - 暂停 PCCL 扩展，不继续跑 10 splits；简单 KMeans prototype soft-target consistency 已被 shuffled control 证伪。
-- 下一轮应重新寻找更强 idea，优先改变 view selection decision、训练目标的冗余消除机制，或引入可靠性更强的 EMA/structure-aware prototype，而不是单纯替换特征、重加权 anchor 或模仿即时 KMeans target。
+- 暂不扩裸 RR-GCL 到 10 splits；先实现 hybrid objective 或 adaptive mixing，检验能否保留 Cornell 的 class-level 收益同时减少 Actor/Texas/Wisconsin 退化。
+- 下一轮应优先尝试 GRACE InfoNCE + small RR regularizer，或 view/region-level adaptive redundancy reduction。
 - 本目录中的 SGFN / context-gated SGFN 只作为负结果、诊断工具和消融资产保留。

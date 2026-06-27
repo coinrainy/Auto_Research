@@ -465,3 +465,17 @@
   - 保留资产：prototype consistency / balance objective 代码、prototype usage 诊断日志、normal/shuffled target control；若继续 prototype 路线，应改为 EMA prototype、high-confidence assignment 或 structure-aware prototype。
   - 已验证命令：`python -m py_compile train.py summarize_runs.py model.py`、`bash -n scripts/run_split_study.sh`、`python train.py --dataset Texas --method pccl --seed 0 --split-index 0 --epochs 3 --warmup-epochs 1 --pccl-kmeans-iters 3 --save-dir /tmp/pccl_smoke_conservative --overwrite --skip-eval --log-every 1`。
   - 下一步建议命令：暂不继续 PCCL 扩展；下一轮优先探索 view selection decision 或 redundancy-reduction objective，而不是即时 KMeans prototype imitation。
+- 2026-06-28 RR-GCL 候选实现与条件性保留：
+  - 已新增研究日志：`docs/rr_gcl_candidate_research_log.md`。
+  - 已快速核查 redundancy-reduction 文献边界：CCA-SSG、Graph Barlow Twins、Barlow Twins 已覆盖 negative-free / redundancy reduction，因此当前 RR-GCL 不能宣称原创空白，只作为当前协议下的条件性候选线索。
+  - 已在 `experiments/grace_idea/train.py` 中新增 `--method rr_gcl`，实现 Barlow/CCA 风格 cross-correlation redundancy-reduction objective。
+  - RR-GCL 机制：使用 GRACE 原增强视图；对两个 view 的 projection features 做 feature-wise 标准化；cross-correlation matrix 对角项逼近 1、非对角项逼近 0；不使用 InfoNCE、负样本、teacher 或 prototype。
+  - 已新增/记录参数：`--rr-offdiag-weight`、`--rr-loss-scale`；`--shuffle-weights` 在 RR-GCL 中表示打乱 positive node correspondence。
+  - 已更新 `scripts/run_split_study.sh` 与 `summarize_runs.py`，支持 RR-GCL normal/shuffled 批跑与汇总。
+  - 已完成 RR-GCL sanity：Texas/Cornell/Wisconsin/Actor × splits 0-2 × seed0 × 100 epochs，共 36 个 run，全部 completed。
+  - 汇总文件：`experiments/grace_idea/runs/summaries/rr_gcl_splits0-2_seed0_e100_paired.csv` 与 `experiments/grace_idea/runs/summaries/rr_gcl_splits0-2_seed0_e100_aggregate.csv`。
+  - RR-GCL normal 相对 GRACE：Actor F1Mi/F1Ma -0.003509/-0.023657；Cornell +0.036036/+0.082584；Texas 0.000000/-0.051877；Wisconsin -0.006536/-0.016696。
+  - RR-GCL normal - shuffled：Actor +0.015351/+0.050111；Cornell +0.009009/+0.016352；Texas +0.027027/-0.007387；Wisconsin -0.019608/-0.037842。
+  - 当前判断：RR-GCL 是目前最有价值的条件性线索，Cornell 上 normal 同时优于 GRACE 与 shuffled，且五个类别平均 delta 全部非负；但 Actor/Texas/Wisconsin 不稳，尤其 macro 退化明显，不能作为 active SOTA candidate。
+  - 下一步建议：不要扩裸 RR-GCL 到 10 splits；先实现 hybrid objective（GRACE InfoNCE + small RR regularizer）或 adaptive RR mixing，目标是保留 Cornell 的 class-level 收益，同时减少 Actor/Texas/Wisconsin 退化。
+  - 已验证命令：`python -m py_compile train.py summarize_runs.py model.py`、`bash -n scripts/run_split_study.sh`、`python train.py --dataset Texas --method rr_gcl --seed 0 --split-index 0 --epochs 3 --save-dir /tmp/rr_gcl_smoke --overwrite --skip-eval --log-every 1`。

@@ -43,6 +43,7 @@ def parse_args():
                             'spectral_mix',
                             'pbcl',
                             'pccl',
+                            'rr_gcl',
                         ])
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--epochs', type=int, default=None)
@@ -86,6 +87,8 @@ def parse_args():
     parser.add_argument('--pccl-target-temperature', type=float, default=0.1)
     parser.add_argument('--pccl-consistency-weight', type=float, default=0.05)
     parser.add_argument('--pccl-balance-weight', type=float, default=0.01)
+    parser.add_argument('--rr-offdiag-weight', type=float, default=0.005)
+    parser.add_argument('--rr-loss-scale', type=float, default=1.0)
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -119,12 +122,12 @@ def validate_args(args):
     if args.shuffle_weights and args.random_weights:
         raise ValueError('Use at most one of --shuffle-weights and --random-weights.')
     if (args.shuffle_weights or args.random_weights) and args.method not in [
-            'es_weighted', 'sgfn', 'pbcl', 'pccl']:
+            'es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl']:
         raise ValueError('Weight controls are only valid with weighted methods.')
 
 
 def weight_control_name(args):
-    if args.method not in ['es_weighted', 'sgfn', 'pbcl', 'pccl']:
+    if args.method not in ['es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl']:
         return 'none'
     if args.shuffle_weights:
         return 'shuffled'
@@ -625,6 +628,41 @@ def false_negative_attraction_loss(z1, z2, pair_keep_weights):
     return (risk * distance).sum() / risk_sum
 
 
+def off_diagonal(matrix):
+    num_rows, num_cols = matrix.shape
+    if num_rows != num_cols:
+        raise ValueError('off_diagonal expects a square matrix.')
+    return matrix.flatten()[:-1].view(num_rows - 1, num_rows + 1)[:, 1:].flatten()
+
+
+def redundancy_reduction_objective(model, z1, z2, args, epoch):
+    h1 = model.projection(z1)
+    h2 = model.projection(z2)
+    if args.shuffle_weights:
+        generator = make_control_generator(args, epoch)
+        permutation = torch.randperm(h2.size(0), generator=generator).to(h2.device)
+        h2 = h2[permutation]
+    elif args.random_weights:
+        generator = make_control_generator(args, epoch)
+        h2 = torch.randn(h2.shape, generator=generator).to(h2.device, dtype=h2.dtype)
+
+    h1 = (h1 - h1.mean(0)) / h1.std(0, unbiased=False).clamp_min(1e-4)
+    h2 = (h2 - h2.mean(0)) / h2.std(0, unbiased=False).clamp_min(1e-4)
+    cross_correlation = torch.mm(h1.t(), h2) / h1.size(0)
+    on_diag = (torch.diagonal(cross_correlation) - 1.0).pow(2).sum()
+    off_diag = off_diagonal(cross_correlation).pow(2).sum()
+    loss = args.rr_loss_scale * (on_diag + args.rr_offdiag_weight * off_diag)
+    diagnostics = {
+        'rr_on_diag_loss': on_diag.item(),
+        'rr_off_diag_loss': off_diag.item(),
+        'rr_cross_corr_diag_mean': torch.diagonal(cross_correlation).mean().item(),
+        'rr_cross_corr_offdiag_mean_abs': (
+            off_diagonal(cross_correlation).abs().mean().item()
+        ),
+    }
+    return loss, diagnostics
+
+
 def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     model.train()
     optimizer.zero_grad()
@@ -661,14 +699,24 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         weights if args.method == 'es_weighted' and args.negative_weighting else None
     )
     pair_denominator_weights = weights if args.method == 'sgfn' else None
-    contrastive_loss = model.loss(
-        z1,
-        z2,
-        batch_size=args.batch_size,
-        pair_weights=pair_weights,
-        denominator_weights=denominator_weights,
-        pair_denominator_weights=pair_denominator_weights,
-    )
+    rr_diagnostics = {}
+    if args.method == 'rr_gcl':
+        contrastive_loss, rr_diagnostics = redundancy_reduction_objective(
+            model,
+            z1,
+            z2,
+            args,
+            epoch,
+        )
+    else:
+        contrastive_loss = model.loss(
+            z1,
+            z2,
+            batch_size=args.batch_size,
+            pair_weights=pair_weights,
+            denominator_weights=denominator_weights,
+            pair_denominator_weights=pair_denominator_weights,
+        )
     attraction_loss = z1.new_tensor(0.0)
     prototype_consistency_loss = z1.new_tensor(0.0)
     prototype_balance_loss = z1.new_tensor(0.0)
@@ -700,6 +748,8 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     stage = 'weighted' if use_weighting else 'warmup_or_grace'
     if args.method == 'pccl' and epoch > args.warmup_epochs:
         stage = 'prototype'
+    if args.method == 'rr_gcl':
+        stage = 'redundancy_reduction'
     log = {
         'loss': loss.item(),
         'contrastive_loss': contrastive_loss.item(),
@@ -710,6 +760,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         'weight_control': weight_control_name(args),
     }
     log.update(prototype_diagnostics)
+    log.update(rr_diagnostics)
     if weights is not None:
         log.update({
             'weight_mean': weights.mean().item(),
@@ -754,7 +805,13 @@ def prepare_save_dir(args, seed):
     control = weight_control_name(args)
     control_suffix = (
         f'_{control}'
-        if args.method in ['es_weighted', 'sgfn', 'pbcl', 'pccl'] and control != 'normal'
+        if args.method in [
+            'es_weighted',
+            'sgfn',
+            'pbcl',
+            'pccl',
+            'rr_gcl',
+        ] and control != 'normal'
         else ''
     )
     run_name = f'{args.dataset}_{args.method}{control_suffix}_seed{seed}{split_suffix}'
@@ -784,6 +841,10 @@ def append_train_log(run_dir, row):
         'prototype_usage_entropy',
         'prototype_usage_max',
         'prototype_usage_min',
+        'rr_on_diag_loss',
+        'rr_off_diag_loss',
+        'rr_cross_corr_diag_mean',
+        'rr_cross_corr_offdiag_mean_abs',
         'stage',
         'weight_mean',
         'weight_std',
@@ -915,6 +976,8 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'pccl_target_temperature': args.pccl_target_temperature,
         'pccl_consistency_weight': args.pccl_consistency_weight,
         'pccl_balance_weight': args.pccl_balance_weight,
+        'rr_offdiag_weight': args.rr_offdiag_weight,
+        'rr_loss_scale': args.rr_loss_scale,
         'pair_shuffle_mode': args.pair_shuffle_mode,
         'pair_normalization': args.pair_normalization,
         'pair_reallocation_alpha': args.pair_reallocation_alpha,
@@ -1028,6 +1091,12 @@ def main():
                 f'pccl_consistency_weight={args.pccl_consistency_weight}, '
                 f'pccl_balance_weight={args.pccl_balance_weight}'
             )
+    if args.method == 'rr_gcl':
+        print(
+            f'(I) | rr_offdiag_weight={args.rr_offdiag_weight}, '
+            f'rr_loss_scale={args.rr_loss_scale}, '
+            f'positive_control={weight_control_name(args)}'
+        )
     if args.method == 'spectral_mix':
         print(
             f'(I) | spectral_mix_mode={args.spectral_mix_mode}, '
