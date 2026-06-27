@@ -12,11 +12,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.transforms as T
 import yaml
-from torch_geometric.datasets import CitationFull, Planetoid
+from torch_geometric.datasets import Actor, CitationFull, Planetoid, WebKB
 from torch_geometric.nn import GCNConv
 from yaml import SafeLoader
 
-from eval import label_classification
+from eval import label_classification, label_classification_with_masks
 from model import Encoder, Model, drop_feature
 
 try:
@@ -45,6 +45,9 @@ def parse_args():
     parser.add_argument('--skip-eval', action='store_true')
     parser.add_argument('--save-dir', type=str, default=None)
     parser.add_argument('--log-every', type=int, default=1)
+    parser.add_argument('--split-index', type=int, default=0)
+    parser.add_argument('--eval-mode', type=str, default='auto',
+                        choices=['auto', 'random', 'mask'])
     return parser.parse_args()
 
 
@@ -65,10 +68,46 @@ def get_device(gpu_id):
 
 
 def get_dataset(path, name):
-    assert name in ['Cora', 'CiteSeer', 'PubMed', 'DBLP']
-    pyg_name = 'dblp' if name == 'DBLP' else name
-    dataset_cls = CitationFull if pyg_name == 'dblp' else Planetoid
-    return dataset_cls(path, pyg_name, transform=T.NormalizeFeatures())
+    if name in ['Cora', 'CiteSeer', 'PubMed', 'DBLP']:
+        pyg_name = 'dblp' if name == 'DBLP' else name
+        dataset_cls = CitationFull if pyg_name == 'dblp' else Planetoid
+        return dataset_cls(path, pyg_name, transform=T.NormalizeFeatures())
+    if name in ['Texas', 'Cornell', 'Wisconsin']:
+        return WebKB(path, name, transform=T.NormalizeFeatures())
+    if name == 'Actor':
+        return Actor(path, transform=T.NormalizeFeatures())
+    raise ValueError(f'Unsupported dataset: {name}')
+
+
+def select_mask(mask, split_index):
+    if mask is None:
+        return None
+    if mask.dim() == 1:
+        return mask.bool()
+    if split_index < 0 or split_index >= mask.size(1):
+        raise ValueError(
+            f'split_index={split_index} is out of range for mask with '
+            f'{mask.size(1)} splits.'
+        )
+    return mask[:, split_index].bool()
+
+
+def get_split_masks(data, split_index):
+    if not all(hasattr(data, attr) for attr in ['train_mask', 'val_mask', 'test_mask']):
+        return None, None, None
+    return (
+        select_mask(data.train_mask, split_index),
+        select_mask(data.val_mask, split_index),
+        select_mask(data.test_mask, split_index),
+    )
+
+
+def should_use_mask_eval(args, data):
+    if args.eval_mode == 'random':
+        return False
+    has_masks = all(hasattr(data, attr) for attr in ['train_mask', 'val_mask', 'test_mask'])
+    heterophily_dataset = args.dataset in ['Texas', 'Cornell', 'Wisconsin', 'Actor']
+    return args.eval_mode == 'mask' or (args.eval_mode == 'auto' and has_masks and heterophily_dataset)
 
 
 def build_model(config, dataset, device):
@@ -179,7 +218,9 @@ def prepare_save_dir(args, seed):
         return None
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
-    run_name = f'{args.dataset}_{args.method}_seed{seed}'
+    split_dataset = args.dataset in ['Texas', 'Cornell', 'Wisconsin', 'Actor']
+    split_suffix = f'_split{args.split_index}' if args.eval_mode == 'mask' or split_dataset else ''
+    run_name = f'{args.dataset}_{args.method}_seed{seed}{split_suffix}'
     run_dir = save_dir / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
@@ -244,6 +285,11 @@ def save_artifacts(run_dir, model, data, embeddings, final_weights, args, config
     torch.save({
         'embeddings': embeddings.detach().cpu(),
         'labels': data.y.detach().cpu(),
+        'train_mask': (
+            data.train_mask.detach().cpu() if hasattr(data, 'train_mask') else None
+        ),
+        'val_mask': data.val_mask.detach().cpu() if hasattr(data, 'val_mask') else None,
+        'test_mask': data.test_mask.detach().cpu() if hasattr(data, 'test_mask') else None,
         'final_weights': None if final_weights is None else final_weights.detach().cpu(),
         'model_state_dict': model.state_dict(),
         'args': vars(args),
@@ -263,6 +309,7 @@ def main():
     path = osp.join(osp.expanduser('~'), 'datasets', args.dataset)
     dataset = get_dataset(path, args.dataset)
     data = dataset[0].to(device)
+    train_mask, val_mask, test_mask = get_split_masks(data, args.split_index)
 
     model = build_model(config, dataset, device)
     teacher = build_teacher(model) if args.method == 'es_weighted' else None
@@ -273,7 +320,10 @@ def main():
     )
     run_dir = prepare_save_dir(args, seed)
 
-    print(f'(I) | dataset={args.dataset}, method={args.method}, seed={seed}, device={device}')
+    print(
+        f'(I) | dataset={args.dataset}, method={args.method}, seed={seed}, '
+        f'split_index={args.split_index}, device={device}'
+    )
     if args.method == 'es_weighted':
         print(
             f'(I) | warmup_epochs={args.warmup_epochs}, ema_decay={args.ema_decay}, '
@@ -318,12 +368,21 @@ def main():
     embeddings = encode(model, data)
     eval_stats = None
     if not args.skip_eval:
-        eval_stats = label_classification(
-            embeddings,
-            data.y,
-            ratio=args.eval_ratio,
-            random_state=seed,
-        )
+        if should_use_mask_eval(args, data):
+            eval_stats = label_classification_with_masks(
+                embeddings,
+                data.y,
+                train_mask,
+                val_mask,
+                test_mask,
+            )
+        else:
+            eval_stats = label_classification(
+                embeddings,
+                data.y,
+                ratio=args.eval_ratio,
+                random_state=seed,
+            )
     save_eval_summary(run_dir, eval_stats)
     save_metadata(run_dir, args, config, seed, device, eval_stats)
     save_artifacts(run_dir, model, data, embeddings, final_weights, args, config)

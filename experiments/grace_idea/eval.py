@@ -51,6 +51,72 @@ def print_statistics(statistics, function_name):
             print()
 
 
+def format_statistics(values, function_name):
+    statistics = {
+        key: {
+            'mean': value,
+            'std': 0.0,
+        }
+        for key, value in values.items()
+    }
+    print_statistics(statistics, function_name)
+    return statistics
+
+
+def _to_numpy_masks(mask):
+    if mask is None:
+        return None
+    return mask.detach().cpu().numpy().astype(bool)
+
+
+def _fit_logreg(X_train, y_train, c_value):
+    clf = LogisticRegression(solver='lbfgs', C=c_value, max_iter=1000)
+    clf.fit(X_train, y_train)
+    return clf
+
+
+def label_classification_with_masks(embeddings, y, train_mask, val_mask, test_mask):
+    X = embeddings.detach().cpu().numpy()
+    Y = y.detach().cpu().numpy()
+    X = normalize(X, norm='l2')
+
+    train_mask = _to_numpy_masks(train_mask)
+    val_mask = _to_numpy_masks(val_mask)
+    test_mask = _to_numpy_masks(test_mask)
+
+    c_values = 2.0 ** np.arange(-10, 10)
+    best_c = c_values[0]
+    best_score = -1.0
+
+    if val_mask is not None and val_mask.any():
+        for c_value in c_values:
+            clf = _fit_logreg(X[train_mask], Y[train_mask], c_value)
+            y_val_pred = clf.predict(X[val_mask])
+            score = f1_score(Y[val_mask], y_val_pred, average='micro')
+            if score > best_score:
+                best_score = score
+                best_c = c_value
+    else:
+        logreg = LogisticRegression(solver='lbfgs', max_iter=1000)
+        clf = GridSearchCV(
+            estimator=logreg,
+            param_grid=dict(C=c_values),
+            n_jobs=8,
+            cv=5,
+            verbose=0,
+        )
+        clf.fit(X[train_mask], Y[train_mask])
+        best_c = clf.best_params_['C']
+
+    clf = _fit_logreg(X[train_mask], Y[train_mask], best_c)
+    y_pred = clf.predict(X[test_mask])
+    values = {
+        'F1Mi': f1_score(Y[test_mask], y_pred, average='micro'),
+        'F1Ma': f1_score(Y[test_mask], y_pred, average='macro'),
+    }
+    return format_statistics(values, 'label_classification_with_masks')
+
+
 @repeat(3)
 def label_classification(embeddings, y, ratio, random_state=None):
     X = embeddings.detach().cpu().numpy()

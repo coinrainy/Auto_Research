@@ -38,7 +38,22 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 
 正式实验前仍需补齐：
 
-- heterophily 数据集加载与 Geom-GCN split 支持；
 - GRACE baseline 与 `es_weighted` 的同 split / 同 seed 对齐脚本；
+- reliability 与 downstream error、degree、local homophily 的独立诊断；
+- negative weighting 的 false-negative pressure 诊断。
+
+## 当前实验入口能力
+
+- 支持 Planetoid/CitationFull：`Cora`、`CiteSeer`、`PubMed`、`DBLP`。
+- 支持异配数据集：`Texas`、`Cornell`、`Wisconsin`、`Actor`。
+- 支持 `--split-index` 选择 PyG 提供的二维 split mask。
+- `--eval-mode auto` 对异配数据集默认使用固定 `train/val/test` mask；对原 GRACE 数据集保持随机 linear probe。
+- `--eval-mode mask` 可强制使用 mask 评估。
+- `--eval-mode random` 可强制使用原 GRACE 风格随机 linear probe。
+
+近期需要补齐：
+
+- GRACE baseline 与 `es_weighted` 的批量对齐脚本；
+- per-class F1 / confusion matrix 诊断；
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
 - negative weighting 的 false-negative pressure 诊断。

@@ -267,3 +267,11 @@
   - Cora seeds 0-2 mini sweep：GRACE F1Mi mean=0.824948、F1Ma mean=0.810003；`es_weighted` F1Mi mean=0.825039、F1Ma mean=0.810086；paired delta mean 约 +0.000091/+0.000083。
   - 当前解释：Cora 上基本支持 non-degradation，但没有性能收益；final reliability weight mean 约 0.984，说明 homophily Cora 上 embedding stability 权重趋于饱和、区分度有限。
   - 下一步建议：补 `experiments/grace_idea/train.py` 的 heterophily dataset 与 split 支持，再跑 Texas/Cornell/Wisconsin/Actor 的 matched GRACE vs `es_weighted` 对照。
+- 2026-06-27 Heterophily split 0 sanity：
+  - 已在 `experiments/grace_idea/train.py` 中支持 `Texas/Cornell/Wisconsin/Actor`，新增 `--split-index` 与 `--eval-mode auto|random|mask`。
+  - 已在 `experiments/grace_idea/eval.py` 中新增固定 split 评估：train mask 训练 logistic regression、val mask 选 `C`、test mask 报告 F1。
+  - 已验证 Texas smoke：固定 split eval 可运行且无 sklearn warning。
+  - 已执行 Texas/Cornell/Wisconsin/Actor × split0 × seed0 × 100 epochs 的 matched GRACE vs `es_weighted + negative_weighting` sanity；Actor 使用 `--batch-size 1024`。
+  - split0 结果：Texas F1Mi +0.000000 / F1Ma +0.105238；Cornell +0.000000 / +0.007519；Wisconsin +0.019608 / +0.007113；Actor +0.003947 / +0.005631。
+  - 当前解释：单 split 单 seed 不能作为稳定结论，但四个异配数据集未出现负向，值得继续扩展到 splits 0-2；Texas macro-F1 变化需要 per-class F1/confusion matrix 诊断。
+  - 下一步建议：跑 `split_index=0,1,2`、`seed=0`、100 epoch 的 matched sanity，并补 per-class F1 / confusion matrix。
