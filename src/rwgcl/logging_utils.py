@@ -62,10 +62,11 @@ def append_csv(path: str | Path, row: dict, fieldnames: list[str]) -> None:
         with target.open("r", newline="", encoding="utf-8") as handle:
             reader = csv.DictReader(handle)
             old_fieldnames = list(reader.fieldnames or [])
-            if old_fieldnames and any(field not in old_fieldnames for field in fieldnames):
-                merged_fieldnames = old_fieldnames + [
-                    field for field in fieldnames if field not in old_fieldnames
+            if old_fieldnames:
+                merged_fieldnames = fieldnames + [
+                    field for field in old_fieldnames if field not in fieldnames
                 ]
+            if old_fieldnames and old_fieldnames != merged_fieldnames:
                 old_rows = list(reader)
                 with target.open("w", newline="", encoding="utf-8") as rewrite_handle:
                     writer = csv.DictWriter(rewrite_handle, fieldnames=merged_fieldnames)

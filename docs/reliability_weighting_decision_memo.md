@@ -211,11 +211,11 @@ METHOD_CONFIG=configs/methods/rw_gcl_degree_gate.yaml METHOD_NAME=rw_gcl_degree_
 这些实验不涉及路线 A/B 选择，应优先完成：
 
 - 已实现 split-aware runner：同时记录 `dataset`、`split_index`、`model_seed`，并把 `split_index` 写入 metrics 与汇总表。
-- 待复跑小规模标准 split sanity：Texas、Chameleon、Squirrel、Actor × `split_index=0..2` × `model_seed=0`，先观察结论是否跨 split 存在。
+- 已复跑小规模标准 split sanity：Texas、Chameleon、Squirrel、Actor × `split_index=0..2` × `model_seed=0`。
 - 已增加独立诊断入口 `downstream_error`：在保存的 embeddings 上重新训练线性探针，输出 bucket-wise test accuracy/error 与 reliability-error correlation。
 - 已修正命名：新结果使用 `projection_distribution_consistency`，旧 `prediction_consistency` 仅作为兼容 alias；后续论文中不得把它表述为分类预测一致性。
 - 已增加 reliability component ablation 配置：`configs/methods/rw_gcl_embedding_only.yaml` 与 `configs/methods/rw_gcl_projection_only.yaml`。
-- 仍暂缓 random reliability 与 degree gate，直到 split-aware 复跑和 component ablation 有结果。
+- 仍暂缓 random reliability 与 degree gate；split-aware 复跑已经显示 combined 方法没有跨 split 稳定正向，component ablation 暂时更支持 embedding-stability-only。
 
 建议的 split sanity 命令：
 
@@ -235,12 +235,59 @@ DATASETS="Texas Chameleon Squirrel Actor" SPLITS="0 1 2" SEEDS="0" EPOCHS=70 EVA
 python summarize_method_comparison.py --rw-summary results/diagnostics/reliability_pair_summary_split_sanity.csv --baseline-runs results/diagnostics/grace_runs_split_sanity.csv --baseline-method grace --out results/diagnostics/rw_gcl_vs_grace_split_sanity.csv --aggregate-out results/diagnostics/rw_gcl_vs_grace_aggregate_split_sanity.csv
 ```
 
+### 2026-06-27 Split Sanity 结果
+
+范围：Texas、Chameleon、Squirrel、Actor × `split_index=0,1,2` × `model_seed=0`。每个 split 跑 RW-GCL normal、RW-GCL shuffled 与 GRACE baseline。
+
+| Dataset | combined normal - GRACE | combined normal - shuffled | Projection consistency gap | Interpretation |
+|---|---:|---:|---:|---|
+| Texas | -0.009009 | 0.000000 | 0.082731 | split 0 正向，但 split 2 负向，跨 split 不稳定 |
+| Chameleon | -0.003655 | +0.000731 | 0.153936 | 原 10-seed 弱正向不跨 split 成立 |
+| Squirrel | -0.006724 | +0.000961 | 0.205979 | projection gap 强，但 accuracy 负向 |
+| Actor | +0.003290 | +0.000658 | 0.085416 | 很小正向，证据弱 |
+
+关键解释：
+
+- combined reliability 不支持继续声称 Texas/Chameleon 有稳定跨 split 正向效果。
+- projection consistency gap 仍稳定为正，但它是 reliability 组成项，不是独立语义证据。
+- 这次结果进一步支持用户此前指出的问题：projection consistency 能解释投影/视图稳定性，但不能稳定解释分类收益。
+
+### Split-aware 机制诊断
+
+| Dataset | FN pressure weighted - unweighted | High-low FN pressure gap | high-low degree gap | downstream high-low error |
+|---|---:|---:|---:|---:|
+| Texas | -0.001079 | -0.073571 | -1.081967 | +0.022619 |
+| Chameleon | +0.000099 | +0.009936 | +4.668862 | -0.045605 |
+| Squirrel | +0.000008 | +0.003066 | +2.294545 | -0.090182 |
+| Actor | -0.000210 | -0.012763 | +1.171791 | +0.068593 |
+
+解释边界：
+
+- Texas 仍有 false-negative pressure 下降信号，但 downstream error 与 accuracy 不支持稳定正向。
+- Chameleon/Squirrel 的 high reliability bucket downstream error 更低，但 false-negative pressure 不下降，说明下游错误改善与 InfoNCE false-negative 机制没有直接对应。
+- Actor 的高 reliability bucket downstream error 更高，说明 reliability 不能被解释为通用“分类可靠性”。
+- degree bias 仍存在于 Chameleon/Squirrel/Actor，但在 combined 方法不稳定时不应立即做 degree gate。
+
+### Component Ablation 结果
+
+| Variant | Texas | Chameleon | Squirrel | Actor | Summary |
+|---|---:|---:|---:|---:|---|
+| combined | -0.009009 | -0.003655 | -0.006724 | +0.003290 | 不稳定，不能作为主方法继续扩大 |
+| embedding only | +0.009009 | 0.000000 | +0.002241 | +0.003728 | 当前小窗口里最干净，但效果很小 |
+| projection only | -0.009009 | -0.005848 | -0.000320 | -0.001316 | 不支持作为 reliability 主信号 |
+
+当前实验含义：
+
+- `projection_distribution_consistency` 应从主 reliability 定义中移除或降级为辅助诊断，不宜作为主方法信号。
+- 若继续方法路线，最小候选应改为 `embedding_stability_only`，而不是 combined reliability 或 degree gate。
+- 由于 embedding-only 效果很小，下一步必须扩展到更多 splits / seeds 和 homophily safety 后才能判断是否值得作为方法论文推进。
+
 ### 仍需用户确认的分岔
 
-完成上述修正后再二选一：
+完成上述修正后，分岔应更新为：
 
-- A：若跨 split 后 Texas/Chameleon 仍有正向，且 degree bias 诊断继续明显，再做 degree/local graph-aware gate。
-- B：若跨 split 结果消失，或机制证据仍只停留在 view/projection stability，则转为机制诊断论文或收缩为负结果/方法边界研究。
+- A1：把主方法收缩为 `embedding_stability_only`，先跑 10 splits / 多 seed 与 homophily safety，确认微弱正向是否真实。
+- B：放弃当前 positive reliability-weighted 方法主线，转为机制诊断/负结果论文路线，强调 projection stability 与分类语义可靠性错位。
 
 旧 route A 建议保留为候选，但不再作为立即执行项：
 
