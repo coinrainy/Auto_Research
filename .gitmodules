@@ -1,0 +1,3 @@
+[submodule "baselines/GRACE"]
+	path = baselines/GRACE
+	url = https://github.com/CRIPAC-DIG/GRACE.git

@@ -240,3 +240,7 @@
   - 当前核心配置包括 `configs/methods/rw_gcl_two_stage.yaml`、`configs/methods/rw_gcl_embedding_only.yaml`、`configs/methods/rw_gcl_projection_only.yaml` 与 `configs/methods/grace.yaml`。
   - 当前实验决策文档为 `docs/reliability_weighting_decision_memo.md`；最新研究判断仍是：combined reliability 不应继续扩大，若继续方法路线应先人工确认是否转向 embedding-stability-only。
   - 工作区唯一未跟踪项为 `baselines/`，其中包含 GRACE baseline 代码；本轮识别未将其纳入提交。
+- 2026-06-27 baseline 跟踪更新：
+  - 已按用户要求跟踪 `baselines/`；由于 `baselines/GRACE` 本身是外部 Git 仓库，已作为 Git submodule 纳入父仓库。
+  - submodule 路径：`baselines/GRACE`；来源远程：`https://github.com/CRIPAC-DIG/GRACE.git`。
+  - 当前父仓库新增 `.gitmodules` 与 `baselines/GRACE` gitlink，用于记录 baseline 来源与版本。
