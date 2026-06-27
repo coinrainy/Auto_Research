@@ -205,3 +205,17 @@
   - 已更新 `docs/reliability_weighting_decision_memo.md`：原先“优先 route A degree gate”的推荐降级为“先修实验协议，再决定 A/B”。
   - 下一步 no-regret 任务：实现 split-aware runner 与结果汇总，把 `split_index` 写入 metrics；增加独立诊断（bucket-wise test accuracy/error、reliability vs downstream error、label-based negative pressure、degree/local homophily correlation）；做 embedding stability only / projection consistency only / combined reliability 组件消融。
   - 当前暂停事项：不继续扩大旧定义下的实验；暂缓 random reliability 与 degree gate，直到 projection consistency 命名或替换、split-aware 评估和独立诊断修正完成。
+- 2026-06-27 实验协议修复落地：
+  - 已将新运行的 run id 扩展为微秒时间戳 + `seed{model_seed}_split{split_index}`，降低短 smoke 和 split 批跑时的目录碰撞风险。
+  - 已在 scaffold、GRACE、RW-GCL trainer 的 metadata 与 `results/metrics/main_results.csv` 中写入 `model_seed` 与 `split_index`；`seed` 字段保留为模型随机种子以兼容旧脚本。
+  - 已修复 `append_csv` 表头迁移：当 metrics 旧表头缺少新增字段时自动扩列，避免把新行写坏。
+  - 已将当前误导性的 `prediction_consistency` 新命名为 `projection_distribution_consistency`；训练输出同时保留旧 alias 以兼容历史结果和旧分析脚本。
+  - 已新增 component ablation 配置：`configs/methods/rw_gcl_embedding_only.yaml` 与 `configs/methods/rw_gcl_projection_only.yaml`。
+  - 已将 `scripts/run_small_reliability_study.sh` 与 `scripts/run_baseline_study.sh` 改为 split-aware，新增 `SPLITS` 环境变量；默认仍为 `SPLITS=0`，旧规模不会自动扩大。若默认输出 CSV 已存在旧表头，脚本会要求换新 `PAIRS_PATH`/`RUNS_PATH`，避免混写。
+  - 已更新 `summarize_reliability_pairs.py` 与 `summarize_method_comparison.py`，按 `dataset + split_index + model_seed` 对齐 normal/shuffled/baseline，并新增 projection consistency gap 字段。
+  - 已新增 `downstream_error` 诊断：在保存的 embeddings 上重新训练线性探针，按 reliability bucket 输出 test accuracy/error 与 reliability-error correlation，作为比 view-consistency 更独立的下游诊断。
+  - 已更新 `analyze_failure_patterns.py` 与 `analyze_false_negative_pressure.py`，补充 `split_index`、`model_seed` 字段，并优先读取 `projection_distribution_consistency`。
+  - 已验证：`python -m compileall train.py eval.py diagnose.py summarize_reliability_pairs.py summarize_method_comparison.py analyze_failure_patterns.py analyze_false_negative_pressure.py src`、`bash -n scripts/run_small_reliability_study.sh && bash -n scripts/run_baseline_study.sh && bash -n scripts/run_diagnostics.sh`。
+  - 已验证 ablation 配置 scaffold：`python train.py --config configs/methods/rw_gcl_embedding_only.yaml --dataset Texas --seed 0 --split-index 0 --mode scaffold --results-dir /tmp/rwgcl_config_smoke` 与 `python train.py --config configs/methods/rw_gcl_projection_only.yaml --dataset Texas --seed 0 --split-index 0 --mode scaffold --results-dir /tmp/rwgcl_config_smoke`。
+  - 已完成端到端 smoke：`DATASETS=Texas SPLITS=0 SEEDS=0 WARMUP_EPOCHS=1 STAGE2_EPOCHS=1 EVAL_EPOCHS=5 RESULTS_DIR=/tmp/rwgcl_fix_smoke PAIRS_PATH=/tmp/rwgcl_fix_smoke/diagnostics/reliability_pair_runs.csv SUMMARY_PATH=/tmp/rwgcl_fix_smoke/diagnostics/reliability_pair_summary.csv bash scripts/run_small_reliability_study.sh`；随后运行短 GRACE baseline 并完成 `summarize_method_comparison.py` 对齐汇总。
+  - 下一步建议：先跑 split sanity，而不是 degree gate：`DATASETS="Texas Chameleon Squirrel Actor" SPLITS="0 1 2" SEEDS="0" WARMUP_EPOCHS=20 STAGE2_EPOCHS=50 EVAL_EPOCHS=50 PAIRS_PATH=results/diagnostics/reliability_pair_runs_split_sanity.csv SUMMARY_PATH=results/diagnostics/reliability_pair_summary_split_sanity.csv bash scripts/run_small_reliability_study.sh`。

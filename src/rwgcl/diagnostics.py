@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 
 import torch
+from torch import nn
+import torch.nn.functional as F
 
 from .config import PROJECT_ROOT
 from .logging_utils import ensure_dir, write_csv
@@ -17,6 +19,7 @@ AVAILABLE_DIAGNOSTICS = {
     "shuffled_reliability",
     "false_negative_mass",
     "view_consistency",
+    "downstream_error",
 }
 
 
@@ -54,20 +57,26 @@ def write_view_consistency(output_dir: str | Path, results_dir: str | Path, run_
     out_dir = ensure_dir(output_dir)
     out_path = out_dir / "view_consistency.csv"
     payload = load_run_payload(results_dir, run_id)
-    required = {"positive_reliability", "embedding_stability", "prediction_consistency"}
+    required = {"positive_reliability", "embedding_stability"}
     missing = sorted(required - set(payload.keys()))
+    consistency_key = "projection_distribution_consistency"
+    if consistency_key not in payload and "prediction_consistency" in payload:
+        consistency_key = "prediction_consistency"
+    if consistency_key not in payload:
+        missing.append("projection_distribution_consistency")
     if missing:
         rows = [
             {
                 "run_id": run_id,
+                "diagnostic_scope": "component_check_not_independent_evidence",
                 "bucket": "not_available",
                 "count": 0,
                 "reliability_mean": "",
                 "reliability_std": "",
                 "embedding_stability_mean": "",
                 "embedding_stability_std": "",
-                "prediction_consistency_mean": "",
-                "prediction_consistency_std": "",
+                "projection_distribution_consistency_mean": "",
+                "projection_distribution_consistency_std": "",
                 "status": "missing_artifact",
                 "notes": f"missing={','.join(missing)}",
             }
@@ -75,7 +84,7 @@ def write_view_consistency(output_dir: str | Path, results_dir: str | Path, run_
     else:
         reliability = payload["positive_reliability"].float()
         stability = payload["embedding_stability"].float()
-        consistency = payload["prediction_consistency"].float()
+        consistency = payload[consistency_key].float()
         order = torch.argsort(reliability)
         chunks = torch.chunk(order, 3)
         labels = ["low", "mid", "high"]
@@ -84,16 +93,20 @@ def write_view_consistency(output_dir: str | Path, results_dir: str | Path, run_
             rows.append(
                 {
                     "run_id": run_id,
+                    "diagnostic_scope": "component_check_not_independent_evidence",
                     "bucket": label,
                     "count": int(idx.numel()),
                     "reliability_mean": f"{float(reliability[idx].mean().item()):.6f}",
                     "reliability_std": f"{float(reliability[idx].std(unbiased=False).item()):.6f}",
                     "embedding_stability_mean": f"{float(stability[idx].mean().item()):.6f}",
                     "embedding_stability_std": f"{float(stability[idx].std(unbiased=False).item()):.6f}",
-                    "prediction_consistency_mean": f"{float(consistency[idx].mean().item()):.6f}",
-                    "prediction_consistency_std": f"{float(consistency[idx].std(unbiased=False).item()):.6f}",
+                    "projection_distribution_consistency_mean": f"{float(consistency[idx].mean().item()):.6f}",
+                    "projection_distribution_consistency_std": f"{float(consistency[idx].std(unbiased=False).item()):.6f}",
                     "status": "computed",
-                    "notes": "bucketed by positive_reliability",
+                    "notes": (
+                        "bucketed by positive_reliability; this checks reliability components "
+                        "and is not independent semantic evidence"
+                    ),
                 }
             )
     write_csv(
@@ -101,14 +114,15 @@ def write_view_consistency(output_dir: str | Path, results_dir: str | Path, run_
         rows,
         [
             "run_id",
+            "diagnostic_scope",
             "bucket",
             "count",
             "reliability_mean",
             "reliability_std",
             "embedding_stability_mean",
             "embedding_stability_std",
-            "prediction_consistency_mean",
-            "prediction_consistency_std",
+            "projection_distribution_consistency_mean",
+            "projection_distribution_consistency_std",
             "status",
             "notes",
         ],
@@ -133,8 +147,11 @@ def write_reliability_summary(output_dir: str | Path, results_dir: str | Path, r
         "notes",
     ]
     rows = []
-    for key in ["positive_reliability", "embedding_stability", "prediction_consistency"]:
-        if key not in payload:
+    for key in ["positive_reliability", "embedding_stability", "projection_distribution_consistency"]:
+        payload_key = key
+        if key == "projection_distribution_consistency" and payload_key not in payload:
+            payload_key = "prediction_consistency"
+        if payload_key not in payload:
             rows.append(
                 {
                     "run_id": run_id,
@@ -149,7 +166,7 @@ def write_reliability_summary(output_dir: str | Path, results_dir: str | Path, r
                 }
             )
             continue
-        values = payload[key].float()
+        values = payload[payload_key].float()
         rows.append(
             {
                 "run_id": run_id,
@@ -247,6 +264,138 @@ def write_false_negative_mass(output_dir: str | Path, run_id: str) -> Path:
     return out_path
 
 
+def _bucket_indices(values: torch.Tensor) -> list[tuple[str, torch.Tensor]]:
+    chunks = torch.chunk(torch.argsort(values), 3)
+    return list(zip(["low", "mid", "high"], chunks))
+
+
+def _pearson(x: torch.Tensor, y: torch.Tensor) -> float | None:
+    if x.numel() < 2 or y.numel() < 2:
+        return None
+    x_centered = x.float() - x.float().mean()
+    y_centered = y.float() - y.float().mean()
+    denom = x_centered.norm() * y_centered.norm()
+    if float(denom.item()) == 0.0:
+        return None
+    return float((x_centered * y_centered).sum().div(denom).item())
+
+
+def _format_float(value: float | None) -> str:
+    if value is None:
+        return ""
+    return f"{value:.6f}"
+
+
+def _linear_probe_logits(payload: dict, epochs: int = 100) -> torch.Tensor:
+    embeddings = payload["embeddings"].float()
+    labels = payload["labels"].long()
+    train_mask = payload["train_mask"].bool()
+    num_classes = int(labels.max().item()) + 1
+    torch.manual_seed(0)
+    classifier = nn.Linear(embeddings.size(1), num_classes)
+    optimizer = torch.optim.Adam(classifier.parameters(), lr=0.01)
+    for _ in range(epochs):
+        classifier.train()
+        optimizer.zero_grad()
+        logits = classifier(embeddings)
+        loss = F.cross_entropy(logits[train_mask], labels[train_mask])
+        loss.backward()
+        optimizer.step()
+    classifier.eval()
+    with torch.no_grad():
+        return classifier(embeddings)
+
+
+def write_downstream_error(output_dir: str | Path, results_dir: str | Path, run_id: str) -> Path:
+    out_dir = ensure_dir(output_dir)
+    out_path = out_dir / "downstream_error.csv"
+    payload = load_run_payload(results_dir, run_id)
+    required = {"embeddings", "labels", "test_mask", "train_mask", "positive_reliability"}
+    missing = sorted(required - set(payload.keys()))
+    rows = []
+    if missing:
+        rows.append(
+            {
+                "run_id": run_id,
+                "bucket": "not_available",
+                "count": 0,
+                "test_count": 0,
+                "reliability_mean": "",
+                "test_accuracy": "",
+                "test_error_rate": "",
+                "reliability_error_corr": "",
+                "status": "missing_artifact",
+                "notes": f"missing={','.join(missing)}",
+            }
+        )
+    else:
+        labels = payload["labels"].long()
+        reliability = payload["positive_reliability"].float()
+        test_mask = payload["test_mask"].bool()
+        logits = _linear_probe_logits(payload)
+        correct = (logits.argmax(dim=1) == labels).float()
+        error = 1.0 - correct
+        test_reliability = reliability[test_mask]
+        test_error = error[test_mask]
+        corr = _pearson(test_reliability, test_error)
+        if int(test_mask.sum().item()) > 0:
+            rows.append(
+                {
+                    "run_id": run_id,
+                    "bucket": "all_test",
+                    "count": int(reliability.numel()),
+                    "test_count": int(test_mask.sum().item()),
+                    "reliability_mean": f"{float(test_reliability.mean().item()):.6f}",
+                    "test_accuracy": f"{float(correct[test_mask].mean().item()):.6f}",
+                    "test_error_rate": f"{float(test_error.mean().item()):.6f}",
+                    "reliability_error_corr": _format_float(corr),
+                    "status": "computed",
+                    "notes": "independent diagnostic; linear probe on saved embeddings",
+                }
+            )
+        for bucket, idx in _bucket_indices(reliability):
+            bucket_test = idx[test_mask[idx]]
+            if bucket_test.numel() == 0:
+                accuracy = None
+                error_rate = None
+                reliability_mean = None
+            else:
+                accuracy = float(correct[bucket_test].mean().item())
+                error_rate = float(error[bucket_test].mean().item())
+                reliability_mean = float(reliability[bucket_test].mean().item())
+            rows.append(
+                {
+                    "run_id": run_id,
+                    "bucket": bucket,
+                    "count": int(idx.numel()),
+                    "test_count": int(bucket_test.numel()),
+                    "reliability_mean": _format_float(reliability_mean),
+                    "test_accuracy": _format_float(accuracy),
+                    "test_error_rate": _format_float(error_rate),
+                    "reliability_error_corr": _format_float(corr),
+                    "status": "computed",
+                    "notes": "bucketed by positive_reliability; label-based downstream diagnostic only",
+                }
+            )
+    write_csv(
+        out_path,
+        rows,
+        [
+            "run_id",
+            "bucket",
+            "count",
+            "test_count",
+            "reliability_mean",
+            "test_accuracy",
+            "test_error_rate",
+            "reliability_error_corr",
+            "status",
+            "notes",
+        ],
+    )
+    return out_path
+
+
 def run_diagnostic(
     output_dir: str | Path,
     results_dir: str | Path,
@@ -264,4 +413,6 @@ def run_diagnostic(
         return write_shuffled_reliability(output_dir, results_dir, run_id, compare_run_id)
     if diagnostic == "false_negative_mass":
         return write_false_negative_mass(output_dir, run_id)
+    if diagnostic == "downstream_error":
+        return write_downstream_error(output_dir, results_dir, run_id)
     raise AssertionError(f"Unhandled diagnostic: {diagnostic}")

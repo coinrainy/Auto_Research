@@ -1,7 +1,7 @@
 method:
-  name: rw_gcl_two_stage
+  name: rw_gcl_projection_only
   trainer: rw_gcl
-  stage: proposed
+  stage: ablation
 encoder:
   type: gcn
   hidden_dim: 256
@@ -14,8 +14,8 @@ augmentation:
   stage2_feature_mask: 0.2
 reliability:
   positive:
-    embedding_stability_weight: 0.5
-    projection_distribution_consistency_weight: 0.5
+    embedding_stability_weight: 0.0
+    projection_distribution_consistency_weight: 1.0
     prediction_temperature: 0.2
     prediction_confidence_power: 0.25
   negative:

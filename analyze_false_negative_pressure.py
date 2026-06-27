@@ -180,7 +180,9 @@ def summarize_run(row: dict, results_dir: str | Path, temperature: float, chunk_
     if missing:
         run_row = {
             "dataset": row.get("dataset", ""),
+            "split_index": row.get("split_index", ""),
             "seed": row.get("seed", ""),
+            "model_seed": row.get("model_seed", row.get("seed", "")),
             "run_id": run_id,
             "status": "missing_artifact",
             "notes": f"missing={','.join(missing)}",
@@ -207,7 +209,9 @@ def summarize_run(row: dict, results_dir: str | Path, temperature: float, chunk_
 
     run_row = {
         "dataset": row.get("dataset", ""),
+        "split_index": row.get("split_index", ""),
         "seed": row.get("seed", ""),
+        "model_seed": row.get("model_seed", row.get("seed", "")),
         "run_id": run_id,
         "rw_normal_minus_grace": row.get("rw_normal_minus_grace", ""),
         "rw_normal_minus_shuffled": row.get("rw_normal_minus_shuffled", ""),
@@ -228,7 +232,9 @@ def summarize_run(row: dict, results_dir: str | Path, temperature: float, chunk_
         bucket_rows.append(
             {
                 "dataset": row.get("dataset", ""),
+                "split_index": row.get("split_index", ""),
                 "seed": row.get("seed", ""),
+                "model_seed": row.get("model_seed", row.get("seed", "")),
                 "run_id": run_id,
                 "bucket": bucket,
                 "count": str(int(idx.numel())),
@@ -322,7 +328,9 @@ def main() -> int:
 
     run_fieldnames = [
         "dataset",
+        "split_index",
         "seed",
+        "model_seed",
         "run_id",
         "rw_normal_minus_grace",
         "rw_normal_minus_shuffled",
@@ -337,7 +345,9 @@ def main() -> int:
     ]
     bucket_fieldnames = [
         "dataset",
+        "split_index",
         "seed",
+        "model_seed",
         "run_id",
         "bucket",
         "count",

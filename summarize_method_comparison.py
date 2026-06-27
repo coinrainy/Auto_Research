@@ -108,20 +108,26 @@ def value_from_summary_or_metrics(summary_row: dict, key: str, metrics: dict[str
     return metric_value(metrics, summary_row.get(run_id_key, ""))
 
 
-def baseline_index(rows: list[dict], run_column: str) -> dict[tuple[str, str], str]:
-    indexed: dict[tuple[str, str], str] = {}
+def run_key(row: dict) -> tuple[str, str, str]:
+    dataset = row.get("dataset", "")
+    split_index = row.get("split_index", "")
+    model_seed = row.get("model_seed", "") or row.get("seed", "")
+    return dataset, split_index, model_seed
+
+
+def baseline_index(rows: list[dict], run_column: str) -> dict[tuple[str, str, str], str]:
+    indexed: dict[tuple[str, str, str], str] = {}
     for row in rows:
-        dataset = row.get("dataset", "")
-        seed = row.get("seed", "")
         run_id = row.get(run_column, "") or row.get("baseline_run_id", "") or row.get("run_id", "")
-        if dataset and seed != "" and run_id:
-            indexed[(dataset, seed)] = run_id
+        key = run_key(row)
+        if key[0] and key[2] != "" and run_id:
+            indexed[key] = run_id
     return indexed
 
 
 def compare_rows(
     rw_rows: list[dict],
-    baseline_runs: dict[tuple[str, str], str],
+    baseline_runs: dict[tuple[str, str, str], str],
     metrics: dict[str, dict],
     baseline: str,
 ) -> list[dict]:
@@ -133,10 +139,12 @@ def compare_rows(
 
     for rw_row in rw_rows:
         dataset = rw_row.get("dataset", "")
+        split_index = rw_row.get("split_index", "")
         seed = rw_row.get("seed", "")
+        model_seed = rw_row.get("model_seed", "") or seed
         normal_run_id = rw_row.get("normal_run_id", "")
         shuffled_run_id = rw_row.get("shuffled_run_id", "")
-        baseline_run_id = baseline_runs.get((dataset, seed), "")
+        baseline_run_id = baseline_runs.get((dataset, split_index, model_seed), "")
 
         normal_accuracy = value_from_summary_or_metrics(rw_row, "normal_accuracy", metrics, "normal_run_id")
         shuffled_accuracy = value_from_summary_or_metrics(rw_row, "shuffled_accuracy", metrics, "shuffled_run_id")
@@ -168,7 +176,9 @@ def compare_rows(
         rows.append(
             {
                 "dataset": dataset,
+                "split_index": split_index,
                 "seed": seed,
+                "model_seed": model_seed,
                 "rw_normal_run_id": normal_run_id,
                 "rw_shuffled_run_id": shuffled_run_id,
                 baseline_run_col: baseline_run_id,
@@ -178,6 +188,10 @@ def compare_rows(
                 normal_minus_baseline_col: format_float(normal_minus_baseline),
                 shuffled_minus_baseline_col: format_float(shuffled_minus_baseline),
                 "rw_normal_minus_shuffled": format_float(normal_minus_shuffled),
+                "projection_distribution_consistency_gap": (
+                    rw_row.get("normal_projection_distribution_consistency_gap")
+                    or rw_row.get("normal_view_consistency_gap", "")
+                ),
                 "view_consistency_gap": rw_row.get("normal_view_consistency_gap", ""),
                 "status": status,
             }
@@ -231,6 +245,7 @@ def aggregate_rows(rows: list[dict], baseline: str) -> list[dict]:
         baseline_acc = floats_from_rows(group, baseline_accuracy_col)
         normal_minus_baseline = floats_from_rows(group, normal_minus_baseline_col)
         normal_minus_shuffled = floats_from_rows(group, "rw_normal_minus_shuffled")
+        projection_gaps = floats_from_rows(group, "projection_distribution_consistency_gap")
         view_gaps = floats_from_rows(group, "view_consistency_gap")
         pos, zero, neg = count_signs(normal_minus_baseline)
         aggregate.append(
@@ -247,6 +262,7 @@ def aggregate_rows(rows: list[dict], baseline: str) -> list[dict]:
                 normal_minus_baseline_col + "_negative_count": str(neg),
                 "rw_normal_minus_shuffled_mean": format_float(mean(normal_minus_shuffled)),
                 "rw_normal_minus_shuffled_std": format_float(pstdev(normal_minus_shuffled)),
+                "projection_distribution_consistency_gap_mean": format_float(mean(projection_gaps)),
                 "view_consistency_gap_mean": format_float(mean(view_gaps)),
                 "view_consistency_gap_min": format_float(min(view_gaps) if view_gaps else None),
                 "view_consistency_gap_max": format_float(max(view_gaps) if view_gaps else None),
@@ -283,7 +299,9 @@ def main() -> int:
 
     row_fieldnames = [
         "dataset",
+        "split_index",
         "seed",
+        "model_seed",
         "rw_normal_run_id",
         "rw_shuffled_run_id",
         f"{baseline}_run_id",
@@ -293,6 +311,7 @@ def main() -> int:
         f"rw_normal_minus_{baseline}",
         f"rw_shuffled_minus_{baseline}",
         "rw_normal_minus_shuffled",
+        "projection_distribution_consistency_gap",
         "view_consistency_gap",
         "status",
     ]
@@ -309,6 +328,7 @@ def main() -> int:
         f"rw_normal_minus_{baseline}_negative_count",
         "rw_normal_minus_shuffled_mean",
         "rw_normal_minus_shuffled_std",
+        "projection_distribution_consistency_gap_mean",
         "view_consistency_gap_mean",
         "view_consistency_gap_min",
         "view_consistency_gap_max",

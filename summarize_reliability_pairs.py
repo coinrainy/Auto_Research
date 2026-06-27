@@ -96,6 +96,21 @@ def summary_value(metadata: dict, key: str) -> str:
     return f"{float(value):.6f}"
 
 
+def row_value(*values: object) -> str:
+    for value in values:
+        if value not in (None, ""):
+            return str(value)
+    return ""
+
+
+def consistency_key(payload: dict) -> str | None:
+    if "projection_distribution_consistency" in payload:
+        return "projection_distribution_consistency"
+    if "prediction_consistency" in payload:
+        return "prediction_consistency"
+    return None
+
+
 def mean_at(values: torch.Tensor, idx: torch.Tensor) -> float | None:
     if idx.numel() == 0:
         return None
@@ -103,22 +118,25 @@ def mean_at(values: torch.Tensor, idx: torch.Tensor) -> float | None:
 
 
 def view_consistency_gaps(payload: dict) -> dict[str, str]:
-    required = {"positive_reliability", "embedding_stability", "prediction_consistency"}
-    if not required.issubset(payload.keys()):
+    key = consistency_key(payload)
+    required = {"positive_reliability", "embedding_stability"}
+    if key is None or not required.issubset(payload.keys()):
         return {
             "view_reliability_gap": "",
             "view_stability_gap": "",
             "view_consistency_gap": "",
+            "projection_consistency_gap": "",
         }
     reliability = payload["positive_reliability"].float()
     stability = payload["embedding_stability"].float()
-    consistency = payload["prediction_consistency"].float()
+    consistency = payload[key].float()
     chunks = torch.chunk(torch.argsort(reliability), 3)
     if len(chunks) < 3:
         return {
             "view_reliability_gap": "",
             "view_stability_gap": "",
             "view_consistency_gap": "",
+            "projection_consistency_gap": "",
         }
     low_idx, high_idx = chunks[0], chunks[-1]
     low_reliability = mean_at(reliability, low_idx)
@@ -127,6 +145,9 @@ def view_consistency_gaps(payload: dict) -> dict[str, str]:
     high_stability = mean_at(stability, high_idx)
     low_consistency = mean_at(consistency, low_idx)
     high_consistency = mean_at(consistency, high_idx)
+    projection_gap = format_float(
+        None if low_consistency is None or high_consistency is None else high_consistency - low_consistency
+    )
     return {
         "view_reliability_gap": format_float(
             None if low_reliability is None or high_reliability is None else high_reliability - low_reliability
@@ -134,9 +155,8 @@ def view_consistency_gaps(payload: dict) -> dict[str, str]:
         "view_stability_gap": format_float(
             None if low_stability is None or high_stability is None else high_stability - low_stability
         ),
-        "view_consistency_gap": format_float(
-            None if low_consistency is None or high_consistency is None else high_consistency - low_consistency
-        ),
+        "view_consistency_gap": projection_gap,
+        "projection_consistency_gap": projection_gap,
     }
 
 
@@ -156,7 +176,19 @@ def summarize_pair(pair: dict, metrics: dict[str, dict], results_dir: str | Path
         delta = normal_accuracy - shuffled_accuracy
     return {
         "dataset": pair.get("dataset", ""),
+        "split_index": row_value(
+            pair.get("split_index"),
+            normal_metric.get("split_index"),
+            normal_meta.get("split_index"),
+            normal_meta.get("dataset", {}).get("split_index") if normal_meta else "",
+        ),
         "seed": pair.get("seed", ""),
+        "model_seed": row_value(
+            pair.get("model_seed"),
+            normal_metric.get("model_seed"),
+            normal_meta.get("model_seed"),
+            pair.get("seed"),
+        ),
         "normal_run_id": normal_run_id,
         "shuffled_run_id": shuffled_run_id,
         "normal_accuracy": format_float(normal_accuracy),
@@ -167,13 +199,24 @@ def summarize_pair(pair: dict, metrics: dict[str, dict], results_dir: str | Path
         "shuffled_reliability_mean": summary_value(shuffled_meta, "reliability_mean"),
         "shuffled_reliability_std": summary_value(shuffled_meta, "reliability_std"),
         "normal_embedding_stability_mean": summary_value(normal_meta, "embedding_stability_mean"),
-        "normal_prediction_consistency_mean": summary_value(normal_meta, "prediction_consistency_mean"),
+        "normal_projection_distribution_consistency_mean": row_value(
+            summary_value(normal_meta, "projection_distribution_consistency_mean"),
+            summary_value(normal_meta, "prediction_consistency_mean"),
+        ),
+        "normal_prediction_consistency_mean": row_value(
+            summary_value(normal_meta, "prediction_consistency_mean"),
+            summary_value(normal_meta, "projection_distribution_consistency_mean"),
+        ),
         "normal_view_reliability_gap": gaps["view_reliability_gap"],
         "normal_view_stability_gap": gaps["view_stability_gap"],
+        "normal_projection_distribution_consistency_gap": gaps["projection_consistency_gap"],
         "normal_view_consistency_gap": gaps["view_consistency_gap"],
         "normal_status": normal_metric.get("status", ""),
         "shuffled_status": shuffled_metric.get("status", ""),
-        "notes": "positive reliability only; accuracy_delta = normal - shuffled",
+        "notes": (
+            "positive reliability only; accuracy_delta = normal - shuffled; "
+            "projection consistency is a reliability component, not independent semantic evidence"
+        ),
     }
 
 
@@ -188,7 +231,9 @@ def main() -> int:
     rows = [summarize_pair(pair, metrics, args.results_dir) for pair in pairs]
     fieldnames = [
         "dataset",
+        "split_index",
         "seed",
+        "model_seed",
         "normal_run_id",
         "shuffled_run_id",
         "normal_accuracy",
@@ -199,9 +244,11 @@ def main() -> int:
         "shuffled_reliability_mean",
         "shuffled_reliability_std",
         "normal_embedding_stability_mean",
+        "normal_projection_distribution_consistency_mean",
         "normal_prediction_consistency_mean",
         "normal_view_reliability_gap",
         "normal_view_stability_gap",
+        "normal_projection_distribution_consistency_gap",
         "normal_view_consistency_gap",
         "normal_status",
         "shuffled_status",

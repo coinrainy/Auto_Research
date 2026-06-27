@@ -210,11 +210,30 @@ METHOD_CONFIG=configs/methods/rw_gcl_degree_gate.yaml METHOD_NAME=rw_gcl_degree_
 
 这些实验不涉及路线 A/B 选择，应优先完成：
 
-- 实现 split-aware runner：同时记录 `dataset`、`split_index`、`model_seed`，并把 `split_index` 写入 metrics 与汇总表。
-- 复跑小规模标准 split sanity：Texas、Chameleon、Squirrel、Actor × `split_index=0..2` × `model_seed=0`，先观察结论是否跨 split 存在。
-- 增加独立诊断：bucket-wise test accuracy/error、reliability vs downstream error、label-based same-class negative pressure、degree/local homophily correlation，而不是只看组成分数的 high-low gap。
-- 做 reliability component ablation：embedding stability only、projection consistency only、combined reliability，判断当前收益来自哪个信号。
-- 暂缓 random reliability 与 degree gate，直到 projection consistency 的命名或替换完成。
+- 已实现 split-aware runner：同时记录 `dataset`、`split_index`、`model_seed`，并把 `split_index` 写入 metrics 与汇总表。
+- 待复跑小规模标准 split sanity：Texas、Chameleon、Squirrel、Actor × `split_index=0..2` × `model_seed=0`，先观察结论是否跨 split 存在。
+- 已增加独立诊断入口 `downstream_error`：在保存的 embeddings 上重新训练线性探针，输出 bucket-wise test accuracy/error 与 reliability-error correlation。
+- 已修正命名：新结果使用 `projection_distribution_consistency`，旧 `prediction_consistency` 仅作为兼容 alias；后续论文中不得把它表述为分类预测一致性。
+- 已增加 reliability component ablation 配置：`configs/methods/rw_gcl_embedding_only.yaml` 与 `configs/methods/rw_gcl_projection_only.yaml`。
+- 仍暂缓 random reliability 与 degree gate，直到 split-aware 复跑和 component ablation 有结果。
+
+建议的 split sanity 命令：
+
+```bash
+DATASETS="Texas Chameleon Squirrel Actor" SPLITS="0 1 2" SEEDS="0" WARMUP_EPOCHS=20 STAGE2_EPOCHS=50 EVAL_EPOCHS=50 PAIRS_PATH=results/diagnostics/reliability_pair_runs_split_sanity.csv SUMMARY_PATH=results/diagnostics/reliability_pair_summary_split_sanity.csv bash scripts/run_small_reliability_study.sh
+```
+
+对应 GRACE baseline：
+
+```bash
+DATASETS="Texas Chameleon Squirrel Actor" SPLITS="0 1 2" SEEDS="0" EPOCHS=70 EVAL_EPOCHS=50 RUNS_PATH=results/diagnostics/grace_runs_split_sanity.csv bash scripts/run_baseline_study.sh
+```
+
+对齐汇总：
+
+```bash
+python summarize_method_comparison.py --rw-summary results/diagnostics/reliability_pair_summary_split_sanity.csv --baseline-runs results/diagnostics/grace_runs_split_sanity.csv --baseline-method grace --out results/diagnostics/rw_gcl_vs_grace_split_sanity.csv --aggregate-out results/diagnostics/rw_gcl_vs_grace_aggregate_split_sanity.csv
+```
 
 ### 仍需用户确认的分岔
 

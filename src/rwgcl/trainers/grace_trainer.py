@@ -100,6 +100,8 @@ class GRACETrainer(BaseTrainer):
             "method": self.method_config,
             "dataset": stats,
             "seed": self.seed,
+            "model_seed": self.seed,
+            "split_index": self.split_index,
             "trainer": self.trainer_name,
             "device": str(device),
             "elapsed_seconds": elapsed,
@@ -133,10 +135,16 @@ class GRACETrainer(BaseTrainer):
                 "method": self.method_name,
                 "trainer": self.trainer_name,
                 "seed": self.seed,
+                "model_seed": self.seed,
+                "split_index": self.split_index,
                 "metric": self.dataset_spec.metric,
                 "value": f"{probe['test_accuracy']:.6f}",
                 "status": "completed",
-                "notes": f"val_accuracy={probe['val_accuracy']:.6f}; elapsed_seconds={elapsed:.2f}",
+                "notes": (
+                    f"val_accuracy={probe['val_accuracy']:.6f}; "
+                    f"elapsed_seconds={elapsed:.2f}; "
+                    f"split_index={self.split_index}; model_seed={self.seed}"
+                ),
             },
             [
                 "run_id",
@@ -145,6 +153,8 @@ class GRACETrainer(BaseTrainer):
                 "method",
                 "trainer",
                 "seed",
+                "model_seed",
+                "split_index",
                 "metric",
                 "value",
                 "status",

@@ -194,13 +194,20 @@ def bucket_indices(reliability: torch.Tensor) -> list[torch.Tensor]:
 def bucket_rows_for_run(row: dict, profile: dict[str, Any], results_dir: str | Path) -> list[dict]:
     run_id = row.get("rw_normal_run_id", "")
     payload = run_payload(results_dir, run_id)
-    required = {"positive_reliability", "embedding_stability", "prediction_consistency", "labels"}
+    consistency_key = "projection_distribution_consistency"
+    if consistency_key not in payload and "prediction_consistency" in payload:
+        consistency_key = "prediction_consistency"
+    required = {"positive_reliability", "embedding_stability", "labels"}
     missing = sorted(required - set(payload.keys()))
+    if consistency_key not in payload:
+        missing.append("projection_distribution_consistency")
     if missing:
         return [
             {
                 "dataset": row.get("dataset", ""),
+                "split_index": row.get("split_index", ""),
                 "seed": row.get("seed", ""),
+                "model_seed": row.get("model_seed", row.get("seed", "")),
                 "bucket": "not_available",
                 "status": "missing_artifact",
                 "notes": f"missing={','.join(missing)}",
@@ -209,7 +216,7 @@ def bucket_rows_for_run(row: dict, profile: dict[str, Any], results_dir: str | P
 
     reliability = payload["positive_reliability"].float()
     stability = payload["embedding_stability"].float()
-    consistency = payload["prediction_consistency"].float()
+    consistency = payload[consistency_key].float()
     labels = payload["labels"].long()
     train_mask = payload.get("train_mask", torch.zeros_like(labels, dtype=torch.bool)).bool()
     val_mask = payload.get("val_mask", torch.zeros_like(labels, dtype=torch.bool)).bool()
@@ -227,7 +234,9 @@ def bucket_rows_for_run(row: dict, profile: dict[str, Any], results_dir: str | P
         rows.append(
             {
                 "dataset": row.get("dataset", ""),
+                "split_index": row.get("split_index", ""),
                 "seed": row.get("seed", ""),
+                "model_seed": row.get("model_seed", row.get("seed", "")),
                 "run_id": run_id,
                 "bucket": bucket,
                 "count": str(int(idx.numel())),
@@ -235,6 +244,7 @@ def bucket_rows_for_run(row: dict, profile: dict[str, Any], results_dir: str | P
                 "rw_normal_minus_shuffled": row.get("rw_normal_minus_shuffled", ""),
                 "reliability_mean": format_float(tensor_mean(reliability[idx])),
                 "embedding_stability_mean": format_float(tensor_mean(stability[idx])),
+                "projection_distribution_consistency_mean": format_float(tensor_mean(consistency[idx])),
                 "prediction_consistency_mean": format_float(tensor_mean(consistency[idx])),
                 "degree_mean": format_float(tensor_mean(bucket_degree)),
                 "degree_std": format_float(tensor_std(bucket_degree)),
@@ -328,7 +338,9 @@ def run_summary_rows(bucket_rows: list[dict]) -> list[dict]:
         rows.append(
             {
                 "dataset": dataset,
+                "split_index": group[0].get("split_index", ""),
                 "seed": seed,
+                "model_seed": group[0].get("model_seed", seed),
                 "run_id": run_id,
                 "rw_normal_minus_grace": group[0].get("rw_normal_minus_grace", ""),
                 "rw_normal_minus_shuffled": group[0].get("rw_normal_minus_shuffled", ""),
@@ -337,6 +349,9 @@ def run_summary_rows(bucket_rows: list[dict]) -> list[dict]:
                 "graph_local_homophily_mean": group[0].get("graph_local_homophily_mean", ""),
                 "high_low_reliability_gap": format_float(high_low_gap(group, "reliability_mean")),
                 "high_low_embedding_stability_gap": format_float(high_low_gap(group, "embedding_stability_mean")),
+                "high_low_projection_distribution_consistency_gap": format_float(
+                    high_low_gap(group, "projection_distribution_consistency_mean")
+                ),
                 "high_low_prediction_consistency_gap": format_float(high_low_gap(group, "prediction_consistency_mean")),
                 "high_low_degree_gap": format_float(high_low_gap(group, "degree_mean")),
                 "high_low_local_homophily_gap": format_float(high_low_gap(group, "local_homophily_mean")),
@@ -365,7 +380,7 @@ def summary_rows(run_rows: list[dict]) -> list[dict]:
         summary.append(
             {
                 "dataset": dataset,
-                "runs": str(len({row.get("seed", "") for row in rows})),
+                "runs": str(len({row.get("run_id", "") for row in rows})),
                 "rw_normal_minus_grace_mean": format_float(mean(normal_minus_grace)),
                 "rw_normal_minus_grace_std": format_float(pstdev(normal_minus_grace)),
                 "rw_normal_minus_grace_positive_count": str(pos),
@@ -379,6 +394,9 @@ def summary_rows(run_rows: list[dict]) -> list[dict]:
                 "high_low_reliability_gap_mean": format_float(mean(values(rows, "high_low_reliability_gap"))),
                 "high_low_embedding_stability_gap_mean": format_float(
                     mean(values(rows, "high_low_embedding_stability_gap"))
+                ),
+                "high_low_projection_distribution_consistency_gap_mean": format_float(
+                    mean(values(rows, "high_low_projection_distribution_consistency_gap"))
                 ),
                 "high_low_prediction_consistency_gap_mean": format_float(
                     mean(values(rows, "high_low_prediction_consistency_gap"))
@@ -425,7 +443,9 @@ def main() -> int:
 
     bucket_fieldnames = [
         "dataset",
+        "split_index",
         "seed",
+        "model_seed",
         "run_id",
         "bucket",
         "count",
@@ -433,6 +453,7 @@ def main() -> int:
         "rw_normal_minus_shuffled",
         "reliability_mean",
         "embedding_stability_mean",
+        "projection_distribution_consistency_mean",
         "prediction_consistency_mean",
         "degree_mean",
         "degree_std",
@@ -465,6 +486,7 @@ def main() -> int:
         "graph_local_homophily_mean",
         "high_low_reliability_gap_mean",
         "high_low_embedding_stability_gap_mean",
+        "high_low_projection_distribution_consistency_gap_mean",
         "high_low_prediction_consistency_gap_mean",
         "high_low_degree_gap_mean",
         "high_low_local_homophily_gap_mean",
@@ -480,7 +502,9 @@ def main() -> int:
     ]
     run_fieldnames = [
         "dataset",
+        "split_index",
         "seed",
+        "model_seed",
         "run_id",
         "rw_normal_minus_grace",
         "rw_normal_minus_shuffled",
@@ -489,6 +513,7 @@ def main() -> int:
         "graph_local_homophily_mean",
         "high_low_reliability_gap",
         "high_low_embedding_stability_gap",
+        "high_low_projection_distribution_consistency_gap",
         "high_low_prediction_consistency_gap",
         "high_low_degree_gap",
         "high_low_local_homophily_gap",

@@ -183,7 +183,7 @@ class RWGCLTrainer(BaseTrainer):
                     "loss": f"{float(loss.item()):.6f}",
                     "metric": f"{summary['reliability_mean']:.6f}",
                     "status": "ok",
-                    "notes": "weighted_infonce_positive_only",
+                    "notes": "weighted_infonce_positive_only; projection_distribution_consistency_component",
                 }
             )
 
@@ -208,6 +208,8 @@ class RWGCLTrainer(BaseTrainer):
             "method": self.method_config,
             "dataset": stats,
             "seed": self.seed,
+            "model_seed": self.seed,
+            "split_index": self.split_index,
             "trainer": self.trainer_name,
             "device": str(device),
             "elapsed_seconds": elapsed,
@@ -255,6 +257,8 @@ class RWGCLTrainer(BaseTrainer):
                 "method": self.method_name,
                 "trainer": self.trainer_name,
                 "seed": self.seed,
+                "model_seed": self.seed,
+                "split_index": self.split_index,
                 "metric": self.dataset_spec.metric,
                 "value": f"{probe['test_accuracy']:.6f}",
                 "status": "completed",
@@ -262,7 +266,9 @@ class RWGCLTrainer(BaseTrainer):
                     f"val_accuracy={probe['val_accuracy']:.6f}; "
                     f"elapsed_seconds={elapsed:.2f}; "
                     f"reliability_mean={last_summary.get('reliability_mean', '')}; "
-                    f"shuffled_reliability={shuffled_control}"
+                    f"shuffled_reliability={shuffled_control}; "
+                    f"split_index={self.split_index}; model_seed={self.seed}; "
+                    "projection_distribution_consistency_component=true"
                 ),
             },
             [
@@ -272,6 +278,8 @@ class RWGCLTrainer(BaseTrainer):
                 "method",
                 "trainer",
                 "seed",
+                "model_seed",
+                "split_index",
                 "metric",
                 "value",
                 "status",

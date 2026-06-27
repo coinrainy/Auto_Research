@@ -43,7 +43,7 @@ class BaseTrainer:
         self.device_name = device
         self.split_index = split_index
         self.method_name = str(method_config.get("method", {}).get("name", self.trainer_name))
-        self.run_id = make_run_id(self.method_name, dataset_spec.name, seed)
+        self.run_id = make_run_id(self.method_name, dataset_spec.name, seed, split_index=split_index)
         self.run_dir = self.results_dir / "raw" / self.run_id
 
     def run(self, mode: str = "scaffold") -> RunResult:
@@ -62,6 +62,8 @@ class BaseTrainer:
             "method": self.method_config,
             "dataset": dataset_summary(self.dataset_spec),
             "seed": self.seed,
+            "model_seed": self.seed,
+            "split_index": self.split_index,
             "trainer": self.trainer_name,
             "encoder": encoder_from_config(self.method_config.get("encoder", {})).__dict__,
             "loss": loss_summary(self.method_config),
@@ -92,6 +94,8 @@ class BaseTrainer:
                 "method": self.method_name,
                 "trainer": self.trainer_name,
                 "seed": self.seed,
+                "model_seed": self.seed,
+                "split_index": self.split_index,
                 "metric": self.dataset_spec.metric,
                 "value": "",
                 "status": "scaffold_only",
@@ -104,6 +108,8 @@ class BaseTrainer:
                 "method",
                 "trainer",
                 "seed",
+                "model_seed",
+                "split_index",
                 "metric",
                 "value",
                 "status",
