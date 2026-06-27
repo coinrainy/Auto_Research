@@ -413,3 +413,15 @@
   - 决策：context-gated SGFN 也未通过最低标准；正式停止 teacher-similarity false-negative attenuation 主线，不再围绕该 idea 做小修小补。
   - 保留资产：pair denominator weighting、shuffled pair control、label-only false-negative pressure 诊断、context gate 实现与负结果。
   - 下一步建议：重新构思 GCL idea，不再默认以 false-negative attenuation 为核心；优先寻找能改变 representation objective 或 augmentation semantics 的新机制。
+- 2026-06-28 Adaptive Spectral Mix GCL 候选实现与初筛：
+  - 已新增研究日志：`docs/spectral_mix_candidate_research_log.md`。
+  - 新候选 idea 从 false-negative attenuation 转向 view semantics：在 GRACE 的随机 edge drop / feature drop 之外，引入局部自适应 low/high-pass feature mix。
+  - 已在 `experiments/grace_idea/train.py` 中新增 `--method spectral_mix`，支持 `--spectral-mix-mode adaptive|low|high|random`、`--spectral-mix-temperature`、`--spectral-mix-jitter`、`--spectral-high-scale`。
+  - 已在 `experiments/grace_idea/summarize_runs.py` 中支持 `--target-method spectral_mix` 汇总。
+  - 当前机制：用邻域均值近似低频特征，用节点特征减邻域均值近似高频残差；局部特征一致性越高越偏向低频视图，一致性越低越保留高频残差；两个 view 通过相反方向的 jitter 形成差异。
+  - 已完成 `high_scale=1.0` 异配初筛：Actor F1Mi/F1Ma delta=-0.012061/-0.008575，Cornell +0.009009/-0.056450，Texas +0.009009/-0.002293，Wisconsin +0.013072/+0.112712；因 Cornell macro 退化大，不作为默认。
+  - 已完成 `high_scale=0.5` 异配初筛：Actor -0.003509/-0.001734，Cornell +0.099099/+0.051104，Texas +0.036036/+0.016846，Wisconsin -0.006536/+0.065409；这是当前最值得继续扩展的 active candidate。
+  - 已完成 homophily quick sanity：Cora F1Mi/F1Ma delta=-0.017364/-0.026928，CiteSeer -0.006678/-0.012850；没有灾难性退化，但不能声称 homophily non-degradation。
+  - 当前判断：`spectral_mix --spectral-high-scale 0.5` 比 SGFN 更有继续价值，但尚不能称为 SOTA；下一步必须扩展到 10 splits、补 Chameleon/Squirrel，并做 `adaptive` vs `low/high/random` ablation。
+  - 已验证命令：`python summarize_runs.py --runs-dir runs/spectral_mix_adaptive_hs05_homophily_seed0_e100 --target-method spectral_mix --paired-out runs/summaries/spectral_mix_adaptive_hs05_homophily_seed0_e100_paired.csv --aggregate-out runs/summaries/spectral_mix_adaptive_hs05_homophily_seed0_e100_aggregate.csv`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="grace spectral_mix" EPOCHS=100 SAVE_DIR="runs/spectral_mix_adaptive_hs05_splits0-9_seed0_e100" MANIFEST_PATH="runs/spectral_mix_adaptive_hs05_splits0-9_seed0_e100/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 TRAIN_EXTRA_ARGS="--spectral-mix-mode adaptive --spectral-mix-jitter 0.1 --spectral-high-scale 0.5" scripts/run_split_study.sh`。

@@ -6,7 +6,7 @@ from statistics import mean, pstdev
 
 
 RUN_PATTERN = re.compile(
-    r'^(?P<dataset>.+)_(?P<method>grace|es_weighted|sgfn)'
+    r'^(?P<dataset>.+)_(?P<method>grace|es_weighted|sgfn|spectral_mix)'
     r'(?:_(?P<variant>normal|shuffled|uniform_random|random))?_seed(?P<seed>\d+)'
     r'(?:_split(?P<split>\d+))?$'
 )
@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument('--paired-out', required=True)
     parser.add_argument('--aggregate-out', required=True)
     parser.add_argument('--target-method', default='es_weighted',
-                        choices=['es_weighted', 'sgfn'])
+                        choices=['es_weighted', 'sgfn', 'spectral_mix'])
     return parser.parse_args()
 
 
@@ -57,7 +57,7 @@ def load_runs(runs_dir):
         method = match.group('method')
         variant = match.group('variant')
         if variant is None:
-            variant = 'normal' if method in ['es_weighted', 'sgfn'] else 'baseline'
+            variant = 'baseline' if method == 'grace' else 'normal'
         row = {
             'dataset': match.group('dataset'),
             'method': method,

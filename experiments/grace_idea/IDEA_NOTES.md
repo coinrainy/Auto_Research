@@ -18,7 +18,8 @@
 
 - `--method grace`：保留原始 GRACE 训练路径。
 - `--method es_weighted`：embedding-stability weighted GRACE，保留为历史/对照路线。
-- `--method sgfn`：Stability-Guided False-Negative attenuation，当前主候选。
+- `--method sgfn`：Stability-Guided False-Negative attenuation，已降级为负结果/诊断资产。
+- `--method spectral_mix`：Adaptive Spectral Mix GCL，当前 active candidate。
 
 `es_weighted` 的设计边界：
 
@@ -58,6 +59,21 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - 已实现并筛选 context-gated false-negative calibration。`local_feature_degree + product` 在 Texas split0 early stop；`degree_inverse + anchor` 在 Texas/Cornell 有正向，但 Wisconsin 三个 split 全部 micro 退化、Actor 近零且 normal 低于 shuffled。
 - 当前决策：停止 teacher-similarity false-negative attenuation 主线。保留代码和诊断作为负结果资产，下一轮重新构思 GCL idea。
 
+`spectral_mix` 的设计边界：
+
+- 将 GRACE 的 view construction 从纯随机 feature drop 扩展为局部自适应 low/high-pass feature mix。
+- 用邻域均值近似低频特征，用节点特征减邻域均值近似高频残差。
+- `adaptive` gate 来自局部特征一致性；一致性高的节点更偏向低频视图，一致性低的节点保留更多高频残差。
+- 两个 view 通过 `--spectral-mix-jitter` 施加相反方向的小扰动，避免两个 spectral view 完全一致。
+- 当前推荐候选参数是 `--spectral-high-scale 0.5`，用于限制高频残差强度。
+
+`spectral_mix` 当前研究判断：
+
+- `high_scale=1.0` 在 Wisconsin macro 上明显正向，但 Cornell macro 退化大，不适合作为默认设置。
+- `high_scale=0.5` 在 Texas/Cornell 上出现较强正向，Wisconsin macro 正向但 micro 轻微负向，Actor 近零负向；这是目前最值得继续扩展的候选。
+- Cora/CiteSeer quick sanity 有小幅下降，因此暂不能声称 homophily non-degradation。
+- 当前定位是 heterophily-oriented augmentation candidate，而不是已完成的 SOTA 方法。
+
 正式实验前仍需补齐：
 
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
@@ -73,9 +89,10 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `--eval-mode random` 可强制使用原 GRACE 风格随机 linear probe。
 - `scripts/run_split_study.sh` 可通过 `DATASETS`、`SPLITS`、`SEEDS`、`METHODS`、`ES_CONTROLS` 做 split-aware 批跑。
 - `train_log.csv` 记录权重均值、方差、min/max 与 effective sample size ratio，用于判断 reliability 权重是否实质上接近等权。
-- `summarize_runs.py` 可从 `runs/` 目录生成 matched paired summary 与 dataset aggregate summary，并兼容 `es_weighted` / `sgfn` 的 normal、shuffled、uniform_random 控制组。
+- `summarize_runs.py` 可从 `runs/` 目录生成 matched paired summary 与 dataset aggregate summary，并兼容 `es_weighted` / `sgfn` / `spectral_mix` 的 normal、shuffled、uniform_random 控制组。
 - `analyze_pair_weights.py` 可对 `sgfn` run 做 label-only false-negative pressure 诊断；该诊断不参与训练，只用于机制验证。
 - `sgfn` 支持 `--fn-context-gate local_feature|degree_inverse|local_feature_degree` 与 `--fn-context-pair-mode product|min|anchor`，但当前筛选结果显示这些 gate 未能救活主线。
+- `spectral_mix` 支持 `--spectral-mix-mode adaptive|low|high|random`、`--spectral-mix-temperature`、`--spectral-mix-jitter` 与 `--spectral-high-scale`。
 
 示例 split-aware 命令：
 
@@ -88,6 +105,7 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 
 近期需要补齐：
 
-- 新研究问题构思，不再默认围绕 false-negative attenuation。
-- 若继续使用本工作副本，优先考虑不依赖 teacher pair-risk 的新 GCL 目标或增强机制。
+- 扩展 `spectral_mix high_scale=0.5` 到 10 splits，并补 Chameleon/Squirrel。
+- 做 `adaptive` vs `low` vs `high` vs `random` ablation，确认收益来自局部自适应 gate。
+- 做 homophily safety gate，避免 Cora/CiteSeer/PubMed 上小幅退化扩大。
 - 本目录中的 SGFN / context-gated SGFN 只作为负结果、诊断工具和消融资产保留。

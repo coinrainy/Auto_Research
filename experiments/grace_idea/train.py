@@ -36,7 +36,7 @@ def parse_args():
     parser.add_argument('--gpu_id', type=int, default=0)
     parser.add_argument('--config', type=str, default='config.yaml')
     parser.add_argument('--method', type=str, default='grace',
-                        choices=['grace', 'es_weighted', 'sgfn'])
+                        choices=['grace', 'es_weighted', 'sgfn', 'spectral_mix'])
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--batch-size', type=int, default=0)
@@ -62,6 +62,11 @@ def parse_args():
     parser.add_argument('--fn-degree-threshold', type=float, default=0.0)
     parser.add_argument('--fn-context-pair-mode', type=str, default='product',
                         choices=['product', 'min', 'anchor'])
+    parser.add_argument('--spectral-mix-mode', type=str, default='adaptive',
+                        choices=['adaptive', 'low', 'high', 'random'])
+    parser.add_argument('--spectral-mix-temperature', type=float, default=0.5)
+    parser.add_argument('--spectral-mix-jitter', type=float, default=0.1)
+    parser.add_argument('--spectral-high-scale', type=float, default=1.0)
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -179,11 +184,63 @@ def build_model(config, dataset, device):
     ).to(device)
 
 
-def make_views(data, config):
+@torch.no_grad()
+def neighbor_mean_features(x, edge_index):
+    source, target = edge_index
+    aggregate = torch.zeros_like(x)
+    degree = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
+    aggregate.index_add_(0, target, x[source])
+    degree.index_add_(0, target, torch.ones_like(target, dtype=x.dtype))
+    neighbor_mean = aggregate / degree.clamp_min(1.0).view(-1, 1)
+    return torch.where(degree.view(-1, 1) > 0, neighbor_mean, x)
+
+
+@torch.no_grad()
+def spectral_mix_gate(data, args):
+    if args.spectral_mix_mode == 'low':
+        return torch.ones(data.x.size(0), device=data.x.device, dtype=data.x.dtype)
+    if args.spectral_mix_mode == 'high':
+        return torch.zeros(data.x.size(0), device=data.x.device, dtype=data.x.dtype)
+    if args.spectral_mix_mode == 'random':
+        return torch.rand(data.x.size(0), device=data.x.device, dtype=data.x.dtype)
+
+    agreement = local_feature_agreement(data)
+    score = standardized_vector(agreement)
+    temperature = max(args.spectral_mix_temperature, 1e-12)
+    return torch.sigmoid(score / temperature).to(data.x.dtype)
+
+
+@torch.no_grad()
+def spectral_mix_features(data, args, view_index):
+    low = neighbor_mean_features(data.x.detach(), data.edge_index)
+    high = data.x.detach() - low
+    gate = spectral_mix_gate(data, args)
+    if args.spectral_mix_jitter > 0.0:
+        noise = (
+            torch.rand_like(gate)
+            * (2.0 * args.spectral_mix_jitter)
+            - args.spectral_mix_jitter
+        )
+        if view_index % 2 == 0:
+            gate = gate + noise
+        else:
+            gate = gate - noise
+    gate = gate.clamp(0.0, 1.0).view(-1, 1)
+    mixed = gate * low + (1.0 - gate) * args.spectral_high_scale * high
+    return mixed.to(data.x.dtype)
+
+
+def make_views(data, config, args):
     edge_index_1 = dropout_edge(data.edge_index, p=config['drop_edge_rate_1'])[0]
     edge_index_2 = dropout_edge(data.edge_index, p=config['drop_edge_rate_2'])[0]
-    x_1 = drop_feature(data.x, config['drop_feature_rate_1'])
-    x_2 = drop_feature(data.x, config['drop_feature_rate_2'])
+    if args.method == 'spectral_mix':
+        x_base_1 = spectral_mix_features(data, args, 1)
+        x_base_2 = spectral_mix_features(data, args, 2)
+    else:
+        x_base_1 = data.x
+        x_base_2 = data.x
+    x_1 = drop_feature(x_base_1, config['drop_feature_rate_1'])
+    x_2 = drop_feature(x_base_2, config['drop_feature_rate_2'])
     return x_1, edge_index_1, x_2, edge_index_2
 
 
@@ -429,7 +486,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     model.train()
     optimizer.zero_grad()
 
-    x_1, edge_index_1, x_2, edge_index_2 = make_views(data, config)
+    x_1, edge_index_1, x_2, edge_index_2 = make_views(data, config, args)
     z1 = model(x_1, edge_index_1)
     z2 = model(x_2, edge_index_2)
 
@@ -665,6 +722,10 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'fn_context_threshold': args.fn_context_threshold,
         'fn_degree_threshold': args.fn_degree_threshold,
         'fn_context_pair_mode': args.fn_context_pair_mode,
+        'spectral_mix_mode': args.spectral_mix_mode,
+        'spectral_mix_temperature': args.spectral_mix_temperature,
+        'spectral_mix_jitter': args.spectral_mix_jitter,
+        'spectral_high_scale': args.spectral_high_scale,
         'pair_shuffle_mode': args.pair_shuffle_mode,
         'pair_normalization': args.pair_normalization,
         'pair_reallocation_alpha': args.pair_reallocation_alpha,
@@ -753,6 +814,13 @@ def main():
                 f'pair_normalization={args.pair_normalization}, '
                 f'pair_reallocation_alpha={args.pair_reallocation_alpha}'
             )
+    if args.method == 'spectral_mix':
+        print(
+            f'(I) | spectral_mix_mode={args.spectral_mix_mode}, '
+            f'spectral_mix_temperature={args.spectral_mix_temperature}, '
+            f'spectral_mix_jitter={args.spectral_mix_jitter}, '
+            f'spectral_high_scale={args.spectral_high_scale}'
+        )
 
     start = t()
     prev = start
