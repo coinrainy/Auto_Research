@@ -7,7 +7,7 @@
 - Origin Date: 2026-06-27
 - Verification Status: ANALYZED
 - Version Label: decision_memo_v1
-- Evidence Scope: 本备忘录仅基于当前仓库已完成的 6 个 heterophily 数据集、10 seeds、GRACE baseline 与 RW-GCL normal/shuffled 对照结果。
+- Evidence Scope: 本备忘录基于当前仓库已完成的 6 个 heterophily 数据集与 3 个 homophily 数据集、10 seeds、GRACE baseline 与 RW-GCL normal/shuffled 对照结果。
 
 ## 当前判断
 
@@ -39,7 +39,7 @@
 | reliability weighting 能减少 false negatives | 未验证 | 当前实现只有 positive weighting，false negative mass 仍是 not applicable |
 | closed-loop augmentation 必要 | 未验证 | 当前仍是 two-stage fixed augmentation |
 | high/low-pass gate 是核心贡献 | 不支持 | 当前主方法没有 gate，且未做 gate ablation |
-| homophily non-degradation | 未完成 | Cora/CiteSeer/PubMed 尚未做 10-seed normal/shuffled/GRACE 对照 |
+| homophily non-degradation | 初步支持但有风险 | Cora/CiteSeer 基本不退化，PubMed 约 -0.0112 |
 
 ## 六数据集结果
 
@@ -51,6 +51,20 @@
 | Squirrel | -0.003554 | -0.003074 | 0.243694 | Failure / high-degree stress case |
 | Cornell | -0.016216 | -0.013514 | 0.112930 | Failure case |
 | Wisconsin | -0.027451 | -0.003922 | 0.116375 | Failure case |
+
+## Homophily Non-degradation
+
+| Dataset | normal - GRACE | normal - shuffled | view consistency gap | Current role |
+|---|---:|---:|---:|---|
+| Cora | +0.003300 | +0.001600 | 0.048800 | Non-degradation supported |
+| CiteSeer | +0.000100 | -0.002700 | 0.037227 | Essentially neutral |
+| PubMed | -0.011200 | +0.002800 | 0.071131 | Mild degradation risk |
+
+当前解释：
+
+- Cora 与 CiteSeer 支持“不显著伤害 homophily baseline”的安全性叙事。
+- PubMed 有约 1.12 个百分点下降，仍在早期设定的 1-2 个百分点观察带内，但不能写成完全无退化。
+- homophily 结果不支持继续把方法包装为全局提升器；更适合写成条件性方法，并在限制部分诚实说明 PubMed 风险。
 
 ## Failure Analysis 线索
 
@@ -96,6 +110,7 @@ r'_i = normalize_or_clip(r_i * gate_i)
 - Squirrel 或 Actor 任一数据集 normal - GRACE 提升到非负且 normal - shuffled 不再为负；
 - Texas normal - GRACE 不下降超过 0.01；
 - Chameleon normal - GRACE 保持非负；
+- Cora/CiteSeer/PubMed 的 mean degradation 不得比当前 two-stage 更差，PubMed 下降不超过 0.015；
 - view consistency gap 仍为正；
 - degree high-low gap 相比原方法有下降，说明 gate 确实改变了 failure analysis 指向的偏置。
 
@@ -104,6 +119,7 @@ r'_i = normalize_or_clip(r_i * gate_i)
 任一情况出现时停止堆模块：
 
 - Texas 正向信号被破坏；
+- PubMed 或任一 homophily 数据集退化超过 0.02；
 - Squirrel/Actor/Cornell/Wisconsin 没有任何改善；
 - shuffled reliability 与 normal reliability 结果接近或更好；
 - gate 只改善一个数据集但引入 2 个以上数据集明显退化；
@@ -128,7 +144,7 @@ DATASETS="Texas Chameleon Squirrel Actor" SEEDS="0 1 2" WARMUP_EPOCHS=20 STAGE2_
 最小补强内容：
 
 - 实现 negative weighting 或至少实现 label-based diagnostic false negative mass。
-- 做 homophily non-degradation：Cora/CiteSeer/PubMed × 10 seeds 的 GRACE / RW-GCL normal / shuffled。
+- 深化 homophily non-degradation：解释 PubMed 轻微退化，必要时加入 homophily-specific safety gate 或报告为限制。
 - 做 shuffled reliability 与 random reliability 的双 control。
 - 增加 reliability bucket 的 label agreement / false positive positive-pair risk 诊断。
 - 将 Wisconsin/Cornell/Squirrel 作为 honest negative results，而不是隐藏失败。
@@ -138,6 +154,7 @@ DATASETS="Texas Chameleon Squirrel Actor" SEEDS="0 1 2" WARMUP_EPOCHS=20 STAGE2_
 - 证明 reliability ranking 稳定对应 view consistency 与某类错误对比信号下降；
 - 证明 shuffled/random reliability 不能复制机制诊断；
 - homophily 数据集不显著退化；
+- PubMed 退化能被诊断解释，或通过 conservative setting 缓解；
 - performance claim 降级为 conditional improvement，而非 SOTA。
 
 ### 路线 B 停止标准
@@ -156,4 +173,3 @@ DATASETS="Texas Chameleon Squirrel Actor" SEEDS="0 1 2" WARMUP_EPOCHS=20 STAGE2_
 3. 若不满足路线 A 成功标准，立即停止方法扩展，切换路线 B。
 
 理由：当前 failure analysis 给出了一个非常具体、低成本、可证伪的假设；如果 degree gate 无效，就能快速证明“继续堆 gate”不值得。
-

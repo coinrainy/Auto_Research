@@ -173,3 +173,11 @@
   - 备忘录将当前证据边界写清楚：reliability ranking -> view consistency 的机制诊断在 6 个 heterophily 数据集上稳定成立，但 accuracy 收益只在 Texas/Chameleon 明显为正。
   - 备忘录明确了路线 A（最小 degree/local-graph-aware gate 方法实验）与路线 B（机制诊断论文路线）的成功标准、停止标准与建议命令。
   - 当前推荐但需用户人工确认：先走路线 A 的 degree-only gate ablation，限制为 Texas/Chameleon/Squirrel/Actor × seeds 0-2；若不满足成功标准，立即停止方法扩展并切换路线 B。
+- 2026-06-27 homophily non-degradation 补充实验：
+  - 已验证 Planetoid 数据加载：Cora 节点 2708、边 10556、edge label homophily=0.809966；CiteSeer 节点 3327、边 9104、edge label homophily=0.735501；PubMed 节点 19717、边 88648、edge label homophily=0.802387。
+  - 已执行 RW-GCL homophily 对照：`DATASETS="Cora CiteSeer PubMed" SEEDS="0 1 2 3 4 5 6 7 8 9" WARMUP_EPOCHS=20 STAGE2_EPOCHS=50 EVAL_EPOCHS=50 PAIRS_PATH=results/diagnostics/reliability_pair_runs_homophily_s0-9.csv SUMMARY_PATH=results/diagnostics/reliability_pair_summary_homophily_s0-9.csv bash scripts/run_small_reliability_study.sh`。
+  - 已执行 GRACE homophily baseline：`DATASETS="Cora CiteSeer PubMed" SEEDS="0 1 2 3 4 5 6 7 8 9" METHOD_CONFIG=configs/methods/grace.yaml METHOD_NAME=grace EPOCHS=70 EVAL_EPOCHS=50 RUNS_PATH=results/diagnostics/grace_runs_homophily_s0-9.csv bash scripts/run_baseline_study.sh`。
+  - 已生成 homophily 对齐表：`results/diagnostics/rw_gcl_vs_grace_homophily_s0-9.csv` 与 `results/diagnostics/rw_gcl_vs_grace_aggregate_homophily_s0-9.csv`，30/30 行 status=computed。
+  - Homophily RW-GCL normal vs GRACE（10 seeds）：Cora +0.003300；CiteSeer +0.000100；PubMed -0.011200。
+  - Homophily RW-GCL normal vs shuffled：Cora +0.001600；CiteSeer -0.002700；PubMed +0.002800。
+  - 当前解释：Cora/CiteSeer 基本支持 non-degradation；PubMed 有约 1.12 个百分点下降，仍在早期 1-2 个百分点观察带内，但不能声称完全无退化。路线 A 的 gate 若继续推进，应把 PubMed 退化不超过 0.015 作为安全约束。
