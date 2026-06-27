@@ -260,3 +260,10 @@
   - 已验证：`python -m py_compile experiments/grace_idea/train.py experiments/grace_idea/model.py experiments/grace_idea/eval.py`、`cd experiments/grace_idea && python train.py --help`。
   - 已完成短 smoke：`python train.py --dataset Cora --method grace --epochs 2 --skip-eval` 与 `python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1 --negative-weighting --skip-eval --save-dir runs/smoke`；后者第 2 epoch 进入 weighted stage，`weight_mean=0.9302`、`weight_std=0.0218`。
   - 下一步应优先补 heterophily dataset/split 支持和 baseline-vs-method 对齐脚本，而不是继续扩大方法模块。
+- 2026-06-27 Cora sanity 实验：
+  - 已新增 `train.py` 的 `eval_summary.csv` 与 `metadata.json` 落盘逻辑，并新增 `--log-every` 参数以便小规模 sweep 控制日志长度。
+  - 已创建实验日志：`docs/grace_idea_experiment_log.md`。
+  - Cora config seed=39788 对照：GRACE F1Mi=0.833060/F1Ma=0.822161；`es_weighted + negative_weighting` F1Mi=0.832786/F1Ma=0.821930，差值约 -0.00027/-0.00023。
+  - Cora seeds 0-2 mini sweep：GRACE F1Mi mean=0.824948、F1Ma mean=0.810003；`es_weighted` F1Mi mean=0.825039、F1Ma mean=0.810086；paired delta mean 约 +0.000091/+0.000083。
+  - 当前解释：Cora 上基本支持 non-degradation，但没有性能收益；final reliability weight mean 约 0.984，说明 homophily Cora 上 embedding stability 权重趋于饱和、区分度有限。
+  - 下一步建议：补 `experiments/grace_idea/train.py` 的 heterophily dataset 与 split 支持，再跑 Texas/Cornell/Wisconsin/Actor 的 matched GRACE vs `es_weighted` 对照。

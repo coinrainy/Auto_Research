@@ -1,5 +1,6 @@
 import argparse
 import csv
+import json
 import os.path as osp
 import random
 from copy import deepcopy
@@ -43,6 +44,7 @@ def parse_args():
     parser.add_argument('--eval-ratio', type=float, default=0.1)
     parser.add_argument('--skip-eval', action='store_true')
     parser.add_argument('--save-dir', type=str, default=None)
+    parser.add_argument('--log-every', type=int, default=1)
     return parser.parse_args()
 
 
@@ -206,6 +208,36 @@ def append_train_log(run_dir, row):
         writer.writerow({key: row.get(key, '') for key in fieldnames})
 
 
+def save_eval_summary(run_dir, eval_stats):
+    if run_dir is None or eval_stats is None:
+        return
+    path = run_dir / 'eval_summary.csv'
+    row = {}
+    for metric, values in eval_stats.items():
+        row[f'{metric}_mean'] = values['mean']
+        row[f'{metric}_std'] = values['std']
+    with path.open('w', newline='') as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(row.keys()))
+        writer.writeheader()
+        writer.writerow(row)
+
+
+def save_metadata(run_dir, args, config, seed, device, eval_stats):
+    if run_dir is None:
+        return
+    metadata = {
+        'dataset': args.dataset,
+        'method': args.method,
+        'seed': seed,
+        'device': str(device),
+        'args': vars(args),
+        'config': config,
+        'eval_stats': eval_stats,
+    }
+    with (run_dir / 'metadata.json').open('w') as handle:
+        json.dump(metadata, handle, indent=2)
+
+
 def save_artifacts(run_dir, model, data, embeddings, final_weights, args, config):
     if run_dir is None:
         return
@@ -269,18 +301,31 @@ def main():
                 f", weight_mean={log['weight_mean']:.4f}, "
                 f"weight_std={log['weight_std']:.4f}"
             )
-        print(
-            f"(T) | Epoch={epoch:03d}, loss={log['loss']:.4f}, "
-            f"stage={log['stage']}{weight_text}, "
-            f"this epoch {log['epoch_time']:.4f}, total {log['total_time']:.4f}"
+        should_log = (
+            args.log_every > 0
+            and (epoch == 1 or epoch == config['num_epochs'] or epoch % args.log_every == 0)
         )
+        if should_log:
+            print(
+                f"(T) | Epoch={epoch:03d}, loss={log['loss']:.4f}, "
+                f"stage={log['stage']}{weight_text}, "
+                f"this epoch {log['epoch_time']:.4f}, total {log['total_time']:.4f}"
+            )
         append_train_log(run_dir, log)
         prev = now
 
     print('=== Final ===')
     embeddings = encode(model, data)
+    eval_stats = None
     if not args.skip_eval:
-        label_classification(embeddings, data.y, ratio=args.eval_ratio, random_state=seed)
+        eval_stats = label_classification(
+            embeddings,
+            data.y,
+            ratio=args.eval_ratio,
+            random_state=seed,
+        )
+    save_eval_summary(run_dir, eval_stats)
+    save_metadata(run_dir, args, config, seed, device, eval_stats)
     save_artifacts(run_dir, model, data, embeddings, final_weights, args, config)
 
 
