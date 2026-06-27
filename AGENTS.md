@@ -341,3 +341,9 @@
   - 新工作流切换为 `academic-research-suite` -> `deep-research` -> `socratic` mode，从 Layer 1 problem framing 重新开始。
   - 新一轮构思仍默认保留现实约束：单卡 RTX 3060 12GB、以节点分类或相邻可验证任务为主、优先选择有限算力可复现的图学习/图自监督学习方向。
   - 下一步建议：先回答新一轮 Socratic Layer 1 的核心取舍问题，明确是否继续留在 GCL/GSSL、是否保留 heterophily、是否愿意切换到更工程/诊断/benchmark/robustness 的论文形态。
+- 2026-06-27 新方向 Layer 1 约束确认：
+  - [INSIGHT] 用户放弃旧 idea 的核心原因是实验信号弱，而不是单纯实现困难或不再关注该领域。
+  - [INSIGHT] 新方向仍需留在 Graph Contrastive Learning / Graph Self-Supervised Learning 赛道，但允许引用或迁移其他领域的方法。
+  - [INSIGHT] 用户更倾向做“新方法”论文，而不是 benchmark、纯机制诊断或应用型论文。
+  - [INSIGHT] 原硬约束继续保留：单卡 RTX 3060 12GB、节点分类优先、小中型数据集、不走大规模 OGB 主线。
+  - 下一步建议：围绕“从其他领域迁移什么机制到 GCL/GSSL”进行候选问题收敛，同时避免再次落入仅靠 heuristic 权重且实验信号不稳定的路线。
