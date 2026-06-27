@@ -284,3 +284,12 @@
   - 当前解释：Texas 有跨 3 splits 的弱正向；Cornell split 敏感且总体略负；Wisconsin 无影响；Actor 微弱正向但幅度很小。当前证据不支持强性能提升叙事，但支持继续做诊断和小范围扩展。
   - 已验证汇总命令：`python summarize_runs.py --runs-dir runs/hetero_splits0-2_seed0_e100 --paired-out runs/summaries/hetero_splits0-2_seed0_e100_paired.csv --aggregate-out runs/summaries/hetero_splits0-2_seed0_e100_aggregate.csv`，输出 `loaded_runs=24 paired_rows=12 aggregate_rows=4`。
   - 下一步建议：先做 Texas/Cornell 的 confusion matrix 对比摘要，再考虑 Texas/Cornell/Actor 的 seeds 0-2 × splits 0-2。
+- 2026-06-27 GRACE idea 代码与理论系统审计：
+  - 已新增审计文档：`docs/grace_idea_system_audit.md`。
+  - 审计范围限定为当前真实可运行代码 `experiments/grace_idea/`；旧 `src/rwgcl/`、`configs/`、`scripts/`、`results/` 框架已删除，旧文档中的相关实验只作为历史研究记录保留。
+  - 当前实现被重新界定为 `node-wise embedding-stability weighting` 或 `augmentation-stability-aware anchor weighting`，而不是完整 pair reliability，也不是 embedding stability + prediction consistency 的 combined reliability。
+  - 主要 P0 缺口：当前 GRACE 副本没有 shuffled/random reliability control；没有独立诊断脚本；split-aware 论文级 runner 尚未恢复；旧文档与当前可运行代码存在脱节。
+  - 主要 P1 缺口：run 目录按 dataset/method/seed/split 固定命名，重复运行会 append `train_log.csv` 并覆盖部分产物；`--negative-weighting` 是 denominator candidate weighting，不是 pair-specific false-negative weighting；Chameleon/Squirrel 尚未接入。
+  - 理论边界：EMA teacher embedding stability 只能作为 view reliability 的无标签代理，不能直接等价于分类语义可靠性；若要主张 false-negative 机制，仍需 pairwise negative reliability 或 label-based denominator pressure 诊断。
+  - 当前建议：先修可证伪实验平台，包括 run id/overwrite、shuffled/random control、split-aware runner、confusion matrix delta、downstream error bucket、false-negative pressure 与 degree/local structure 诊断；暂缓 degree gate、closed-loop augmentation 和 SOTA baseline 扩展。
+  - 已验证当前仓库状态为 clean before audit edits；本轮未新增训练实验。
