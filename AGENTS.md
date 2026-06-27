@@ -99,3 +99,11 @@
   - 已更新 `scripts/run_smoke.sh`：数据统计 -> GRACE Cora/Texas execute -> RW-GCL Texas execute -> RW-GCL Texas shuffled execute -> eval 聚合。
   - 已验证：`bash scripts/run_smoke.sh`、`python -m compileall train.py eval.py diagnose.py src`。
   - 最近 smoke 结果显示 RW-GCL normal 与 shuffled 均能 completed，并保存 `positive_reliability` 到 `embeddings.pt`；下一步建议实现诊断汇总脚本，对 normal vs shuffled reliability 做自动配对比较。
+- 2026-06-27 诊断脚本推进：
+  - 已将 `diagnose.py` 与 `src/rwgcl/diagnostics.py` 从占位输出改为真实诊断输出。
+  - `shuffled_reliability` 诊断已支持 `--compare-run-id`，可自动比较 normal run 与 shuffled run 的 accuracy、accuracy delta、reliability mean 与 shuffled 标记。
+  - `view_consistency` 诊断已按 positive reliability 分为 low/mid/high bucket，并统计 bucket 内 reliability、embedding stability、prediction consistency 均值。
+  - `false_negative_mass` 当前明确输出 `not_applicable_positive_only`，因为 negative weighting 尚未实现，暂不伪造 false negative mass。
+  - 已更新 `scripts/run_smoke.sh` 自动抓取 RW-GCL normal/shuffled run_id 并运行诊断。
+  - 已验证：`bash scripts/run_smoke.sh`、`python -m compileall train.py eval.py diagnose.py src`；最近 smoke 中 normal/shuffled accuracy 暂时持平，但诊断链路已打通。
+  - 下一步建议：做更长 epoch 与多 seed 的 Texas/Wisconsin 小实验，或改进 prediction consistency 信号以避免过高且区分度不足。

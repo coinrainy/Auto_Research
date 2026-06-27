@@ -68,7 +68,7 @@ def positive_pair_reliability(
     z2: torch.Tensor,
     spec: ReliabilitySpec,
     shuffled: bool = False,
-) -> tuple[torch.Tensor, dict[str, float]]:
+) -> tuple[torch.Tensor, dict[str, float], dict[str, torch.Tensor]]:
     stability = teacher_student_embedding_stability(
         student_h1.detach(),
         student_h2.detach(),
@@ -91,4 +91,8 @@ def positive_pair_reliability(
         "embedding_stability_mean": float(stability.mean().item()),
         "prediction_consistency_mean": float(consistency.mean().item()),
     }
-    return score, summary
+    components = {
+        "embedding_stability": stability.detach(),
+        "prediction_consistency": consistency.detach(),
+    }
+    return score, summary, components

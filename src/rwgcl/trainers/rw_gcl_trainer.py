@@ -93,6 +93,7 @@ class RWGCLTrainer(BaseTrainer):
         optimizer = torch.optim.Adam(student.parameters(), lr=lr, weight_decay=weight_decay)
         train_rows = []
         last_reliability = None
+        last_components = {}
         last_summary = {}
         start = time.time()
 
@@ -153,7 +154,7 @@ class RWGCLTrainer(BaseTrainer):
             with torch.no_grad():
                 teacher_h1 = teacher.encode(x1, edge_index1)
                 teacher_h2 = teacher.encode(x2, edge_index2)
-            reliability, summary = positive_pair_reliability(
+            reliability, summary, components = positive_pair_reliability(
                 student_h1=h1,
                 student_h2=h2,
                 teacher_h1=teacher_h1,
@@ -173,6 +174,7 @@ class RWGCLTrainer(BaseTrainer):
             optimizer.step()
             self._update_ema(student, teacher, momentum=ema_momentum)
             last_reliability = reliability.detach().cpu()
+            last_components = {key: value.detach().cpu() for key, value in components.items()}
             last_summary = summary
             train_rows.append(
                 {
@@ -240,6 +242,7 @@ class RWGCLTrainer(BaseTrainer):
         }
         if last_reliability is not None:
             save_payload["positive_reliability"] = last_reliability
+            save_payload.update(last_components)
         torch.save(save_payload, self.run_dir / "embeddings.pt")
 
         metrics_path = self.results_dir / "metrics" / "main_results.csv"
