@@ -44,6 +44,7 @@ def parse_args():
                             'pbcl',
                             'pccl',
                             'rr_gcl',
+                            'hybrid_rr_gcl',
                         ])
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--epochs', type=int, default=None)
@@ -89,6 +90,7 @@ def parse_args():
     parser.add_argument('--pccl-balance-weight', type=float, default=0.01)
     parser.add_argument('--rr-offdiag-weight', type=float, default=0.005)
     parser.add_argument('--rr-loss-scale', type=float, default=1.0)
+    parser.add_argument('--hybrid-rr-weight', type=float, default=0.01)
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -122,12 +124,13 @@ def validate_args(args):
     if args.shuffle_weights and args.random_weights:
         raise ValueError('Use at most one of --shuffle-weights and --random-weights.')
     if (args.shuffle_weights or args.random_weights) and args.method not in [
-            'es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl']:
+            'es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl', 'hybrid_rr_gcl']:
         raise ValueError('Weight controls are only valid with weighted methods.')
 
 
 def weight_control_name(args):
-    if args.method not in ['es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl']:
+    if args.method not in [
+            'es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl', 'hybrid_rr_gcl']:
         return 'none'
     if args.shuffle_weights:
         return 'shuffled'
@@ -699,6 +702,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         weights if args.method == 'es_weighted' and args.negative_weighting else None
     )
     pair_denominator_weights = weights if args.method == 'sgfn' else None
+    rr_loss = z1.new_tensor(0.0)
     rr_diagnostics = {}
     if args.method == 'rr_gcl':
         contrastive_loss, rr_diagnostics = redundancy_reduction_objective(
@@ -717,6 +721,16 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
             denominator_weights=denominator_weights,
             pair_denominator_weights=pair_denominator_weights,
         )
+        if args.method == 'hybrid_rr_gcl':
+            rr_loss, rr_diagnostics = redundancy_reduction_objective(
+                model,
+                z1,
+                z2,
+                args,
+                epoch,
+            )
+        else:
+            rr_loss = z1.new_tensor(0.0)
     attraction_loss = z1.new_tensor(0.0)
     prototype_consistency_loss = z1.new_tensor(0.0)
     prototype_balance_loss = z1.new_tensor(0.0)
@@ -735,6 +749,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         ) = prototype_consistency_objective(z1, z2, args, epoch)
     loss = (
         contrastive_loss
+        + args.hybrid_rr_weight * rr_loss
         + args.fn_attraction_weight * attraction_loss
         + args.pccl_consistency_weight * prototype_consistency_loss
         + args.pccl_balance_weight * prototype_balance_loss
@@ -750,9 +765,12 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         stage = 'prototype'
     if args.method == 'rr_gcl':
         stage = 'redundancy_reduction'
+    if args.method == 'hybrid_rr_gcl':
+        stage = 'contrastive_plus_rr'
     log = {
         'loss': loss.item(),
         'contrastive_loss': contrastive_loss.item(),
+        'rr_loss': rr_loss.item(),
         'fn_attraction_loss': attraction_loss.item(),
         'prototype_consistency_loss': prototype_consistency_loss.item(),
         'prototype_balance_loss': prototype_balance_loss.item(),
@@ -811,6 +829,7 @@ def prepare_save_dir(args, seed):
             'pbcl',
             'pccl',
             'rr_gcl',
+            'hybrid_rr_gcl',
         ] and control != 'normal'
         else ''
     )
@@ -835,6 +854,7 @@ def append_train_log(run_dir, row):
         'epoch',
         'loss',
         'contrastive_loss',
+        'rr_loss',
         'fn_attraction_loss',
         'prototype_consistency_loss',
         'prototype_balance_loss',
@@ -978,6 +998,7 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'pccl_balance_weight': args.pccl_balance_weight,
         'rr_offdiag_weight': args.rr_offdiag_weight,
         'rr_loss_scale': args.rr_loss_scale,
+        'hybrid_rr_weight': args.hybrid_rr_weight,
         'pair_shuffle_mode': args.pair_shuffle_mode,
         'pair_normalization': args.pair_normalization,
         'pair_reallocation_alpha': args.pair_reallocation_alpha,
@@ -1091,10 +1112,11 @@ def main():
                 f'pccl_consistency_weight={args.pccl_consistency_weight}, '
                 f'pccl_balance_weight={args.pccl_balance_weight}'
             )
-    if args.method == 'rr_gcl':
+    if args.method in ['rr_gcl', 'hybrid_rr_gcl']:
         print(
             f'(I) | rr_offdiag_weight={args.rr_offdiag_weight}, '
             f'rr_loss_scale={args.rr_loss_scale}, '
+            f'hybrid_rr_weight={args.hybrid_rr_weight}, '
             f'positive_control={weight_control_name(args)}'
         )
     if args.method == 'spectral_mix':

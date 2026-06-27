@@ -6,7 +6,7 @@ from statistics import mean, pstdev
 
 
 RUN_PATTERN = re.compile(
-    r'^(?P<dataset>.+)_(?P<method>grace|es_weighted|sgfn|spectral_mix|pbcl|pccl|rr_gcl)'
+    r'^(?P<dataset>.+?)_(?P<method>grace|es_weighted|sgfn|spectral_mix|pbcl|pccl|hybrid_rr_gcl|rr_gcl)'
     r'(?:_(?P<variant>normal|shuffled|uniform_random|random))?_seed(?P<seed>\d+)'
     r'(?:_split(?P<split>\d+))?$'
 )
@@ -27,6 +27,7 @@ def parse_args():
                             'pbcl',
                             'pccl',
                             'rr_gcl',
+                            'hybrid_rr_gcl',
                         ])
     return parser.parse_args()
 

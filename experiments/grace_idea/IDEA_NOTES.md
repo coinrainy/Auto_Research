@@ -23,6 +23,7 @@
 - `--method pbcl`：Prototype-Balanced Contrastive Learning，已降级为失败原型/诊断资产。
 - `--method pccl`：Prototype Consistency Contrastive Learning，已降级为失败原型/诊断资产。
 - `--method rr_gcl`：Redundancy-Reduced GCL，保留为条件性线索/诊断资产，尚非 active SOTA candidate。
+- `--method hybrid_rr_gcl`：GRACE InfoNCE + RR 小权重正则，已降级为条件性诊断资产，提示 RR 可能改善 macro/少数类覆盖但全局固定权重不稳。
 
 `es_weighted` 的设计边界：
 
@@ -118,6 +119,19 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - Actor/Texas/Wisconsin 不稳，尤其 macro 退化明显。
 - 当前结论：negative-free redundancy reduction 是比 prototype 路线更有价值的条件性线索，但裸 RR objective 不能作为主候选；下一步应尝试 GRACE InfoNCE + small RR regularizer 或 adaptive mixing。
 
+`hybrid_rr_gcl` 的设计边界：
+
+- 保留 GRACE InfoNCE 主损失；
+- 额外加入 Barlow/CCA 风格 RR 正则：`loss = InfoNCE + hybrid_rr_weight * RR`;
+- `--shuffle-weights` 只打乱 RR positive correspondence，InfoNCE 不变；
+- 支持 `--hybrid-rr-weight` 控制正则强度，默认 `0.01`。
+
+`hybrid_rr_gcl` 当前研究判断：
+
+- `hybrid_rr_weight=0.01` 在 Cornell/Texas 上有 macro 亮点，但 Texas normal 明显低于 shuffled，Cornell micro 低于 GRACE。
+- `hybrid_rr_weight=0.001` 保留 Cornell/Wisconsin macro 信号，但 Texas micro/macro 均退化，Cornell normal 仍未稳定优于 shuffled。
+- 当前结论：固定全局 RR 正则不能作为 active SOTA candidate；它揭示的有效线索是 RR 可能改善类别覆盖/少数类，但必须改成 adaptive / class-sensitive / region-sensitive RR 才值得继续。
+
 正式实验前仍需补齐：
 
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
@@ -140,6 +154,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `pbcl` 支持 `--pbcl-num-prototypes`、`--pbcl-kmeans-iters`、`--pbcl-weight-power`、`--pbcl-min-weight`、`--pbcl-max-weight`。
 - `pccl` 支持 `--pccl-num-prototypes`、`--pccl-kmeans-iters`、`--pccl-prototype-temperature`、`--pccl-target-temperature`、`--pccl-consistency-weight`、`--pccl-balance-weight`。
 - `rr_gcl` 支持 `--rr-offdiag-weight` 与 `--rr-loss-scale`，并复用 `--shuffle-weights` 做 positive correspondence control。
+- `hybrid_rr_gcl` 支持 `--hybrid-rr-weight`，并复用 RR 参数与 positive correspondence control。
 
 示例 split-aware 命令：
 
@@ -157,5 +172,6 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - 暂停 PBCL 扩展，不继续跑 10 splits；简单 anchor reweighting 已被 shuffled control 证伪。
 - 暂停 PCCL 扩展，不继续跑 10 splits；简单 KMeans prototype soft-target consistency 已被 shuffled control 证伪。
 - 暂不扩裸 RR-GCL 到 10 splits；先实现 hybrid objective 或 adaptive mixing，检验能否保留 Cornell 的 class-level 收益同时减少 Actor/Texas/Wisconsin 退化。
-- 下一轮应优先尝试 GRACE InfoNCE + small RR regularizer，或 view/region-level adaptive redundancy reduction。
+- 暂停固定全局 hybrid RR 权重搜索；`0.01` 和 `0.001` 均未通过 Texas / normal-vs-shuffled 机制压力测试。
+- 下一轮应优先尝试 cluster-balanced / class-sensitive / region-level adaptive redundancy reduction，而不是继续调全局 RR 权重。
 - 本目录中的 SGFN / context-gated SGFN 只作为负结果、诊断工具和消融资产保留。

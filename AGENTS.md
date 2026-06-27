@@ -479,3 +479,17 @@
   - 当前判断：RR-GCL 是目前最有价值的条件性线索，Cornell 上 normal 同时优于 GRACE 与 shuffled，且五个类别平均 delta 全部非负；但 Actor/Texas/Wisconsin 不稳，尤其 macro 退化明显，不能作为 active SOTA candidate。
   - 下一步建议：不要扩裸 RR-GCL 到 10 splits；先实现 hybrid objective（GRACE InfoNCE + small RR regularizer）或 adaptive RR mixing，目标是保留 Cornell 的 class-level 收益，同时减少 Actor/Texas/Wisconsin 退化。
   - 已验证命令：`python -m py_compile train.py summarize_runs.py model.py`、`bash -n scripts/run_split_study.sh`、`python train.py --dataset Texas --method rr_gcl --seed 0 --split-index 0 --epochs 3 --save-dir /tmp/rr_gcl_smoke --overwrite --skip-eval --log-every 1`。
+- 2026-06-28 Hybrid RR-GCL 实现与降级：
+  - 已新增研究日志：`docs/hybrid_rr_gcl_candidate_research_log.md`。
+  - 已在 `experiments/grace_idea/train.py` 中新增 `--method hybrid_rr_gcl`，实现 `GRACE InfoNCE + hybrid_rr_weight * RR`，并新增 `--hybrid-rr-weight` 参数。
+  - `--shuffle-weights` 在 `hybrid_rr_gcl` 中只打乱 RR positive correspondence，InfoNCE 仍保持正常，用作机制 control。
+  - 已更新 `scripts/run_split_study.sh` 与 `summarize_runs.py`，支持 Hybrid RR normal/shuffled 批跑与汇总；同时修正 summary 正则，使 `hybrid_rr_gcl` 不会被误解析为 `rr_gcl`。
+  - 已完成 `hybrid_rr_weight=0.01` sanity：Texas/Cornell/Wisconsin/Actor × splits 0-2 × seed0 × 100 epochs，共 36 个 run。
+  - `0.01` 相对 GRACE：Actor F1Mi/F1Ma -0.001535/-0.003084；Cornell -0.018018/+0.053575；Texas 约 0/+0.014508；Wisconsin 约 0/-0.005397。
+  - `0.01` normal - shuffled：Actor +0.006798/+0.018421；Cornell -0.027027/+0.022745；Texas -0.036036/-0.071037；Wisconsin +0.013072/-0.024415。
+  - 已完成 `hybrid_rr_weight=0.001` sanity：同样 36 个 run。
+  - `0.001` 相对 GRACE：Actor 约 0/-0.004574；Cornell +0.009009/+0.060894；Texas -0.018018/-0.015623；Wisconsin -0.019608/+0.114149。
+  - `0.001` normal - shuffled：Actor +0.004825/-0.008117；Cornell -0.009009/-0.005948；Texas -0.036036/-0.042888；Wisconsin +0.013072/+0.145617。
+  - 当前判断：固定全局 Hybrid RR 正则不能作为 active SOTA candidate。它显示 RR 辅助可能改善 Cornell/Wisconsin macro 或少数类覆盖，但 micro accuracy 与 normal-vs-shuffled 机制对照不稳，Texas 明确失败。
+  - 下一步建议：停止继续调全局 `hybrid_rr_weight`；下一轮优先实现 `cluster-balanced / class-sensitive / region-sensitive adaptive RR`，例如在 consensus clusters 内或 cluster-balanced samples 上计算 RR，并用 normal-vs-shuffled gate control 证明不是随机正则扰动。
+  - 已验证命令：`python -m py_compile train.py summarize_runs.py model.py`、`bash -n scripts/run_split_study.sh`、`python train.py --dataset Texas --method hybrid_rr_gcl --seed 0 --split-index 0 --epochs 3 --save-dir /tmp/hybrid_rr_smoke --overwrite --skip-eval --log-every 1`、`python summarize_runs.py --runs-dir runs/hybrid_rr_gcl_w001_splits0-2_seed0_e100 --target-method hybrid_rr_gcl --paired-out runs/summaries/hybrid_rr_gcl_w001_splits0-2_seed0_e100_paired.csv --aggregate-out runs/summaries/hybrid_rr_gcl_w001_splits0-2_seed0_e100_aggregate.csv`。
