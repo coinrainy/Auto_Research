@@ -317,3 +317,9 @@
   - 已生成部分汇总：`runs/summaries/split_control_texas_cornell_partial_paired.csv` 与 `runs/summaries/split_control_texas_cornell_partial_aggregate.csv`，输出 `loaded_runs=7 paired_rows=2 aggregate_rows=1`。
   - 当前结论：在修正 random control 为 distribution-matched random 或补充权重强度控制前，不应继续扩大多 seed / 多 split 实验；当前 reliability 叙事不能越过这个反例。
   - 下一步建议：先实现 distribution-matched random control，并复跑 Texas split0 的 GRACE、normal、shuffled、distribution-matched random、uniform-random 小实验。
+- 2026-06-27 当前情况快照：
+  - 当前主线已从旧自建 RW-GCL scaffold 切换到 `experiments/grace_idea/`，以 GRACE 工作副本为唯一可运行代码事实源；`baselines/GRACE` 保持为只读 submodule。
+  - 当前方法不再是 combined pair reliability，而是 `es_weighted`：基于 EMA teacher 的 encoder embedding stability 做 node-wise view reliability / augmentation-stability-aware weighting。
+  - 已支持 normal、shuffled、uniform-random 三类 `es_weighted` control；早停实验显示 Texas split0 上 normal 优于 shuffled，但低于 uniform-random，因此不能声称 reliability 本身已经被严格证明有效。
+  - 当前研究判断：不要继续扩大多 seed / 多 split 主实验，也不要上 degree gate、closed-loop 或复杂模块；优先修正 control 设计和独立诊断。
+  - 下一步最小 no-regret 任务：实现 distribution-matched random control，报告 effective sample size / weight std / min-max，并复跑 Texas split0 的 GRACE、normal、shuffled、distribution-matched random 与 uniform-random。
