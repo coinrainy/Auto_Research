@@ -19,7 +19,7 @@
 - `--method grace`：保留原始 GRACE 训练路径。
 - `--method es_weighted`：embedding-stability weighted GRACE，保留为历史/对照路线。
 - `--method sgfn`：Stability-Guided False-Negative attenuation，已降级为负结果/诊断资产。
-- `--method spectral_mix`：Adaptive Spectral Mix GCL，当前 active candidate。
+- `--method spectral_mix`：Adaptive Spectral Mix GCL，已降级为失败原型/诊断资产。
 
 `es_weighted` 的设计边界：
 
@@ -70,9 +70,10 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 `spectral_mix` 当前研究判断：
 
 - `high_scale=1.0` 在 Wisconsin macro 上明显正向，但 Cornell macro 退化大，不适合作为默认设置。
-- `high_scale=0.5` 在 Texas/Cornell 上出现较强正向，Wisconsin macro 正向但 micro 轻微负向，Actor 近零负向；这是目前最值得继续扩展的候选。
+- `high_scale=0.5` 在 split0-2 上曾在 Texas/Cornell 出现正向，但 split0-9 复核后 Cornell 明确转负，Texas/Wisconsin 仅弱正且不稳定，Actor 近零。
+- 已新增 `--spectral-residual-alpha` 保留原始特征 residual anchor；`alpha=0.5` 保留 Texas split0-2 收益，但 Actor/Wisconsin 仍不稳定，不能作为主候选。
 - Cora/CiteSeer quick sanity 有小幅下降，因此暂不能声称 homophily non-degradation。
-- 当前定位是 heterophily-oriented augmentation candidate，而不是已完成的 SOTA 方法。
+- 当前定位是失败原型和机制线索：谱扰动可能帮助部分少数类，但当前 gate 没有可靠对齐下游语义。
 
 正式实验前仍需补齐：
 
@@ -105,7 +106,7 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 
 近期需要补齐：
 
-- 扩展 `spectral_mix high_scale=0.5` 到 10 splits，并补 Chameleon/Squirrel。
-- 做 `adaptive` vs `low` vs `high` vs `random` ablation，确认收益来自局部自适应 gate。
-- 做 homophily safety gate，避免 Cora/CiteSeer/PubMed 上小幅退化扩大。
+- 暂停 naive `spectral_mix` 扩展，不继续补 Chameleon/Squirrel。
+- 若继续 spectral 方向，只做小消融定位失败机制：`adaptive` vs `low` vs `high` vs `random`。
+- 下一轮应重新寻找更强 idea，优先改变 contrastive objective 或 view selection decision，而不是单纯替换特征。
 - 本目录中的 SGFN / context-gated SGFN 只作为负结果、诊断工具和消融资产保留。

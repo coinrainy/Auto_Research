@@ -67,6 +67,7 @@ def parse_args():
     parser.add_argument('--spectral-mix-temperature', type=float, default=0.5)
     parser.add_argument('--spectral-mix-jitter', type=float, default=0.1)
     parser.add_argument('--spectral-high-scale', type=float, default=1.0)
+    parser.add_argument('--spectral-residual-alpha', type=float, default=1.0)
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -226,7 +227,9 @@ def spectral_mix_features(data, args, view_index):
         else:
             gate = gate - noise
     gate = gate.clamp(0.0, 1.0).view(-1, 1)
-    mixed = gate * low + (1.0 - gate) * args.spectral_high_scale * high
+    spectral = gate * low + (1.0 - gate) * args.spectral_high_scale * high
+    alpha = max(0.0, min(args.spectral_residual_alpha, 1.0))
+    mixed = (1.0 - alpha) * data.x.detach() + alpha * spectral
     return mixed.to(data.x.dtype)
 
 
@@ -726,6 +729,7 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'spectral_mix_temperature': args.spectral_mix_temperature,
         'spectral_mix_jitter': args.spectral_mix_jitter,
         'spectral_high_scale': args.spectral_high_scale,
+        'spectral_residual_alpha': args.spectral_residual_alpha,
         'pair_shuffle_mode': args.pair_shuffle_mode,
         'pair_normalization': args.pair_normalization,
         'pair_reallocation_alpha': args.pair_reallocation_alpha,
@@ -819,7 +823,8 @@ def main():
             f'(I) | spectral_mix_mode={args.spectral_mix_mode}, '
             f'spectral_mix_temperature={args.spectral_mix_temperature}, '
             f'spectral_mix_jitter={args.spectral_mix_jitter}, '
-            f'spectral_high_scale={args.spectral_high_scale}'
+            f'spectral_high_scale={args.spectral_high_scale}, '
+            f'spectral_residual_alpha={args.spectral_residual_alpha}'
         )
 
     start = t()

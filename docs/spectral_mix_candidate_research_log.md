@@ -14,7 +14,7 @@
 - 两个 contrastive view 通过轻微 gate jitter 形成差异；
 - 默认仍保留 GRACE 的 edge drop 与 feature drop，以保证 baseline 对照清晰。
 
-候选方法暂命名为 `spectral_mix`。当前最保守、也最值得继续扩展的设置是 `--spectral-high-scale 0.5`，用于避免高频残差过强。
+候选方法暂命名为 `spectral_mix`。早期最保守的设置是 `--spectral-high-scale 0.5`，用于避免高频残差过强；后续 10 split 复核表明该设置仍不够稳定。
 
 ## 文献边界
 
@@ -92,12 +92,61 @@ python train.py --dataset Texas --method spectral_mix \
 
 ## 当前判断
 
-`spectral_mix --spectral-high-scale 0.5` 保留为当前 active candidate，但尚不能称为 SOTA idea。它比 SGFN 更值得继续，因为：
+更新于 2026-06-28：`spectral_mix --spectral-high-scale 0.5` 已从 active candidate 降级为被证伪的原型。split0-2 的早期正向在 10 split 复核中没有稳定保持，尤其 Cornell 从强正向转为明显负向。
 
-- performance sanity 在 Texas/Cornell 上显著强于 GRACE；
-- Wisconsin 虽有 micro 下降，但 macro 正向，提示少数类或类别不均衡区域可能受益；
-- Actor 负向很小，存在通过 gate 或 safety fallback 改善的空间；
-- 机制上不是继续小修 false-negative attenuation，而是改变 GCL 的 view semantics。
+### 10 split 复核，adaptive，high scale = 0.5
+
+命令目录：`experiments/grace_idea/runs/spectral_mix_adaptive_hs05_splits0-9_seed0_e100`
+
+相对 GRACE 的 split0-9 mean delta：
+
+| Dataset | F1Mi delta | F1Mi pos/zero/neg | F1Ma delta | F1Ma pos/zero/neg |
+| --- | ---: | ---: | ---: | ---: |
+| Actor | +0.000526 | 5/0/5 | +0.003657 | 6/0/4 |
+| Cornell | -0.018919 | 3/1/6 | -0.067351 | 2/0/8 |
+| Texas | +0.010811 | 5/2/3 | -0.001730 | 4/1/5 |
+| Wisconsin | +0.005882 | 6/0/4 | +0.019962 | 5/0/5 |
+
+关键解释：
+
+- Texas/Wisconsin 只有弱正向，且 split 稳定性不足；
+- Actor 基本等于零；
+- Cornell 明确失败，macro 8/10 split 为负；
+- 因此 naive adaptive spectral mix 不能作为主方法继续扩展到 Chameleon/Squirrel 或多 seed。
+
+class-level 诊断显示，该方法可能改善部分少数类，但会伤害另一部分类别。例如 Wisconsin 的 `F1Class4` 平均提升 +0.225714，但 `F1Class0/F1Class3` 出现负向；Cornell 的 `F1Class2` 平均下降 -0.202979。这说明当前 low/high gate 没有可靠对齐下游类别语义。
+
+### Residual safety sanity，adaptive，high scale = 0.5，residual alpha = 0.5
+
+为测试失败是否来自谱增强过度替换原始特征，已新增 `--spectral-residual-alpha`。默认值为 `1.0`，保持旧实验可复现；设为 `0.5` 时使用 `0.5 * original_feature + 0.5 * spectral_feature`。
+
+命令目录：`experiments/grace_idea/runs/spectral_mix_residual_a05_hs05_splits0-2_seed0_e100`
+
+相对 GRACE 的 split0-2 mean delta：
+
+| Dataset | F1Mi delta | F1Mi pos/zero/neg | F1Ma delta | F1Ma pos/zero/neg |
+| --- | ---: | ---: | ---: | ---: |
+| Actor | -0.003289 | 0/0/3 | -0.011317 | 0/0/3 |
+| Cornell | +0.000000 | 2/0/1 | +0.011631 | 1/0/2 |
+| Texas | +0.036036 | 2/1/0 | +0.055615 | 3/0/0 |
+| Wisconsin | -0.019608 | 1/1/1 | +0.038815 | 2/0/1 |
+
+Residual anchor 保留了 Texas 的收益，并改善了 Cornell split0-2 的均值，但 Actor/Wisconsin 仍不稳定，不能作为新的主候选。
+
+## 当前保留价值
+
+`spectral_mix` 原型不再作为 active candidate，但保留以下资产：
+
+- Texas 在 naive 与 residual 的短程 sanity 中都保留正向，说明谱扰动并非完全无效；
+- Wisconsin 的 class-level 结果提示部分少数类或类别不均衡区域可能受益；
+- Actor 基本零附近，说明该扰动不是强灾难性模块，但也没有贡献；
+- 机制上从 false-negative attenuation 转向了 view semantics，为下一轮更保守的 view selection 提供了失败边界。
+
+需要修正为更保守的表述：
+
+- 该原型提供了“部分少数类可能受益于谱扰动”的线索；
+- 当前 gate 与下游语义不可靠对齐，不能直接形成方法论文主线；
+- 后续若继续 spectral 方向，应从“替换式 spectral feature mix”转向“语义保守的 spectral perturbation selection”，例如只在检测到 GRACE 视图不稳定或局部类别偏置风险时启用。
 
 当前不能声称：
 
@@ -110,15 +159,14 @@ python train.py --dataset Texas --method spectral_mix \
 
 优先级从高到低：
 
-1. 扩展 `spectral_mix high_scale=0.5` 到 Texas/Cornell/Wisconsin/Actor × splits 0-9，确认 split 稳定性。
-2. 增加 Chameleon/Squirrel，并观察 high-degree 图上是否过度平滑或过度高频。
-3. 做 ablation：`adaptive` vs `low` vs `high` vs `random`，证明不是任意滤波都有效。
-4. 加入 homophily safety：当局部一致性极高时保留更接近 GRACE 的 feature drop，而不是强制 low/high mix。
-5. 与 HLCL / AS-GCL / GCL-JAM 做协议级对照或至少复现实验表边界。
+1. 暂停 naive `spectral_mix` 扩展，不继续跑 Chameleon/Squirrel。
+2. 若继续 spectral 方向，先设计更强的 safety gate：不是固定 low/high 混合，而是判断何时应该保留原始 GRACE view。
+3. 做 `adaptive` vs `low` vs `high` vs `random` 的小消融，只用于定位失败机制，不作为主论文实验。
+4. 重新寻找更有 SOTA 潜力的 idea：优先选择能改变 contrastive objective 或 view selection decision 的机制，而不是单纯替换特征。
 
-建议下一条正式命令：
+建议下一条诊断命令：
 
 ```bash
 cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
-DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="grace spectral_mix" EPOCHS=100 SAVE_DIR="runs/spectral_mix_adaptive_hs05_splits0-9_seed0_e100" MANIFEST_PATH="runs/spectral_mix_adaptive_hs05_splits0-9_seed0_e100/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 TRAIN_EXTRA_ARGS="--spectral-mix-mode adaptive --spectral-mix-jitter 0.1 --spectral-high-scale 0.5" scripts/run_split_study.sh
+DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2" SEEDS="0" METHODS="grace spectral_mix" EPOCHS=100 SAVE_DIR="runs/spectral_mix_mode_ablation_splits0-2_seed0_e100" MANIFEST_PATH="runs/spectral_mix_mode_ablation_splits0-2_seed0_e100/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 TRAIN_EXTRA_ARGS="--spectral-mix-mode low --spectral-high-scale 0.5 --spectral-residual-alpha 0.5" scripts/run_split_study.sh
 ```

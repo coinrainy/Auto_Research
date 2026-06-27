@@ -425,3 +425,15 @@
   - 当前判断：`spectral_mix --spectral-high-scale 0.5` 比 SGFN 更有继续价值，但尚不能称为 SOTA；下一步必须扩展到 10 splits、补 Chameleon/Squirrel，并做 `adaptive` vs `low/high/random` ablation。
   - 已验证命令：`python summarize_runs.py --runs-dir runs/spectral_mix_adaptive_hs05_homophily_seed0_e100 --target-method spectral_mix --paired-out runs/summaries/spectral_mix_adaptive_hs05_homophily_seed0_e100_paired.csv --aggregate-out runs/summaries/spectral_mix_adaptive_hs05_homophily_seed0_e100_aggregate.csv`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="grace spectral_mix" EPOCHS=100 SAVE_DIR="runs/spectral_mix_adaptive_hs05_splits0-9_seed0_e100" MANIFEST_PATH="runs/spectral_mix_adaptive_hs05_splits0-9_seed0_e100/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 TRAIN_EXTRA_ARGS="--spectral-mix-mode adaptive --spectral-mix-jitter 0.1 --spectral-high-scale 0.5" scripts/run_split_study.sh`。
+- 2026-06-28 Adaptive Spectral Mix 复核与降级：
+  - 已完成 `spectral_mix --spectral-high-scale 0.5` 的 Texas/Cornell/Wisconsin/Actor × splits 0-9 × seed0 × 100 epochs 复核，共 80 个 run，全部 completed。
+  - 汇总文件：`experiments/grace_idea/runs/summaries/spectral_mix_adaptive_hs05_splits0-9_seed0_e100_paired.csv` 与 `experiments/grace_idea/runs/summaries/spectral_mix_adaptive_hs05_splits0-9_seed0_e100_aggregate.csv`。
+  - 10 split 结果相对 GRACE：Actor F1Mi/F1Ma +0.000526/+0.003657；Cornell -0.018919/-0.067351；Texas +0.010811/-0.001730；Wisconsin +0.005882/+0.019962。
+  - 结论：naive adaptive spectral mix 不能作为 active candidate。Texas/Wisconsin 只有弱正向且 split 不稳，Actor 约等于零，Cornell 明确失败，尤其 macro 8/10 split 为负。
+  - class-level 诊断显示少数类收益与类别伤害并存：Wisconsin `F1Class4` 平均 +0.225714，但 Cornell `F1Class2` 平均 -0.202979，说明当前 low/high gate 没有可靠对齐下游语义。
+  - 已新增 `--spectral-residual-alpha`，默认 `1.0` 保持旧实验可复现；`0.5` 时用原始特征作为 residual anchor，测试谱增强是否应作为扰动而非替换。
+  - 已完成 residual sanity：Texas/Cornell/Wisconsin/Actor × splits 0-2 × seed0 × 100 epochs，共 24 个 run。结果相对 GRACE：Actor -0.003289/-0.011317；Cornell 约 0/+0.011631；Texas +0.036036/+0.055615；Wisconsin -0.019608/+0.038815。
+  - 决策：residual anchor 保留 Texas 收益但没有救活 Actor/Wisconsin，不能作为新主候选。暂停 naive `spectral_mix` 扩展，不跑 Chameleon/Squirrel。
+  - 已更新 `docs/spectral_mix_candidate_research_log.md` 与 `experiments/grace_idea/IDEA_NOTES.md`，将 spectral_mix 降级为失败原型/机制线索。
+  - 已验证命令：`python -m py_compile train.py summarize_runs.py`、`python train.py --dataset Texas --method spectral_mix --seed 0 --split-index 0 --epochs 2 --spectral-mix-mode adaptive --spectral-mix-jitter 0.1 --spectral-high-scale 0.5 --spectral-residual-alpha 0.5 --save-dir /tmp/spectral_residual_smoke --overwrite --skip-eval --log-every 1`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2" SEEDS="0" METHODS="grace spectral_mix" EPOCHS=100 SAVE_DIR="runs/spectral_mix_mode_ablation_splits0-2_seed0_e100" MANIFEST_PATH="runs/spectral_mix_mode_ablation_splits0-2_seed0_e100/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 TRAIN_EXTRA_ARGS="--spectral-mix-mode low --spectral-high-scale 0.5 --spectral-residual-alpha 0.5" scripts/run_split_study.sh`。
