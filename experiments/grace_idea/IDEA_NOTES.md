@@ -26,6 +26,10 @@
 - `--method hybrid_rr_gcl`：GRACE InfoNCE + RR 小权重正则，已降级为条件性诊断资产，提示 RR 可能改善 macro/少数类覆盖但全局固定权重不稳。
 - `--method cbr_gcl`：Cluster-Balanced Redundancy-Reduced GCL，当前最值得保留的 RR 条件性候选，但仍需 anti-degradation gate 后才可能成为主方法。
 - `--method gated_cbr_gcl`：基于 RR diagonal confidence 的 CBR gate，已降级为失败 gate / 消融资产。
+- `--method stable_cluster_cbr_gcl`：基于 cluster compactness / separation 的节点级 CBR 稳定权重，已降级为失败 gate / 诊断资产。
+- `--method ego_grace`：纯 ego-feature MLP encoder 的 GRACE ablation，当前显示异配图强信号，是 ego-preserving 机制的关键对照。
+- `--method residual_grace`：GCN branch + ego MLP branch 的 residual encoder，是当前最稳 active candidate。
+- `--method gated_ego_graph_grace`：基于 local feature-neighborhood agreement 的节点级 graph usage gate；异配强，但当前 v1 同配退化严重，不能作为最终主方法。
 
 `es_weighted` 的设计边界：
 
@@ -165,6 +169,33 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - 宽松 `cbr_gate_min_diag=0.78` 恢复 Texas，但 Cornell F1Mi/F1Ma 变为 -0.036036/-0.080680，normal 远低于 shuffled。
 - 当前结论：单一 RR diagonal confidence 不是可靠 anti-degradation gate，停止继续调该阈值；该方法只保留为 gate 消融资产。
 
+`stable_cluster_cbr_gcl` 的设计边界：
+
+- 在 `cbr_gcl` 基础上记录 cluster margin、assigned similarity 与 stability scale；
+- 用 KMeans consensus embedding 的 top1-top2 cluster margin 生成节点级 stability scale；
+- 只降低不稳定簇边界节点在 CBR-RR 正则中的贡献，InfoNCE 主损失保持不变。
+
+`stable_cluster_cbr_gcl` 当前研究判断：
+
+- Texas/Wisconsin split0-2 有弱正向，但 Cornell/Actor 全负或明显不稳。
+- normal-vs-shuffled control 不干净：Cornell normal 低于 shuffled，Texas/Wisconsin 也不是稳定优于 shuffled。
+- 当前结论：cluster compactness/separation 不等于下游语义可靠性，停止继续调该 gate；保留日志字段用于机制诊断。
+
+`ego_grace` / `residual_grace` / `gated_ego_graph_grace` 的设计边界：
+
+- `ego_grace` 完全忽略 `edge_index`，只用 MLP encoder 做 feature-drop 双视图 GRACE，用于检验 ego-feature preservation 是否是异配收益来源；
+- `residual_grace` 使用 GCN branch + ego MLP branch，通过可学习 scalar gate 融合；
+- `gated_ego_graph_grace` 使用 GCN branch + ego MLP branch，通过节点级 local feature-neighborhood agreement gate 融合；
+- 三者都保留 GRACE 的 InfoNCE 目标，不引入标签、不使用验证集调参。
+
+`ego_grace` / `residual_grace` / `gated_ego_graph_grace` 当前研究判断：
+
+- `residual_grace` 在 Texas/Cornell/Wisconsin/Actor × split0-9 上全面正向：Actor +0.064868/+0.090895，Cornell +0.172973/+0.183641，Texas +0.102703/+0.188203，Wisconsin +0.180392/+0.199546。
+- `residual_grace` 同配 quick sanity：Cora -0.008477/-0.009624，CiteSeer +0.006678/+0.012899，PubMed +0.012003/+0.014253；当前基本安全，但 Cora 需要复核。
+- `ego_grace` split0-2 比 `residual_grace` 更强，说明 ego-feature preservation 是核心机制，也意味着必须保留 MLP-only baseline，否则论文叙事不成立。
+- `gated_ego_graph_grace` split0-2 在 Texas/Cornell/Actor 很强，但 Cora/CiteSeer/PubMed 同配 quick sanity 严重退化；当前 v1 不能作为最终主方法。
+- 当前 active candidate 收缩为 Ego-Preserving / Graph-Usage Calibrated GCL：以 `residual_grace` 作为稳健主线，`ego_grace` 作为必要强 baseline，下一步设计 homophily-safe graph usage gate。
+
 正式实验前仍需补齐：
 
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
@@ -190,6 +221,10 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `hybrid_rr_gcl` 支持 `--hybrid-rr-weight`，并复用 RR 参数与 positive correspondence control。
 - `cbr_gcl` 支持 `--cbr-rr-weight`、`--cbr-num-clusters`、`--cbr-kmeans-iters`、`--cbr-min-weight`、`--cbr-max-weight`，并记录 cluster balance diagnostics。
 - `gated_cbr_gcl` 支持 CBR 的所有参数，并额外支持 `--cbr-gate-min-diag`、`--cbr-gate-temperature`、`--cbr-gate-min-scale`。
+- `stable_cluster_cbr_gcl` 支持 CBR 的所有参数，并额外记录 `cbr_cluster_margin_*` 与 `cbr_stability_scale_*`。
+- `ego_grace` 支持纯 MLP ego encoder。
+- `residual_grace` 支持 `--ego-gate-init`，并记录 `ego_gate`。
+- `gated_ego_graph_grace` 支持 `--graph-gate-temperature`、`--graph-gate-threshold`、`--graph-gate-min`、`--graph-gate-max`，并记录 `graph_gate_*`。
 
 示例 split-aware 命令：
 
@@ -210,5 +245,6 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - 暂停固定全局 hybrid RR 权重搜索；`0.01` 和 `0.001` 均未通过 Texas / normal-vs-shuffled 机制压力测试。
 - 已实现并复核 `cbr_gcl`，不建议继续简单调 `cbr_rr_weight`。
 - 已实现并筛选基于 RR diagonal confidence 的 `gated_cbr_gcl`，该单信号 gate 失败，不建议继续调 diagonal threshold。
-- 下一轮应优先实现 `stable_cluster_cbr_gcl`：先记录 cluster assignment stability、cluster compactness/separation，再判断是否用于 gate；目标是保留 CBR 的 Texas/Wisconsin 线索并避免 Actor/Cornell 退化。
+- 已实现并筛选 `stable_cluster_cbr_gcl`，该 cluster compactness/separation gate 未通过 Cornell/Actor 压力测试，不建议继续沿 CBR gate 小修小补。
+- 当前应优先推进 Ego-Preserving / Graph-Usage Calibrated GCL：先扩展 `ego_grace` 10 split，与 `residual_grace` 对齐；再设计 homophily-safe graph usage gate，修复 `gated_ego_graph_grace` 在 Cora/CiteSeer/PubMed 的同配退化。
 - 本目录中的 SGFN / context-gated SGFN 只作为负结果、诊断工具和消融资产保留。

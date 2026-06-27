@@ -22,7 +22,14 @@ from torch_geometric.nn import GCNConv
 from yaml import SafeLoader
 
 from eval import label_classification, label_classification_with_masks
-from model import Encoder, Model, drop_feature
+from model import (
+    EgoEncoder,
+    Encoder,
+    GatedEgoGraphEncoder,
+    Model,
+    ResidualEgoEncoder,
+    drop_feature,
+)
 
 try:
     from torch_geometric.utils import dropout_edge
@@ -38,6 +45,9 @@ def parse_args():
     parser.add_argument('--method', type=str, default='grace',
                         choices=[
                             'grace',
+                            'ego_grace',
+                            'residual_grace',
+                            'gated_ego_graph_grace',
                             'es_weighted',
                             'sgfn',
                             'spectral_mix',
@@ -47,11 +57,17 @@ def parse_args():
                             'hybrid_rr_gcl',
                             'cbr_gcl',
                             'gated_cbr_gcl',
+                            'stable_cluster_cbr_gcl',
                         ])
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--batch-size', type=int, default=0)
     parser.add_argument('--warmup-epochs', type=int, default=20)
+    parser.add_argument('--ego-gate-init', type=float, default=0.5)
+    parser.add_argument('--graph-gate-temperature', type=float, default=0.5)
+    parser.add_argument('--graph-gate-threshold', type=float, default=0.0)
+    parser.add_argument('--graph-gate-min', type=float, default=0.0)
+    parser.add_argument('--graph-gate-max', type=float, default=1.0)
     parser.add_argument('--ema-decay', type=float, default=0.99)
     parser.add_argument('--weight-power', type=float, default=1.0)
     parser.add_argument('--min-weight', type=float, default=0.05)
@@ -101,6 +117,9 @@ def parse_args():
     parser.add_argument('--cbr-gate-min-diag', type=float, default=0.82)
     parser.add_argument('--cbr-gate-temperature', type=float, default=0.03)
     parser.add_argument('--cbr-gate-min-scale', type=float, default=0.0)
+    parser.add_argument('--cbr-stability-min-margin', type=float, default=0.05)
+    parser.add_argument('--cbr-stability-temperature', type=float, default=0.03)
+    parser.add_argument('--cbr-stability-min-scale', type=float, default=0.25)
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -135,14 +154,14 @@ def validate_args(args):
         raise ValueError('Use at most one of --shuffle-weights and --random-weights.')
     if (args.shuffle_weights or args.random_weights) and args.method not in [
             'es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl', 'hybrid_rr_gcl',
-            'cbr_gcl', 'gated_cbr_gcl']:
+            'cbr_gcl', 'gated_cbr_gcl', 'stable_cluster_cbr_gcl']:
         raise ValueError('Weight controls are only valid with weighted methods.')
 
 
 def weight_control_name(args):
     if args.method not in [
             'es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl', 'hybrid_rr_gcl',
-            'cbr_gcl', 'gated_cbr_gcl']:
+            'cbr_gcl', 'gated_cbr_gcl', 'stable_cluster_cbr_gcl']:
         return 'none'
     if args.shuffle_weights:
         return 'shuffled'
@@ -203,16 +222,45 @@ def should_use_mask_eval(args, data):
     return args.eval_mode == 'mask' or (args.eval_mode == 'auto' and has_masks and heterophily_dataset)
 
 
-def build_model(config, dataset, device):
+def build_model(config, dataset, device, args):
     activation = ({'relu': F.relu, 'prelu': nn.PReLU()})[config['activation']]
     base_model = ({'GCNConv': GCNConv})[config['base_model']]
-    encoder = Encoder(
-        dataset.num_features,
-        config['num_hidden'],
-        activation,
-        base_model=base_model,
-        k=config['num_layers'],
-    ).to(device)
+    if args.method == 'ego_grace':
+        encoder = EgoEncoder(
+            dataset.num_features,
+            config['num_hidden'],
+            activation,
+            k=config['num_layers'],
+        ).to(device)
+    elif args.method == 'gated_ego_graph_grace':
+        encoder = GatedEgoGraphEncoder(
+            dataset.num_features,
+            config['num_hidden'],
+            activation,
+            base_model=base_model,
+            k=config['num_layers'],
+            gate_temperature=args.graph_gate_temperature,
+            gate_threshold=args.graph_gate_threshold,
+            gate_min=args.graph_gate_min,
+            gate_max=args.graph_gate_max,
+        ).to(device)
+    elif args.method == 'residual_grace':
+        encoder = ResidualEgoEncoder(
+            dataset.num_features,
+            config['num_hidden'],
+            activation,
+            base_model=base_model,
+            k=config['num_layers'],
+            gate_init=args.ego_gate_init,
+        ).to(device)
+    else:
+        encoder = Encoder(
+            dataset.num_features,
+            config['num_hidden'],
+            activation,
+            base_model=base_model,
+            k=config['num_layers'],
+        ).to(device)
     return Model(
         encoder,
         config['num_hidden'],
@@ -679,9 +727,9 @@ def redundancy_reduction_objective(model, z1, z2, args, epoch):
 
 
 @torch.no_grad()
-def cluster_balance_weights(z1, z2, args, epoch):
-    consensus = (z1.detach() + z2.detach()) * 0.5
-    assignments = kmeans_assignments(
+def cluster_balance_weights(z1, z2, args, epoch, stability_weighted=False):
+    consensus = F.normalize(((z1.detach() + z2.detach()) * 0.5).float(), dim=1)
+    assignments, centers = kmeans_assignments_and_centers(
         consensus,
         args.resolved_cbr_num_clusters,
         args.cbr_kmeans_iters,
@@ -703,12 +751,44 @@ def cluster_balance_weights(z1, z2, args, epoch):
             max=max(args.cbr_max_weight, args.cbr_min_weight),
         )
         weights = weights / weights.mean().clamp_min(1e-12)
+    similarities = torch.mm(consensus, centers.t())
+    assigned_sim = similarities.gather(1, assignments.view(-1, 1)).squeeze(1)
+    if similarities.size(1) > 1:
+        top2 = similarities.topk(2, dim=1).values
+        cluster_margin = top2[:, 0] - top2[:, 1]
+    else:
+        cluster_margin = assigned_sim
+    stability_scale = torch.ones_like(weights)
+    if stability_weighted:
+        temperature = max(args.cbr_stability_temperature, 1e-12)
+        stability_scale = torch.sigmoid(
+            (cluster_margin - args.cbr_stability_min_margin) / temperature
+        )
+        min_scale = min(max(args.cbr_stability_min_scale, 0.0), 1.0)
+        if min_scale > 0.0:
+            stability_scale = stability_scale * (1.0 - min_scale) + min_scale
+        weights = weights * stability_scale.to(weights.device, dtype=weights.dtype)
+        weights = weights / weights.mean().clamp_min(1e-12)
+        weights = weights.clamp(
+            min=max(args.cbr_min_weight, 0.0),
+            max=max(args.cbr_max_weight, args.cbr_min_weight),
+        )
+        weights = weights / weights.mean().clamp_min(1e-12)
     usage = counts / counts.sum().clamp_min(1.0)
     active = (counts > 0).sum()
     entropy = -(usage[usage > 0] * usage[usage > 0].log()).sum()
     diagnostics = {
         'cbr_num_active_clusters': active.item(),
         'cbr_cluster_entropy': entropy.item(),
+        'cbr_cluster_margin_mean': cluster_margin.mean().item(),
+        'cbr_cluster_margin_std': cluster_margin.std(unbiased=False).item(),
+        'cbr_cluster_margin_min': cluster_margin.min().item(),
+        'cbr_cluster_margin_max': cluster_margin.max().item(),
+        'cbr_cluster_assigned_sim_mean': assigned_sim.mean().item(),
+        'cbr_stability_scale_mean': stability_scale.mean().item(),
+        'cbr_stability_scale_std': stability_scale.std(unbiased=False).item(),
+        'cbr_stability_scale_min': stability_scale.min().item(),
+        'cbr_stability_scale_max': stability_scale.max().item(),
         'cbr_weight_mean': weights.mean().item(),
         'cbr_weight_std': weights.std(unbiased=False).item(),
         'cbr_weight_min': weights.min().item(),
@@ -730,8 +810,14 @@ def weighted_standardize(values, weights):
 
 
 def cluster_balanced_redundancy_reduction_objective(
-        model, z1, z2, args, epoch, gated=False):
-    weights, diagnostics = cluster_balance_weights(z1, z2, args, epoch)
+        model, z1, z2, args, epoch, gated=False, stability_weighted=False):
+    weights, diagnostics = cluster_balance_weights(
+        z1,
+        z2,
+        args,
+        epoch,
+        stability_weighted=stability_weighted,
+    )
     h1 = model.projection(z1)
     h2 = model.projection(z2)
     if args.shuffle_weights:
@@ -838,7 +924,11 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
                 args,
                 epoch,
             )
-        elif args.method in ['cbr_gcl', 'gated_cbr_gcl'] and epoch > args.warmup_epochs:
+        elif args.method in [
+                'cbr_gcl',
+                'gated_cbr_gcl',
+                'stable_cluster_cbr_gcl',
+        ] and epoch > args.warmup_epochs:
             cbr_rr_loss, rr_diagnostics = (
                 cluster_balanced_redundancy_reduction_objective(
                     model,
@@ -847,6 +937,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
                     args,
                     epoch,
                     gated=args.method == 'gated_cbr_gcl',
+                    stability_weighted=args.method == 'stable_cluster_cbr_gcl',
                 )
             )
         else:
@@ -888,10 +979,16 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         stage = 'redundancy_reduction'
     if args.method == 'hybrid_rr_gcl':
         stage = 'contrastive_plus_rr'
-    if args.method in ['cbr_gcl', 'gated_cbr_gcl'] and epoch > args.warmup_epochs:
+    if args.method in [
+            'cbr_gcl',
+            'gated_cbr_gcl',
+            'stable_cluster_cbr_gcl',
+    ] and epoch > args.warmup_epochs:
         stage = (
             'gated_cluster_balanced_rr'
             if args.method == 'gated_cbr_gcl'
+            else 'stable_cluster_balanced_rr'
+            if args.method == 'stable_cluster_cbr_gcl'
             else 'cluster_balanced_rr'
         )
     log = {
@@ -905,6 +1002,16 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         'stage': stage,
         'weight_control': weight_control_name(args),
     }
+    if hasattr(model.encoder, 'ego_gate'):
+        log['ego_gate'] = model.encoder.ego_gate.item()
+    if getattr(model.encoder, 'last_graph_gate', None) is not None:
+        graph_gate = model.encoder.last_graph_gate.float()
+        log.update({
+            'graph_gate_mean': graph_gate.mean().item(),
+            'graph_gate_std': graph_gate.std(unbiased=False).item(),
+            'graph_gate_min': graph_gate.min().item(),
+            'graph_gate_max': graph_gate.max().item(),
+        })
     log.update(prototype_diagnostics)
     log.update(rr_diagnostics)
     if weights is not None:
@@ -960,6 +1067,7 @@ def prepare_save_dir(args, seed):
             'hybrid_rr_gcl',
             'cbr_gcl',
             'gated_cbr_gcl',
+            'stable_cluster_cbr_gcl',
         ] and control != 'normal'
         else ''
     )
@@ -991,6 +1099,11 @@ def append_train_log(run_dir, row):
         'fn_attraction_loss',
         'prototype_consistency_loss',
         'prototype_balance_loss',
+        'ego_gate',
+        'graph_gate_mean',
+        'graph_gate_std',
+        'graph_gate_min',
+        'graph_gate_max',
         'prototype_usage_entropy',
         'prototype_usage_max',
         'prototype_usage_min',
@@ -1000,6 +1113,15 @@ def append_train_log(run_dir, row):
         'rr_cross_corr_offdiag_mean_abs',
         'cbr_num_active_clusters',
         'cbr_cluster_entropy',
+        'cbr_cluster_margin_mean',
+        'cbr_cluster_margin_std',
+        'cbr_cluster_margin_min',
+        'cbr_cluster_margin_max',
+        'cbr_cluster_assigned_sim_mean',
+        'cbr_stability_scale_mean',
+        'cbr_stability_scale_std',
+        'cbr_stability_scale_min',
+        'cbr_stability_scale_max',
         'cbr_weight_mean',
         'cbr_weight_std',
         'cbr_weight_min',
@@ -1109,6 +1231,11 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'model_seed': seed,
         'split_index': args.split_index,
         'weight_control': weight_control_name(args),
+        'ego_gate_init': args.ego_gate_init,
+        'graph_gate_temperature': args.graph_gate_temperature,
+        'graph_gate_threshold': args.graph_gate_threshold,
+        'graph_gate_min': args.graph_gate_min,
+        'graph_gate_max': args.graph_gate_max,
         'fn_risk_margin': args.fn_risk_margin,
         'fn_risk_temperature': args.fn_risk_temperature,
         'fn_attenuation_power': args.fn_attenuation_power,
@@ -1149,6 +1276,9 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'cbr_gate_min_diag': args.cbr_gate_min_diag,
         'cbr_gate_temperature': args.cbr_gate_temperature,
         'cbr_gate_min_scale': args.cbr_gate_min_scale,
+        'cbr_stability_min_margin': args.cbr_stability_min_margin,
+        'cbr_stability_temperature': args.cbr_stability_temperature,
+        'cbr_stability_min_scale': args.cbr_stability_min_scale,
         'pair_shuffle_mode': args.pair_shuffle_mode,
         'pair_normalization': args.pair_normalization,
         'pair_reallocation_alpha': args.pair_reallocation_alpha,
@@ -1204,7 +1334,7 @@ def main():
     data = dataset[0].to(device)
     train_mask, val_mask, test_mask = get_split_masks(data, args.split_index)
 
-    model = build_model(config, dataset, device)
+    model = build_model(config, dataset, device, args)
     args.resolved_pbcl_num_prototypes = (
         args.pbcl_num_prototypes if args.pbcl_num_prototypes > 0
         else dataset.num_classes
@@ -1273,7 +1403,7 @@ def main():
             f'hybrid_rr_weight={args.hybrid_rr_weight}, '
             f'positive_control={weight_control_name(args)}'
         )
-    if args.method in ['cbr_gcl', 'gated_cbr_gcl']:
+    if args.method in ['cbr_gcl', 'gated_cbr_gcl', 'stable_cluster_cbr_gcl']:
         print(
             f'(I) | warmup_epochs={args.warmup_epochs}, '
             f'cbr_num_clusters={args.resolved_cbr_num_clusters}, '
@@ -1282,6 +1412,9 @@ def main():
             f'rr_offdiag_weight={args.rr_offdiag_weight}, '
             f'cbr_gate_min_diag={args.cbr_gate_min_diag}, '
             f'cbr_gate_temperature={args.cbr_gate_temperature}, '
+            f'cbr_stability_min_margin={args.cbr_stability_min_margin}, '
+            f'cbr_stability_temperature={args.cbr_stability_temperature}, '
+            f'cbr_stability_min_scale={args.cbr_stability_min_scale}, '
             f'positive_control={weight_control_name(args)}'
         )
     if args.method == 'spectral_mix':
@@ -1291,6 +1424,17 @@ def main():
             f'spectral_mix_jitter={args.spectral_mix_jitter}, '
             f'spectral_high_scale={args.spectral_high_scale}, '
             f'spectral_residual_alpha={args.spectral_residual_alpha}'
+        )
+    if args.method == 'residual_grace':
+        print(f'(I) | ego_gate_init={args.ego_gate_init}')
+    if args.method == 'ego_grace':
+        print('(I) | ego_encoder=mlp_only')
+    if args.method == 'gated_ego_graph_grace':
+        print(
+            f'(I) | graph_gate_temperature={args.graph_gate_temperature}, '
+            f'graph_gate_threshold={args.graph_gate_threshold}, '
+            f'graph_gate_min={args.graph_gate_min}, '
+            f'graph_gate_max={args.graph_gate_max}'
         )
 
     start = t()

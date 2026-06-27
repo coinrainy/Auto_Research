@@ -45,6 +45,123 @@ class Encoder(torch.nn.Module):
         return x
 
 
+class EgoEncoder(torch.nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, activation,
+                 k: int = 2):
+        super(EgoEncoder, self).__init__()
+        assert k >= 2
+        self.layers = [nn.Linear(in_channels, 2 * out_channels)]
+        for _ in range(1, k - 1):
+            self.layers.append(nn.Linear(2 * out_channels, 2 * out_channels))
+        self.layers.append(nn.Linear(2 * out_channels, out_channels))
+        self.layers = nn.ModuleList(self.layers)
+        self.activation = activation
+        self.norm = nn.LayerNorm(out_channels)
+
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor):
+        del edge_index
+        for layer in self.layers:
+            x = self.activation(layer(x))
+        return self.norm(x)
+
+
+class ResidualEgoEncoder(torch.nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, activation,
+                 base_model=GCNConv, k: int = 2, gate_init: float = 0.5):
+        super(ResidualEgoEncoder, self).__init__()
+        assert k >= 2
+        self.gcn_encoder = Encoder(
+            in_channels,
+            out_channels,
+            activation,
+            base_model=base_model,
+            k=k,
+        )
+        self.ego_layers = [nn.Linear(in_channels, 2 * out_channels)]
+        for _ in range(1, k - 1):
+            self.ego_layers.append(nn.Linear(2 * out_channels, 2 * out_channels))
+        self.ego_layers.append(nn.Linear(2 * out_channels, out_channels))
+        self.ego_layers = nn.ModuleList(self.ego_layers)
+        self.activation = activation
+        gate_init = min(max(gate_init, 1e-4), 1.0 - 1e-4)
+        self.gate_logit = nn.Parameter(
+            torch.logit(torch.tensor(float(gate_init)))
+        )
+        self.norm = nn.LayerNorm(out_channels)
+
+    @property
+    def ego_gate(self):
+        return torch.sigmoid(self.gate_logit)
+
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor):
+        gcn_out = self.gcn_encoder(x, edge_index)
+        ego_out = x
+        for layer in self.ego_layers:
+            ego_out = self.activation(layer(ego_out))
+        gate = self.ego_gate
+        return self.norm(gate * gcn_out + (1.0 - gate) * ego_out)
+
+
+class GatedEgoGraphEncoder(torch.nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, activation,
+                 base_model=GCNConv, k: int = 2, gate_temperature: float = 0.5,
+                 gate_threshold: float = 0.0, gate_min: float = 0.0,
+                 gate_max: float = 1.0):
+        super(GatedEgoGraphEncoder, self).__init__()
+        assert k >= 2
+        self.gcn_encoder = Encoder(
+            in_channels,
+            out_channels,
+            activation,
+            base_model=base_model,
+            k=k,
+        )
+        self.ego_encoder = EgoEncoder(
+            in_channels,
+            out_channels,
+            activation,
+            k=k,
+        )
+        self.gate_temperature = max(float(gate_temperature), 1e-12)
+        self.gate_threshold = float(gate_threshold)
+        self.gate_min = min(max(float(gate_min), 0.0), 1.0)
+        self.gate_max = min(max(float(gate_max), self.gate_min), 1.0)
+        self.norm = nn.LayerNorm(out_channels)
+        self.last_graph_gate = None
+
+    @torch.no_grad()
+    def graph_usage_gate(self, x: torch.Tensor, edge_index: torch.Tensor):
+        source, target = edge_index
+        features = F.normalize(x.detach().float(), dim=1)
+        aggregate = torch.zeros_like(features)
+        degree = torch.zeros(features.size(0), device=features.device,
+                             dtype=features.dtype)
+        aggregate.index_add_(0, target, features[source])
+        degree.index_add_(0, target, torch.ones_like(target, dtype=features.dtype))
+        neighbor_mean = aggregate / degree.clamp_min(1.0).view(-1, 1)
+        neighbor_mean = F.normalize(neighbor_mean, dim=1)
+        agreement = (features * neighbor_mean).sum(1)
+        agreement = torch.where(degree > 0, agreement, torch.zeros_like(agreement))
+        score = (
+            (agreement - agreement.mean())
+            / agreement.std(unbiased=False).clamp_min(1e-12)
+        )
+        gate = torch.sigmoid((score - self.gate_threshold) / self.gate_temperature)
+        if self.gate_min > 0.0 or self.gate_max < 1.0:
+            gate = gate * (self.gate_max - self.gate_min) + self.gate_min
+        return gate.clamp(0.0, 1.0)
+
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor):
+        gcn_out = self.gcn_encoder(x, edge_index)
+        ego_out = self.ego_encoder(x, edge_index)
+        gate = self.graph_usage_gate(x, edge_index).to(
+            gcn_out.device,
+            dtype=gcn_out.dtype,
+        ).view(-1, 1)
+        self.last_graph_gate = gate.detach()
+        return self.norm(gate * gcn_out + (1.0 - gate) * ego_out)
+
+
 class Model(torch.nn.Module):
     def __init__(self, encoder: Encoder, num_hidden: int, num_proj_hidden: int,
                  tau: float = 0.5):

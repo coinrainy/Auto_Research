@@ -6,7 +6,7 @@ from statistics import mean, pstdev
 
 
 RUN_PATTERN = re.compile(
-    r'^(?P<dataset>.+?)_(?P<method>grace|es_weighted|sgfn|spectral_mix|pbcl|pccl|hybrid_rr_gcl|gated_cbr_gcl|cbr_gcl|rr_gcl)'
+    r'^(?P<dataset>.+?)_(?P<method>grace|ego_grace|residual_grace|gated_ego_graph_grace|es_weighted|sgfn|spectral_mix|pbcl|pccl|hybrid_rr_gcl|stable_cluster_cbr_gcl|gated_cbr_gcl|cbr_gcl|rr_gcl)'
     r'(?:_(?P<variant>normal|shuffled|uniform_random|random))?_seed(?P<seed>\d+)'
     r'(?:_split(?P<split>\d+))?$'
 )
@@ -22,12 +22,16 @@ def parse_args():
     parser.add_argument('--target-method', default='es_weighted',
                         choices=[
                             'es_weighted',
+                            'ego_grace',
+                            'residual_grace',
+                            'gated_ego_graph_grace',
                             'sgfn',
                             'spectral_mix',
                             'pbcl',
                             'pccl',
                             'rr_gcl',
                             'hybrid_rr_gcl',
+                            'stable_cluster_cbr_gcl',
                             'gated_cbr_gcl',
                             'cbr_gcl',
                         ])
