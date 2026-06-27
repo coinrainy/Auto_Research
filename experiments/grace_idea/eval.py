@@ -12,7 +12,13 @@ def repeat(n_times):
     def decorator(f):
         @functools.wraps(f)
         def wrapper(*args, **kwargs):
-            results = [f(*args, **kwargs) for _ in range(n_times)]
+            base_random_state = kwargs.pop('random_state', None)
+            results = []
+            for repeat_idx in range(n_times):
+                call_kwargs = dict(kwargs)
+                if base_random_state is not None:
+                    call_kwargs['random_state'] = base_random_state + repeat_idx
+                results.append(f(*args, **call_kwargs))
             statistics = {}
             for key in results[0].keys():
                 values = [r[key] for r in results]
@@ -26,7 +32,7 @@ def repeat(n_times):
 
 
 def prob_to_one_hot(y_pred):
-    ret = np.zeros(y_pred.shape, np.bool)
+    ret = np.zeros(y_pred.shape, dtype=bool)
     indices = np.argmax(y_pred, axis=1)
     for i in range(y_pred.shape[0]):
         ret[i][indices[i]] = True
@@ -46,17 +52,18 @@ def print_statistics(statistics, function_name):
 
 
 @repeat(3)
-def label_classification(embeddings, y, ratio):
+def label_classification(embeddings, y, ratio, random_state=None):
     X = embeddings.detach().cpu().numpy()
     Y = y.detach().cpu().numpy()
     Y = Y.reshape(-1, 1)
     onehot_encoder = OneHotEncoder(categories='auto').fit(Y)
-    Y = onehot_encoder.transform(Y).toarray().astype(np.bool)
+    Y = onehot_encoder.transform(Y).toarray().astype(bool)
 
     X = normalize(X, norm='l2')
 
     X_train, X_test, y_train, y_test = train_test_split(X, Y,
-                                                        test_size=1 - ratio)
+                                                        test_size=1 - ratio,
+                                                        random_state=random_state)
 
     logreg = LogisticRegression(solver='liblinear')
     c = 2.0 ** np.arange(-10, 10)

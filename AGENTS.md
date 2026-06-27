@@ -250,3 +250,13 @@
   - 保留 `baselines/GRACE` submodule 不动，作为可追溯 baseline。
   - 已将 GRACE 普通文件复制到 `experiments/grace_idea/`，后续 idea 改动应在该工作副本中进行，避免污染 baseline。
   - 新增 `experiments/README.md` 与 `experiments/grace_idea/IDEA_NOTES.md` 记录目录用途与协作约束。
+- 2026-06-27 基于 GRACE 副本的第一版改进：
+  - 已在 `experiments/grace_idea/` 中新增 `--method grace|es_weighted`，其中 `grace` 保留原始 GRACE 路径，`es_weighted` 是当前 idea 的最小实现。
+  - `es_weighted` 只使用 encoder embedding stability 估计 reliability，不再使用 projection head 输出维度上的 softmax/prediction consistency。
+  - 新增 EMA teacher、warm-up 后的 stop-gradient reliability 权重、positive anchor weighting，以及可选 `--negative-weighting` 的 denominator candidate weighting。
+  - 已修复 `eval.py` 中新版 NumPy 不兼容的 `np.bool` 用法，并给 linear probe repeat 增加可控 `random_state`。
+  - 已修复原 GRACE 代码在新版 PyG 下的 `Planetoid(..., transform)` 位置参数兼容问题，并将弃用的 `dropout_adj` 替换为 `dropout_edge` fallback 写法。
+  - 已在 `.gitignore` 中忽略 `experiments/grace_idea/runs/`，避免实验输出进入 Git。
+  - 已验证：`python -m py_compile experiments/grace_idea/train.py experiments/grace_idea/model.py experiments/grace_idea/eval.py`、`cd experiments/grace_idea && python train.py --help`。
+  - 已完成短 smoke：`python train.py --dataset Cora --method grace --epochs 2 --skip-eval` 与 `python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1 --negative-weighting --skip-eval --save-dir runs/smoke`；后者第 2 epoch 进入 weighted stage，`weight_mean=0.9302`、`weight_std=0.0218`。
+  - 下一步应优先补 heterophily dataset/split 支持和 baseline-vs-method 对齐脚本，而不是继续扩大方法模块。
