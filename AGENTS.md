@@ -275,3 +275,12 @@
   - split0 结果：Texas F1Mi +0.000000 / F1Ma +0.105238；Cornell +0.000000 / +0.007519；Wisconsin +0.019608 / +0.007113；Actor +0.003947 / +0.005631。
   - 当前解释：单 split 单 seed 不能作为稳定结论，但四个异配数据集未出现负向，值得继续扩展到 splits 0-2；Texas macro-F1 变化需要 per-class F1/confusion matrix 诊断。
   - 下一步建议：跑 `split_index=0,1,2`、`seed=0`、100 epoch 的 matched sanity，并补 per-class F1 / confusion matrix。
+- 2026-06-27 Heterophily splits 0-2 sanity：
+  - 已为固定 split eval 增加 per-class F1，并将 confusion matrix 写入每个 run 的 `eval_details.json`。
+  - 已新增 `experiments/grace_idea/summarize_runs.py`，可从 run 目录自动生成 paired 与 aggregate CSV。
+  - 已执行 Texas/Cornell/Wisconsin/Actor × splits 0/1/2 × seed0 × 100 epochs matched sanity；Actor 使用 `--batch-size 1024`。
+  - Dataset-level mean delta（`es_weighted - GRACE`）：Texas F1Mi +0.018018 / F1Ma +0.010698；Cornell -0.009009 / -0.011400；Wisconsin 0 / 0；Actor +0.000877 / +0.000288。
+  - 12 个 paired run 总体均值：F1Mi +0.002472，F1Ma -0.000104。
+  - 当前解释：Texas 有跨 3 splits 的弱正向；Cornell split 敏感且总体略负；Wisconsin 无影响；Actor 微弱正向但幅度很小。当前证据不支持强性能提升叙事，但支持继续做诊断和小范围扩展。
+  - 已验证汇总命令：`python summarize_runs.py --runs-dir runs/hetero_splits0-2_seed0_e100 --paired-out runs/summaries/hetero_splits0-2_seed0_e100_paired.csv --aggregate-out runs/summaries/hetero_splits0-2_seed0_e100_aggregate.csv`，输出 `loaded_runs=24 paired_rows=12 aggregate_rows=4`。
+  - 下一步建议：先做 Texas/Cornell 的 confusion matrix 对比摘要，再考虑 Texas/Cornell/Actor 的 seeds 0-2 × splits 0-2。

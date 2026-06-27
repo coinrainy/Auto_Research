@@ -1,7 +1,7 @@
 import numpy as np
 import functools
 
-from sklearn.metrics import f1_score
+from sklearn.metrics import confusion_matrix, f1_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.multiclass import OneVsRestClassifier
@@ -51,7 +51,7 @@ def print_statistics(statistics, function_name):
             print()
 
 
-def format_statistics(values, function_name):
+def format_statistics(values, function_name, details=None):
     statistics = {
         key: {
             'mean': value,
@@ -60,6 +60,8 @@ def format_statistics(values, function_name):
         for key, value in values.items()
     }
     print_statistics(statistics, function_name)
+    if details is not None:
+        statistics['_details'] = details
     return statistics
 
 
@@ -110,11 +112,30 @@ def label_classification_with_masks(embeddings, y, train_mask, val_mask, test_ma
 
     clf = _fit_logreg(X[train_mask], Y[train_mask], best_c)
     y_pred = clf.predict(X[test_mask])
+    labels = np.unique(Y)
+    per_class_f1 = f1_score(
+        Y[test_mask],
+        y_pred,
+        average=None,
+        labels=labels,
+        zero_division=0,
+    )
     values = {
-        'F1Mi': f1_score(Y[test_mask], y_pred, average='micro'),
-        'F1Ma': f1_score(Y[test_mask], y_pred, average='macro'),
+        'F1Mi': f1_score(Y[test_mask], y_pred, average='micro', zero_division=0),
+        'F1Ma': f1_score(Y[test_mask], y_pred, average='macro', zero_division=0),
     }
-    return format_statistics(values, 'label_classification_with_masks')
+    for label, score in zip(labels, per_class_f1):
+        values[f'F1Class{int(label)}'] = float(score)
+    details = {
+        'best_c': float(best_c),
+        'labels': [int(label) for label in labels],
+        'confusion_matrix': confusion_matrix(
+            Y[test_mask],
+            y_pred,
+            labels=labels,
+        ).astype(int).tolist(),
+    }
+    return format_statistics(values, 'label_classification_with_masks', details)
 
 
 @repeat(3)

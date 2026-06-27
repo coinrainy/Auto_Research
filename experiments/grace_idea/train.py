@@ -255,12 +255,24 @@ def save_eval_summary(run_dir, eval_stats):
     path = run_dir / 'eval_summary.csv'
     row = {}
     for metric, values in eval_stats.items():
+        if metric.startswith('_'):
+            continue
         row[f'{metric}_mean'] = values['mean']
         row[f'{metric}_std'] = values['std']
     with path.open('w', newline='') as handle:
         writer = csv.DictWriter(handle, fieldnames=list(row.keys()))
         writer.writeheader()
         writer.writerow(row)
+
+
+def save_eval_details(run_dir, eval_stats):
+    if run_dir is None or eval_stats is None:
+        return
+    details = eval_stats.get('_details')
+    if details is None:
+        return
+    with (run_dir / 'eval_details.json').open('w') as handle:
+        json.dump(details, handle, indent=2)
 
 
 def save_metadata(run_dir, args, config, seed, device, eval_stats):
@@ -384,6 +396,7 @@ def main():
                 random_state=seed,
             )
     save_eval_summary(run_dir, eval_stats)
+    save_eval_details(run_dir, eval_stats)
     save_metadata(run_dir, args, config, seed, device, eval_stats)
     save_artifacts(run_dir, model, data, embeddings, final_weights, args, config)
 

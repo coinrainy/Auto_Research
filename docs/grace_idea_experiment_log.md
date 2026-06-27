@@ -126,3 +126,78 @@ Mean paired delta over the four datasets:
 - 先扩展到 `split_index=0,1,2`、`seed=0`，仍保持 100 epoch，验证 split 稳定性。
 - 同时补 per-class F1 / confusion matrix 诊断，尤其检查 Texas macro-F1 提升来自哪些类别。
 - 若 split 0-2 仍不负，再考虑 seeds 0-2 或 200 epoch。
+
+## 2026-06-27 Heterophily splits 0-2 sanity
+
+本轮代码修正：
+
+- 固定 split 评估新增 per-class F1。
+- 固定 split 评估新增 `eval_details.json`，保存 `best_c`、`labels` 与 confusion matrix。
+- `eval_summary.csv` 会写入 `F1Class0_mean` 到 `F1Class4_mean`。
+- 新增 `summarize_runs.py`，从 run 目录自动生成 paired 与 aggregate CSV。
+
+命令模式：
+
+```bash
+python train.py --dataset <dataset> --method grace --seed 0 --split-index <split> --epochs 100 --save-dir runs/hetero_splits0-2_seed0_e100 --log-every 100
+python train.py --dataset <dataset> --method es_weighted --seed 0 --split-index <split> --epochs 100 --warmup-epochs 20 --negative-weighting --save-dir runs/hetero_splits0-2_seed0_e100 --log-every 100
+```
+
+Actor 额外使用 `--batch-size 1024`。
+
+### Split-level Delta
+
+| Dataset | Split | Delta F1Mi | Delta F1Ma | ES final weight mean | ES final weight std |
+|---|---:|---:|---:|---:|---:|
+| Texas | 0 | +0.027027 | +0.019704 | 0.967285 | 0.014547 |
+| Texas | 1 | +0.027027 | +0.012389 | 0.967151 | 0.015204 |
+| Texas | 2 | +0.000000 | +0.000000 | 0.966646 | 0.014663 |
+| Cornell | 0 | -0.108108 | -0.113380 | 0.967786 | 0.013821 |
+| Cornell | 1 | +0.027027 | +0.038876 | 0.967218 | 0.014057 |
+| Cornell | 2 | +0.054054 | +0.040305 | 0.967330 | 0.013751 |
+| Wisconsin | 0 | +0.000000 | +0.000000 | 0.977259 | 0.017876 |
+| Wisconsin | 1 | +0.000000 | +0.000000 | 0.977551 | 0.017740 |
+| Wisconsin | 2 | +0.000000 | +0.000000 | 0.977458 | 0.017599 |
+| Actor | 0 | +0.001316 | +0.001196 | 0.946110 | 0.020921 |
+| Actor | 1 | +0.003289 | +0.001260 | 0.946110 | 0.020920 |
+| Actor | 2 | -0.001974 | -0.001593 | 0.946113 | 0.020920 |
+
+### Aggregate by Dataset
+
+| Dataset | Mean Delta F1Mi | F1Mi pos/zero/neg | Mean Delta F1Ma | F1Ma pos/zero/neg |
+|---|---:|---|---:|---|
+| Texas | +0.018018 | 2 / 1 / 0 | +0.010698 | 2 / 1 / 0 |
+| Cornell | -0.009009 | 2 / 0 / 1 | -0.011400 | 2 / 0 / 1 |
+| Wisconsin | +0.000000 | 0 / 3 / 0 | +0.000000 | 0 / 3 / 0 |
+| Actor | +0.000877 | 2 / 0 / 1 | +0.000288 | 2 / 0 / 1 |
+
+Overall mean over 12 paired runs:
+
+- F1Mi：+0.002472
+- F1Ma：-0.000104
+
+### Per-class Notes
+
+- Texas 的正向主要来自 class 0 与 class 3，class 1/2/4 仍基本为 0。
+- Cornell split 0 的明显负向主要来自 class 0、class 2、class 3 同时下降；split 1/2 则转为正向，说明该数据集 split 敏感。
+- Wisconsin 所有 split 的预测几乎不变，`es_weighted` 没有实质影响。
+- Actor 的变化非常小，class 0 平均略降，class 1/2/3 略升。
+
+### 当前解释
+
+- `es_weighted` 在 Texas 上跨 splits 0-2 保持非负，有弱正向信号。
+- Cornell 不稳定，不能作为方法有效证据。
+- Wisconsin 基本无影响。
+- Actor 只有很小的弱正向，仍需更多 seed 判断。
+- 整体结果不支持“稳定提升异配图分类性能”的强叙事，但支持继续做小范围验证与诊断。
+
+### 下一步建议
+
+- 不急着扩 10 splits；先对 Texas/Cornell 补 confusion matrix 对比摘要，确认 macro-F1 变化是否只是少数类预测波动。
+- 若继续训练实验，优先跑 Texas/Cornell/Actor 的 seeds 0-2 × splits 0-2；Wisconsin 可暂缓，因为当前完全持平。
+
+自动汇总命令：
+
+```bash
+python summarize_runs.py --runs-dir runs/hetero_splits0-2_seed0_e100 --paired-out runs/summaries/hetero_splits0-2_seed0_e100_paired.csv --aggregate-out runs/summaries/hetero_splits0-2_seed0_e100_aggregate.csv
+```

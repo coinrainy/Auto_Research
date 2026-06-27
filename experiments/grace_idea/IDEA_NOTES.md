@@ -50,10 +50,9 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `--eval-mode auto` 对异配数据集默认使用固定 `train/val/test` mask；对原 GRACE 数据集保持随机 linear probe。
 - `--eval-mode mask` 可强制使用 mask 评估。
 - `--eval-mode random` 可强制使用原 GRACE 风格随机 linear probe。
+- `summarize_runs.py` 可从 `runs/` 目录生成 matched paired summary 与 dataset aggregate summary。
 
 近期需要补齐：
 
-- GRACE baseline 与 `es_weighted` 的批量对齐脚本；
-- per-class F1 / confusion matrix 诊断；
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
 - negative weighting 的 false-negative pressure 诊断。
