@@ -370,3 +370,19 @@
   - 已根据公开论文、官方代码和框架文档整理实验注意事项，新增文档：`docs/gcl_experiment_protocol_checklist.md`。
   - 重点风险包括：自实现 baseline 与官方实现不一致、Planetoid/WebKB/WikipediaNetwork split 混用、linear evaluation 细节不透明、downstream validation set 参与 pretraining 超参选择、baseline 调参预算不公平、negative set/augmentation/objective 组件未隔离、false-negative claim 缺少污染度诊断。
   - 后续任何新 GCL/GSSL 方法实验，在写代码或跑正式实验前必须先按该 checklist 向用户确认协议。
+- 2026-06-28 autonomous SGFN 候选方法实现与初筛：
+  - 用户明确要求后续不再反复询问问题，由 Codex 自主判断、搜索、尝试并实现具备创新与潜在 SOTA 能力的图对比学习 idea；本轮按 `academic-research-suite` 的 deep-research + experiment-agent 思路执行，但不进入用户确认门。
+  - 已快速核查相关文献边界：ProGCL、FD4GCL、GraphRank、GRAPE、HLCL、AS-GCL 等已覆盖 hard negative / false negative / heterophily / spectral GCL 的重要区域；因此新 idea 不能简单表述为“首次处理 false negative”，必须有明确机制诊断与对照。
+  - 当前工作主线从旧 `es_weighted` node-wise stability weighting 收敛为 `sgfn`：Stability-Guided False-Negative attenuation。核心做法是使用 EMA teacher clean embedding 估计 pair-level false-negative risk，并在 GRACE/InfoNCE denominator 中对疑似 false negative 做有界 attenuation。
+  - 已在 `experiments/grace_idea/train.py` 中新增/完善 `--method sgfn`，支持 `--fn-risk-margin`、`--fn-risk-temperature`、`--fn-attenuation-power`、`--fn-consensus`、`--pair-shuffle-mode`、`--pair-normalization`、`--pair-reallocation-alpha` 与 `--fn-attraction-weight`。
+  - 已在 `experiments/grace_idea/model.py` 中实现 pair-specific denominator weights，覆盖 full-batch 与 batched loss 路径。
+  - 已在 `experiments/grace_idea/scripts/run_split_study.sh` 与 `summarize_runs.py` 中支持 `sgfn` 批跑和 `--target-method sgfn` 汇总。
+  - 已新增机制诊断脚本：`experiments/grace_idea/analyze_pair_weights.py`，可输出 label-only false-negative keep weight、true-negative keep weight、weighted/unweighted false-negative pressure share、dataset aggregate 与 normal-vs-control 对照；该诊断不进入训练。
+  - 已新增研究日志：`docs/sgfn_candidate_research_log.md`，记录文献边界、实现内容、sanity 结果、失败消融与下一步命令。
+  - SGFN attenuation sanity（Texas/Cornell/Wisconsin/Actor × splits 0/1/2 × seed0 × 50 epochs）：normal - GRACE 的 F1Mi mean 分别为 Texas +0.027027、Cornell +0.009009、Wisconsin -0.013072、Actor -0.002412；normal - shuffled 分别为 Texas +0.018018、Cornell +0.009009、Wisconsin -0.013072、Actor +0.001316。
+  - 机制诊断显示 SGFN attenuation 在 Texas/Cornell/Wisconsin 上能系统性降低 label-only false-negative pressure，而 shuffled control 基本接近 0；Actor 机制信号很弱。
+  - row-mean reallocation 消融：机制更干净但性能弱，F1Mi mean 为 Texas -0.009009、Cornell +0.018018、Wisconsin 0、Actor -0.004825；适合作为“不是简单弱化 denominator”的审稿对照，不作为默认主线。
+  - blend reallocation 消融整体失败：F1Mi mean 为 Texas -0.027027、Cornell -0.018018、Wisconsin 0、Actor -0.007237。
+  - false-negative attraction 消融整体失败：F1Mi mean 为 Texas -0.027027、Cornell -0.009009、Wisconsin -0.006536、Actor -0.008553；部分 split 中 shuffled attraction 更强，说明该模块不能支撑强机制叙事。
+  - 当前保守结论：唯一值得继续扩展的是默认 SGFN attenuation + shuffled-pair control + false-negative pressure 诊断；尚不能称为 SOTA，也不能称为通用 heterophily 方法。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="grace sgfn" ES_CONTROLS="normal shuffled" EPOCHS=100 WARMUP_EPOCHS=20 SAVE_DIR="runs/sgfn_attenuation_hetero_splits0-9_seed0_e100" MANIFEST_PATH="runs/sgfn_attenuation_hetero_splits0-9_seed0_e100/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 scripts/run_split_study.sh`。

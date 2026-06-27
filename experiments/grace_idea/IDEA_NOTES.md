@@ -12,12 +12,13 @@
 - 以后以 GRACE 原实现为基础做最小侵入式修改。
 - 优先保持 baseline 逻辑可对照，再逐步加入 reliability / weighting / diagnostics。
 
-## 当前已实现的第一版改进
+## 当前已实现的方法入口
 
 训练入口仍为 `train.py`，但新增 `--method` 参数：
 
 - `--method grace`：保留原始 GRACE 训练路径。
-- `--method es_weighted`：新增 embedding-stability weighted GRACE。
+- `--method es_weighted`：embedding-stability weighted GRACE，保留为历史/对照路线。
+- `--method sgfn`：Stability-Guided False-Negative attenuation，当前主候选。
 
 `es_weighted` 的设计边界：
 
@@ -40,10 +41,24 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1 --shuffle-weights --skip-eval --save-dir runs/smoke_controls --overwrite
 ```
 
+`sgfn` 的设计边界：
+
+- 使用 EMA teacher 在 clean graph 上产生稳定参照 embedding。
+- 对 teacher embedding 相似度做 row-standardized scoring，估计 pair-level false-negative risk。
+- 在 InfoNCE denominator 中对疑似 false negative 做有界 attenuation，而不是只做 node-wise anchor weighting。
+- 支持 `--shuffle-weights` 做 pair 映射打乱控制，用于检验权重结构是否有效。
+- 支持 `--fn-consensus feature`、`--pair-normalization row_mean|blend_row_mean`、`--fn-attraction-weight`，但当前实验显示这些扩展不适合作为默认主线，应作为消融或负结果保留。
+
+当前研究判断：
+
+- 主候选收敛为 `sgfn` 默认设置，即 false-negative attenuation。
+- `row_mean` reallocation 机制更干净但性能弱；`blend_row_mean` 与 `fn_attraction_weight=0.1` 在 4 个 heterophily 数据集 sanity 中整体负向。
+- 当前结果还不足以声称 SOTA，需要继续做 10 split / 多 seed 与更强 baseline 对照。
+
 正式实验前仍需补齐：
 
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
-- negative weighting 的 false-negative pressure 诊断。
+- 与 ProGCL / GRAPE / GraphRank 等 false-negative 或 hard-negative 方法的公平对照。
 
 ## 当前实验入口能力
 
@@ -55,17 +70,20 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `--eval-mode random` 可强制使用原 GRACE 风格随机 linear probe。
 - `scripts/run_split_study.sh` 可通过 `DATASETS`、`SPLITS`、`SEEDS`、`METHODS`、`ES_CONTROLS` 做 split-aware 批跑。
 - `train_log.csv` 记录权重均值、方差、min/max 与 effective sample size ratio，用于判断 reliability 权重是否实质上接近等权。
-- `summarize_runs.py` 可从 `runs/` 目录生成 matched paired summary 与 dataset aggregate summary，并兼容 `es_weighted_shuffled` / `es_weighted_uniform_random` 控制组；旧的 `es_weighted_random` 历史目录仍可解析。
+- `summarize_runs.py` 可从 `runs/` 目录生成 matched paired summary 与 dataset aggregate summary，并兼容 `es_weighted` / `sgfn` 的 normal、shuffled、uniform_random 控制组。
+- `analyze_pair_weights.py` 可对 `sgfn` run 做 label-only false-negative pressure 诊断；该诊断不参与训练，只用于机制验证。
 
 示例 split-aware 命令：
 
 ```bash
 cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
-DATASETS="Texas Cornell" SPLITS="0 1 2" SEEDS="0" ES_CONTROLS="normal shuffled uniform_random" SAVE_DIR="runs/split_control_sanity" scripts/run_split_study.sh
-python summarize_runs.py --runs-dir runs/split_control_sanity --paired-out runs/summaries/split_control_sanity_paired.csv --aggregate-out runs/summaries/split_control_sanity_aggregate.csv
+DATASETS="Texas Cornell" SPLITS="0 1 2" SEEDS="0" METHODS="grace sgfn" ES_CONTROLS="normal shuffled" SAVE_DIR="runs/sgfn_split_control_sanity" scripts/run_split_study.sh
+python summarize_runs.py --runs-dir runs/sgfn_split_control_sanity --target-method sgfn --paired-out runs/summaries/sgfn_split_control_sanity_paired.csv --aggregate-out runs/summaries/sgfn_split_control_sanity_aggregate.csv
+python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out runs/summaries/sgfn_split_control_sanity_pair_weights.csv --aggregate-out runs/summaries/sgfn_split_control_sanity_pair_weights_aggregate.csv --control-paired-out runs/summaries/sgfn_split_control_sanity_pair_weights_controls.csv
 ```
 
 近期需要补齐：
 
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
-- negative weighting 的 false-negative pressure 诊断。
+- Chameleon/Squirrel 接入；
+- ProGCL / GRAPE / GraphRank 可复现对照。

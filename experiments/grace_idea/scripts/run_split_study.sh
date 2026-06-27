@@ -50,7 +50,7 @@ run_train() {
   if [[ "${OVERWRITE}" == "1" ]]; then
     args+=(--overwrite)
   fi
-  if [[ "${method}" == "es_weighted" ]]; then
+  if [[ "${method}" == "es_weighted" || "${method}" == "sgfn" ]]; then
     args+=(--warmup-epochs "${WARMUP_EPOCHS}")
     if [[ "${control}" == "shuffled" ]]; then
       args+=(--shuffle-weights)
@@ -82,7 +82,7 @@ for dataset in ${DATASETS}; do
   for split_index in ${SPLITS}; do
     for model_seed in ${SEEDS}; do
       for method in ${METHODS}; do
-        if [[ "${method}" == "es_weighted" ]]; then
+        if [[ "${method}" == "es_weighted" || "${method}" == "sgfn" ]]; then
           for control in ${ES_CONTROLS}; do
             run_train "${dataset}" "${split_index}" "${model_seed}" "${method}" "${control}"
           done

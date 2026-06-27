@@ -6,7 +6,7 @@ from statistics import mean, pstdev
 
 
 RUN_PATTERN = re.compile(
-    r'^(?P<dataset>.+)_(?P<method>grace|es_weighted)'
+    r'^(?P<dataset>.+)_(?P<method>grace|es_weighted|sgfn)'
     r'(?:_(?P<variant>normal|shuffled|uniform_random|random))?_seed(?P<seed>\d+)'
     r'(?:_split(?P<split>\d+))?$'
 )
@@ -19,6 +19,8 @@ def parse_args():
     parser.add_argument('--runs-dir', required=True)
     parser.add_argument('--paired-out', required=True)
     parser.add_argument('--aggregate-out', required=True)
+    parser.add_argument('--target-method', default='es_weighted',
+                        choices=['es_weighted', 'sgfn'])
     return parser.parse_args()
 
 
@@ -55,7 +57,7 @@ def load_runs(runs_dir):
         method = match.group('method')
         variant = match.group('variant')
         if variant is None:
-            variant = 'normal' if method == 'es_weighted' else 'baseline'
+            variant = 'normal' if method in ['es_weighted', 'sgfn'] else 'baseline'
         row = {
             'dataset': match.group('dataset'),
             'method': method,
@@ -77,7 +79,7 @@ def load_runs(runs_dir):
     return runs
 
 
-def make_paired_rows(runs):
+def make_paired_rows(runs, target_method):
     keys = sorted({(r['dataset'], r['seed'], r['split']) for r in runs})
     paired = []
     for dataset, seed, split in keys:
@@ -86,8 +88,8 @@ def make_paired_rows(runs):
              and r['split'] == split and r['method'] == 'grace'),
             None,
         )
-        es_weighted = find_run(runs, dataset, seed, split, 'es_weighted', 'normal')
-        if grace is None or es_weighted is None:
+        target = find_run(runs, dataset, seed, split, target_method, 'normal')
+        if grace is None or target is None:
             continue
         row = {
             'dataset': dataset,
@@ -95,42 +97,43 @@ def make_paired_rows(runs):
             'model_seed': seed,
             'split': split,
             'split_index': split,
+            'target_method': target_method,
             'grace_F1Mi': grace['F1Mi'],
-            'es_weighted_F1Mi': es_weighted['F1Mi'],
-            'delta_F1Mi': es_weighted['F1Mi'] - grace['F1Mi'],
+            f'{target_method}_F1Mi': target['F1Mi'],
+            'delta_F1Mi': target['F1Mi'] - grace['F1Mi'],
             'grace_F1Ma': grace['F1Ma'],
-            'es_weighted_F1Ma': es_weighted['F1Ma'],
-            'delta_F1Ma': es_weighted['F1Ma'] - grace['F1Ma'],
+            f'{target_method}_F1Ma': target['F1Ma'],
+            'delta_F1Ma': target['F1Ma'] - grace['F1Ma'],
             'grace_final_loss': grace['final_loss'],
-            'es_weighted_final_loss': es_weighted['final_loss'],
-            'es_weighted_weight_mean': es_weighted['weight_mean'],
-            'es_weighted_weight_std': es_weighted['weight_std'],
-            'es_weighted_weight_ess_ratio': es_weighted['weight_ess_ratio'],
-            'es_weighted_raw_weight_ess_ratio': es_weighted['raw_weight_ess_ratio'],
+            f'{target_method}_final_loss': target['final_loss'],
+            f'{target_method}_weight_mean': target['weight_mean'],
+            f'{target_method}_weight_std': target['weight_std'],
+            f'{target_method}_weight_ess_ratio': target['weight_ess_ratio'],
+            f'{target_method}_raw_weight_ess_ratio': target['raw_weight_ess_ratio'],
         }
         for variant in CONTROL_VARIANTS:
-            control = find_run(runs, dataset, seed, split, 'es_weighted', variant)
+            control = find_run(runs, dataset, seed, split, target_method, variant)
             if control is None:
                 continue
-            row[f'es_weighted_{variant}_F1Mi'] = control['F1Mi']
+            row[f'{target_method}_{variant}_F1Mi'] = control['F1Mi']
             row[f'delta_F1Mi_normal_minus_{variant}'] = (
-                es_weighted['F1Mi'] - control['F1Mi']
+                target['F1Mi'] - control['F1Mi']
             )
-            row[f'es_weighted_{variant}_F1Ma'] = control['F1Ma']
+            row[f'{target_method}_{variant}_F1Ma'] = control['F1Ma']
             row[f'delta_F1Ma_normal_minus_{variant}'] = (
-                es_weighted['F1Ma'] - control['F1Ma']
+                target['F1Ma'] - control['F1Ma']
             )
-            row[f'es_weighted_{variant}_weight_mean'] = control['weight_mean']
-            row[f'es_weighted_{variant}_weight_std'] = control['weight_std']
-            row[f'es_weighted_{variant}_weight_ess_ratio'] = control['weight_ess_ratio']
-            row[f'es_weighted_{variant}_raw_weight_ess_ratio'] = control[
+            row[f'{target_method}_{variant}_weight_mean'] = control['weight_mean']
+            row[f'{target_method}_{variant}_weight_std'] = control['weight_std']
+            row[f'{target_method}_{variant}_weight_ess_ratio'] = control['weight_ess_ratio']
+            row[f'{target_method}_{variant}_raw_weight_ess_ratio'] = control[
                 'raw_weight_ess_ratio'
             ]
         class_keys = sorted(k for k in grace if k.startswith('F1Class'))
         for class_key in class_keys:
             row[f'grace_{class_key}'] = grace[class_key]
-            row[f'es_weighted_{class_key}'] = es_weighted[class_key]
-            row[f'delta_{class_key}'] = es_weighted[class_key] - grace[class_key]
+            row[f'{target_method}_{class_key}'] = target[class_key]
+            row[f'delta_{class_key}'] = target[class_key] - grace[class_key]
         paired.append(row)
     return paired
 
@@ -221,7 +224,7 @@ def write_csv(path, rows):
 def main():
     args = parse_args()
     runs = load_runs(args.runs_dir)
-    paired = make_paired_rows(runs)
+    paired = make_paired_rows(runs, args.target_method)
     aggregate = make_aggregate_rows(paired)
     write_csv(args.paired_out, paired)
     write_csv(args.aggregate_out, aggregate)

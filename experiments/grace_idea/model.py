@@ -69,13 +69,27 @@ class Model(torch.nn.Module):
         return torch.mm(z1, z2.t())
 
     def semi_loss(self, z1: torch.Tensor, z2: torch.Tensor,
-                  denominator_weights: torch.Tensor = None):
+                  denominator_weights: torch.Tensor = None,
+                  pair_denominator_weights: torch.Tensor = None):
         f = lambda x: torch.exp(x / self.tau)
         refl_sim = f(self.sim(z1, z1))
         between_sim = f(self.sim(z1, z2))
         positive = between_sim.diag()
 
-        if denominator_weights is None:
+        if pair_denominator_weights is not None:
+            weights = pair_denominator_weights.to(
+                z1.device,
+                dtype=z1.dtype,
+            ).clamp_min(0.0)
+            diag_weights = weights.diag()
+            denominator = (
+                (refl_sim * weights).sum(1)
+                - refl_sim.diag() * diag_weights
+                + (between_sim * weights).sum(1)
+                - positive * diag_weights
+                + positive
+            )
+        elif denominator_weights is None:
             denominator = refl_sim.sum(1) + between_sim.sum(1) - refl_sim.diag()
         else:
             weights = denominator_weights.to(z1.device, dtype=z1.dtype).clamp_min(0.0)
@@ -92,7 +106,8 @@ class Model(torch.nn.Module):
 
     def batched_semi_loss(self, z1: torch.Tensor, z2: torch.Tensor,
                           batch_size: int,
-                          denominator_weights: torch.Tensor = None):
+                          denominator_weights: torch.Tensor = None,
+                          pair_denominator_weights: torch.Tensor = None):
         # Space complexity: O(BN) (semi_loss: O(N^2))
         device = z1.device
         num_nodes = z1.size(0)
@@ -102,6 +117,12 @@ class Model(torch.nn.Module):
         weights = None
         if denominator_weights is not None:
             weights = denominator_weights.to(device, dtype=z1.dtype).clamp_min(0.0)
+        pair_weights = None
+        if pair_denominator_weights is not None:
+            pair_weights = pair_denominator_weights.to(
+                device,
+                dtype=z1.dtype,
+            ).clamp_min(0.0)
         losses = []
 
         for i in range(num_batches):
@@ -112,7 +133,17 @@ class Model(torch.nn.Module):
             between_sim = f(self.sim(z1[mask], z2))  # [B, N]
             positive = between_sim[:, start:end].diag()
 
-            if weights is None:
+            if pair_weights is not None:
+                pair_rows = pair_weights[mask]
+                batch_diag_weights = pair_rows[:, start:end].diag()
+                denominator = (
+                    (refl_sim * pair_rows).sum(1)
+                    - refl_sim[:, start:end].diag() * batch_diag_weights
+                    + (between_sim * pair_rows).sum(1)
+                    - positive * batch_diag_weights
+                    + positive
+                )
+            elif weights is None:
                 denominator = (
                     refl_sim.sum(1)
                     + between_sim.sum(1)
@@ -136,16 +167,39 @@ class Model(torch.nn.Module):
     def loss(self, z1: torch.Tensor, z2: torch.Tensor,
              mean: bool = True, batch_size: int = 0,
              pair_weights: torch.Tensor = None,
-             denominator_weights: torch.Tensor = None):
+             denominator_weights: torch.Tensor = None,
+             pair_denominator_weights: torch.Tensor = None):
         h1 = self.projection(z1)
         h2 = self.projection(z2)
 
         if batch_size == 0:
-            l1 = self.semi_loss(h1, h2, denominator_weights)
-            l2 = self.semi_loss(h2, h1, denominator_weights)
+            l1 = self.semi_loss(
+                h1,
+                h2,
+                denominator_weights,
+                pair_denominator_weights,
+            )
+            l2 = self.semi_loss(
+                h2,
+                h1,
+                denominator_weights,
+                pair_denominator_weights,
+            )
         else:
-            l1 = self.batched_semi_loss(h1, h2, batch_size, denominator_weights)
-            l2 = self.batched_semi_loss(h2, h1, batch_size, denominator_weights)
+            l1 = self.batched_semi_loss(
+                h1,
+                h2,
+                batch_size,
+                denominator_weights,
+                pair_denominator_weights,
+            )
+            l2 = self.batched_semi_loss(
+                h2,
+                h1,
+                batch_size,
+                denominator_weights,
+                pair_denominator_weights,
+            )
 
         ret = (l1 + l2) * 0.5
         if pair_weights is not None:

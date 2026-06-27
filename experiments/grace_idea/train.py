@@ -36,7 +36,7 @@ def parse_args():
     parser.add_argument('--gpu_id', type=int, default=0)
     parser.add_argument('--config', type=str, default='config.yaml')
     parser.add_argument('--method', type=str, default='grace',
-                        choices=['grace', 'es_weighted'])
+                        choices=['grace', 'es_weighted', 'sgfn'])
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--batch-size', type=int, default=0)
@@ -44,6 +44,17 @@ def parse_args():
     parser.add_argument('--ema-decay', type=float, default=0.99)
     parser.add_argument('--weight-power', type=float, default=1.0)
     parser.add_argument('--min-weight', type=float, default=0.05)
+    parser.add_argument('--fn-risk-margin', type=float, default=1.0)
+    parser.add_argument('--fn-risk-temperature', type=float, default=0.5)
+    parser.add_argument('--fn-attenuation-power', type=float, default=1.0)
+    parser.add_argument('--fn-attraction-weight', type=float, default=0.0)
+    parser.add_argument('--fn-consensus', type=str, default='none',
+                        choices=['none', 'feature'])
+    parser.add_argument('--pair-shuffle-mode', type=str, default='column',
+                        choices=['column', 'row'])
+    parser.add_argument('--pair-normalization', type=str, default='none',
+                        choices=['none', 'row_mean', 'blend_row_mean'])
+    parser.add_argument('--pair-reallocation-alpha', type=float, default=0.5)
     parser.add_argument('--negative-weighting', action='store_true')
     parser.add_argument('--no-anchor-weighting', action='store_true')
     parser.add_argument('--shuffle-weights', action='store_true')
@@ -71,12 +82,13 @@ def set_seed(seed):
 def validate_args(args):
     if args.shuffle_weights and args.random_weights:
         raise ValueError('Use at most one of --shuffle-weights and --random-weights.')
-    if (args.shuffle_weights or args.random_weights) and args.method != 'es_weighted':
-        raise ValueError('Weight controls are only valid with --method es_weighted.')
+    if (args.shuffle_weights or args.random_weights) and args.method not in [
+            'es_weighted', 'sgfn']:
+        raise ValueError('Weight controls are only valid with weighted methods.')
 
 
 def weight_control_name(args):
-    if args.method != 'es_weighted':
+    if args.method not in ['es_weighted', 'sgfn']:
         return 'none'
     if args.shuffle_weights:
         return 'shuffled'
@@ -178,9 +190,13 @@ def update_teacher(teacher, student, decay):
 
 
 @torch.no_grad()
-def embedding_stability_weights(teacher, z1, z2, data, args):
+def teacher_clean_embeddings(teacher, data):
     teacher.eval()
-    target = teacher(data.x, data.edge_index)
+    return teacher(data.x, data.edge_index)
+
+
+@torch.no_grad()
+def embedding_stability_weights(target, z1, z2, args):
     sim1 = F.cosine_similarity(z1.detach(), target, dim=1)
     sim2 = F.cosine_similarity(z2.detach(), target, dim=1)
     weights = ((sim1 + sim2) * 0.5 + 1.0) * 0.5
@@ -190,6 +206,47 @@ def embedding_stability_weights(teacher, z1, z2, data, args):
     if args.min_weight > 0.0:
         weights = weights * (1.0 - args.min_weight) + args.min_weight
     return weights.detach()
+
+
+@torch.no_grad()
+def row_standardized_risk(sim, args):
+    num_nodes = sim.size(0)
+    if num_nodes <= 1:
+        return torch.ones_like(sim)
+
+    diag = sim.diag()
+    row_mean = (sim.sum(1) - diag) / (num_nodes - 1)
+    centered = sim - row_mean.view(-1, 1)
+    row_var = (
+        centered.pow(2).sum(1)
+        - (diag - row_mean).pow(2)
+    ) / (num_nodes - 1)
+    row_std = row_var.clamp_min(1e-12).sqrt()
+    row_score = centered / row_std.view(-1, 1)
+
+    return torch.sigmoid(
+        (row_score - args.fn_risk_margin) / args.fn_risk_temperature
+    )
+
+
+@torch.no_grad()
+def false_negative_pair_weights(target, data, args):
+    target = F.normalize(target.detach(), dim=1)
+    sim = torch.mm(target, target.t())
+    risk = row_standardized_risk(sim, args)
+
+    if args.fn_consensus == 'feature':
+        features = F.normalize(data.x.detach(), dim=1)
+        feature_sim = torch.mm(features, features.t())
+        risk = risk * row_standardized_risk(feature_sim, args)
+
+    keep = (1.0 - risk).clamp(0.0, 1.0)
+    if args.fn_attenuation_power != 1.0:
+        keep = keep.pow(args.fn_attenuation_power)
+    if args.min_weight > 0.0:
+        keep = keep * (1.0 - args.min_weight) + args.min_weight
+    keep.fill_diagonal_(1.0)
+    return keep.detach()
 
 
 def make_control_generator(args, epoch):
@@ -218,6 +275,51 @@ def apply_weight_control(weights, args, epoch):
     return weights
 
 
+def apply_pair_weight_control(weights, args, epoch):
+    if weights is None:
+        return None
+    if args.shuffle_weights:
+        generator = make_control_generator(args, epoch)
+        if args.pair_shuffle_mode == 'row':
+            noise = torch.rand(weights.shape, generator=generator)
+            permutation = noise.argsort(dim=1).to(weights.device)
+            return torch.gather(weights, 1, permutation).detach()
+        permutation = torch.randperm(weights.size(1), generator=generator)
+        return weights[:, permutation.to(weights.device)].detach()
+    if args.random_weights:
+        generator = make_control_generator(args, epoch)
+        random_weights = torch.rand(weights.shape, generator=generator)
+        random_weights = random_weights.to(weights.device, dtype=weights.dtype)
+        if args.min_weight > 0.0:
+            random_weights = random_weights * (1.0 - args.min_weight) + args.min_weight
+        random_weights.fill_diagonal_(1.0)
+        return random_weights.detach()
+    return weights
+
+
+def normalize_pair_weights(weights, args):
+    if weights is None or args.pair_normalization == 'none':
+        return weights
+    if args.pair_normalization not in ['row_mean', 'blend_row_mean']:
+        raise ValueError(f'Unsupported pair normalization: {args.pair_normalization}')
+
+    weights = weights.clamp_min(0.0).clone()
+    original = weights.clone()
+    num_nodes = weights.size(0)
+    if num_nodes <= 1:
+        return weights
+    offdiag = ~torch.eye(num_nodes, dtype=torch.bool, device=weights.device)
+    row_sum = weights.masked_fill(~offdiag, 0.0).sum(1, keepdim=True)
+    row_mean = row_sum / max(num_nodes - 1, 1)
+    weights = weights / row_mean.clamp_min(1e-12)
+    weights.fill_diagonal_(1.0)
+    if args.pair_normalization == 'blend_row_mean':
+        alpha = min(max(args.pair_reallocation_alpha, 0.0), 1.0)
+        weights = original * (1.0 - alpha) + weights * alpha
+        weights.fill_diagonal_(1.0)
+    return weights.detach()
+
+
 def weight_diagnostics(weights):
     if weights is None:
         return {}
@@ -227,6 +329,24 @@ def weight_diagnostics(weights):
         'weight_ess': ess.item(),
         'weight_ess_ratio': (ess / weights.numel()).item(),
     }
+
+
+def false_negative_attraction_loss(z1, z2, pair_keep_weights):
+    if pair_keep_weights is None:
+        return z1.new_tensor(0.0)
+    num_nodes = z1.size(0)
+    if num_nodes <= 1:
+        return z1.new_tensor(0.0)
+
+    risk = (1.0 - pair_keep_weights.detach()).clamp_min(0.0).to(
+        z1.device,
+        dtype=z1.dtype,
+    )
+    risk.fill_diagonal_(0.0)
+    risk_sum = risk.sum().clamp_min(1e-12)
+    consensus = F.normalize((z1 + z2) * 0.5, dim=1)
+    distance = 1.0 - torch.mm(consensus, consensus.t())
+    return (risk * distance).sum() / risk_sum
 
 
 def train_epoch(model, teacher, data, optimizer, config, args, epoch):
@@ -239,20 +359,40 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
 
     weights = None
     raw_weights = None
-    use_weighting = args.method == 'es_weighted' and epoch > args.warmup_epochs
+    use_weighting = args.method in ['es_weighted', 'sgfn'] and epoch > args.warmup_epochs
     if use_weighting:
-        raw_weights = embedding_stability_weights(teacher, z1, z2, data, args)
-        weights = apply_weight_control(raw_weights, args, epoch)
+        target = teacher_clean_embeddings(teacher, data)
+        if args.method == 'es_weighted':
+            raw_weights = embedding_stability_weights(target, z1, z2, args)
+            weights = apply_weight_control(raw_weights, args, epoch)
+        else:
+            raw_weights = false_negative_pair_weights(target, data, args)
+            weights = apply_pair_weight_control(raw_weights, args, epoch)
+            weights = normalize_pair_weights(weights, args)
 
-    pair_weights = None if args.no_anchor_weighting else weights
-    denominator_weights = weights if args.negative_weighting else None
-    loss = model.loss(
+    pair_weights = (
+        None if args.method == 'sgfn' or args.no_anchor_weighting else weights
+    )
+    denominator_weights = (
+        weights if args.method == 'es_weighted' and args.negative_weighting else None
+    )
+    pair_denominator_weights = weights if args.method == 'sgfn' else None
+    contrastive_loss = model.loss(
         z1,
         z2,
         batch_size=args.batch_size,
         pair_weights=pair_weights,
         denominator_weights=denominator_weights,
+        pair_denominator_weights=pair_denominator_weights,
     )
+    attraction_loss = z1.new_tensor(0.0)
+    if (
+        args.method == 'sgfn'
+        and use_weighting
+        and args.fn_attraction_weight > 0.0
+    ):
+        attraction_loss = false_negative_attraction_loss(z1, z2, weights)
+    loss = contrastive_loss + args.fn_attraction_weight * attraction_loss
 
     loss.backward()
     optimizer.step()
@@ -261,6 +401,8 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
 
     log = {
         'loss': loss.item(),
+        'contrastive_loss': contrastive_loss.item(),
+        'fn_attraction_loss': attraction_loss.item(),
         'stage': 'weighted' if use_weighting else 'warmup_or_grace',
         'weight_control': weight_control_name(args),
     }
@@ -299,7 +441,11 @@ def prepare_save_dir(args, seed):
     split_dataset = args.dataset in ['Texas', 'Cornell', 'Wisconsin', 'Actor']
     split_suffix = f'_split{args.split_index}' if args.eval_mode == 'mask' or split_dataset else ''
     control = weight_control_name(args)
-    control_suffix = f'_{control}' if args.method == 'es_weighted' and control != 'normal' else ''
+    control_suffix = (
+        f'_{control}'
+        if args.method in ['es_weighted', 'sgfn'] and control != 'normal'
+        else ''
+    )
     run_name = f'{args.dataset}_{args.method}{control_suffix}_seed{seed}{split_suffix}'
     run_dir = save_dir / run_name
     if run_dir.exists() and any(run_dir.iterdir()):
@@ -320,6 +466,8 @@ def append_train_log(run_dir, row):
     fieldnames = [
         'epoch',
         'loss',
+        'contrastive_loss',
+        'fn_attraction_loss',
         'stage',
         'weight_mean',
         'weight_std',
@@ -419,6 +567,14 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'model_seed': seed,
         'split_index': args.split_index,
         'weight_control': weight_control_name(args),
+        'fn_risk_margin': args.fn_risk_margin,
+        'fn_risk_temperature': args.fn_risk_temperature,
+        'fn_attenuation_power': args.fn_attenuation_power,
+        'fn_attraction_weight': args.fn_attraction_weight,
+        'fn_consensus': args.fn_consensus,
+        'pair_shuffle_mode': args.pair_shuffle_mode,
+        'pair_normalization': args.pair_normalization,
+        'pair_reallocation_alpha': args.pair_reallocation_alpha,
         'device': str(device),
         'args': vars(args),
         'config': config,
@@ -469,7 +625,7 @@ def main():
     train_mask, val_mask, test_mask = get_split_masks(data, args.split_index)
 
     model = build_model(config, dataset, device)
-    teacher = build_teacher(model) if args.method == 'es_weighted' else None
+    teacher = build_teacher(model) if args.method in ['es_weighted', 'sgfn'] else None
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=config['learning_rate'],
@@ -481,13 +637,24 @@ def main():
         f'(I) | dataset={args.dataset}, method={args.method}, seed={seed}, '
         f'split_index={args.split_index}, device={device}'
     )
-    if args.method == 'es_weighted':
+    if args.method in ['es_weighted', 'sgfn']:
         print(
             f'(I) | warmup_epochs={args.warmup_epochs}, ema_decay={args.ema_decay}, '
             f'anchor_weighting={not args.no_anchor_weighting}, '
             f'negative_weighting={args.negative_weighting}, '
             f'weight_control={weight_control_name(args)}'
         )
+        if args.method == 'sgfn':
+            print(
+                f'(I) | fn_risk_margin={args.fn_risk_margin}, '
+                f'fn_risk_temperature={args.fn_risk_temperature}, '
+                f'fn_attenuation_power={args.fn_attenuation_power}, '
+                f'fn_attraction_weight={args.fn_attraction_weight}, '
+                f'fn_consensus={args.fn_consensus}, '
+                f'pair_shuffle_mode={args.pair_shuffle_mode}, '
+                f'pair_normalization={args.pair_normalization}, '
+                f'pair_reallocation_alpha={args.pair_reallocation_alpha}'
+            )
 
     start = t()
     prev = start
