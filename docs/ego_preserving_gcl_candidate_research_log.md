@@ -155,11 +155,12 @@ graph gate 诊断：
 
 > Ego-Preserving Graph Contrastive Learning / Graph-Usage Calibrated GCL。
 
-保守主线：
+但本轮新增 raw-feature baseline 后，必须进一步收缩说法：
 
-- `residual_grace` 是当前最稳的 active candidate：异配 10 split 全面正向，同配 quick sanity 基本安全。
+- `residual_grace` 是当前最稳的 encoder-level GCL diagnostic candidate：异配 10 split 全面正向，同配 quick sanity 基本安全。
 - `ego_grace` 是必须保留的强 ablation：它证明 ego-feature preservation 是关键机制，但也会被 reviewer 质疑“这还是 graph learning 吗”。
 - `gated_ego_graph_grace` 是下一版方法雏形：异配强，但同配失败，必须加入 homophily-safe fallback 或 dataset/region-level graph usage calibration。
+- `raw_features` 线性分类是必要强 baseline：WebKB 上 raw features 明显强于 ego/residual，Actor 上也与 ego 接近。因此当前 ego/residual 不能直接作为 SOTA 方法写，只能作为暴露 graph propagation failure 的机制证据。
 
 不应声称：
 
@@ -178,10 +179,104 @@ graph gate 诊断：
 5. 加入 Chameleon/Squirrel，测试这个 encoder-level idea 是否能扩展到更大异配图；
 6. 机制诊断：按 class、degree、local feature agreement 分桶，证明 ego-preserving channel 恢复了低图一致性节点或少数类覆盖。
 
+## 2026-06-28 追加压力测试
+
+### 5. `ego_grace` 异配 10 split 复核
+
+输出：
+
+- `experiments/grace_idea/runs/summaries/ego_grace_splits0-9_seed0_e100_aggregate.csv`
+
+相对 GRACE：
+
+| Dataset | F1Mi delta | F1Ma delta | F1Mi positive/zero/negative | F1Ma positive/zero/negative |
+| --- | ---: | ---: | --- | --- |
+| Actor | +0.070855 | +0.099576 | 10/0/0 | 10/0/0 |
+| Cornell | +0.172973 | +0.141093 | 10/0/0 | 9/0/1 |
+| Texas | +0.124324 | +0.232101 | 10/0/0 | 10/0/0 |
+| Wisconsin | +0.225490 | +0.274924 | 10/0/0 | 10/0/0 |
+
+与 `residual_grace` 对齐：
+
+| Dataset | ego - residual F1Mi | ego - residual F1Ma | ego better F1Mi splits | ego better F1Ma splits |
+| --- | ---: | ---: | ---: | ---: |
+| Texas | +0.018919 | +0.043232 | 7/10 | 7/10 |
+| Cornell | -0.008108 | -0.045063 | 4/10 | 2/10 |
+| Wisconsin | +0.043137 | +0.074671 | 7/10 | 8/10 |
+| Actor | +0.006053 | +0.007432 | 8/10 | 7/10 |
+
+判断：ego-only 在 Texas/Wisconsin/Actor 更强，Cornell 上 residual 更稳。这说明最终方法不应固定为 ego-only 或 residual，而应解决“何时使用 graph propagation”的 calibration 问题。
+
+### 6. `gated_ego_graph_grace --graph-gate-min 0.5` 同配压力测试
+
+输出：
+
+- `experiments/grace_idea/runs/summaries/gated_ego_graph_grace_min05_homophily_seed0_e100_aggregate.csv`
+
+相对 GRACE：
+
+| Dataset | F1Mi delta | F1Ma delta |
+| --- | ---: | ---: |
+| Cora | -0.184167 | -0.224984 |
+| CiteSeer | -0.052198 | -0.045933 |
+| PubMed | -0.038056 | -0.031795 |
+
+判断：简单提高 graph gate 下界不能修复同配退化。当前 local feature-neighborhood agreement 的节点级路由方向暂时判为失败，不继续调 `graph_gate_min/max`。
+
+### 7. raw-feature baseline
+
+新增脚本：
+
+```bash
+python evaluate_raw_features.py --dataset Texas --split-index 0 --out-dir runs/raw_features/Texas_split0
+```
+
+输出：
+
+- `experiments/grace_idea/runs/summaries/raw_features_heterophily_splits0-9.csv`
+
+raw feature 10 split 平均：
+
+| Dataset | raw F1Mi | raw F1Ma |
+| --- | ---: | ---: |
+| Texas | 0.808108 | 0.643405 |
+| Cornell | 0.735135 | 0.513742 |
+| Wisconsin | 0.837255 | 0.610948 |
+| Actor | 0.351711 | 0.328359 |
+
+raw - ego：
+
+| Dataset | F1Mi | F1Ma | raw better F1Mi splits | raw better F1Ma splits |
+| --- | ---: | ---: | ---: | ---: |
+| Texas | +0.094595 | +0.149131 | 10/10 | 10/10 |
+| Cornell | +0.072973 | +0.074007 | 9/10 | 8/10 |
+| Wisconsin | +0.068627 | +0.069676 | 9/10 | 8/10 |
+| Actor | -0.007237 | +0.000659 | 1/10 | 5/10 |
+
+raw - residual：
+
+| Dataset | F1Mi | F1Ma | raw better F1Mi splits | raw better F1Ma splits |
+| --- | ---: | ---: | ---: | ---: |
+| Texas | +0.113514 | +0.192363 | 10/10 | 10/10 |
+| Cornell | +0.064865 | +0.028944 | 8/10 | 8/10 |
+| Wisconsin | +0.111765 | +0.144347 | 10/10 | 10/10 |
+| Actor | -0.001184 | +0.008090 | 4/10 | 6/10 |
+
+判断：WebKB 上 raw features 明显强于当前 SSL encoder；Actor 上 ego/residual 仍有一定 micro 增益但 macro 与 raw 接近。因此当前 idea 不能以 WebKB accuracy SOTA 作为主卖点。下一步必须转向：
+
+1. feature-anchored GCL：显式保留 raw features，并证明 SSL embedding 提供 raw 之外的增量；
+2. 更强/更大异配数据集，如 Chameleon/Squirrel；
+3. 机制论文路线：证明 GCN-based GCL 在强 feature heterophily 数据集上会损害 raw-feature separability，并提出 graph usage calibration 作为诊断/修正框架。
+
+### 8. 未完成的 concat post-hoc
+
+尝试评估 `raw features + SSL embedding` 拼接表示，但高维 logistic regression 评估明显变慢并出现收敛 warning，已中断。本结果不作为证据。下一步若继续 concat，应实现专门的快速 evaluator，并明确 solver/max_iter/normalization。
+
 建议下一步命令：
 
 ```bash
 cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
-DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="grace ego_grace" EPOCHS=100 SAVE_DIR="runs/ego_grace_splits0-9_seed0_e100" MANIFEST_PATH="runs/ego_grace_splits0-9_seed0_e100/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 scripts/run_split_study.sh
-python summarize_runs.py --runs-dir runs/ego_grace_splits0-9_seed0_e100 --target-method ego_grace --paired-out runs/summaries/ego_grace_splits0-9_seed0_e100_paired.csv --aggregate-out runs/summaries/ego_grace_splits0-9_seed0_e100_aggregate.csv
+python evaluate_raw_features.py --dataset Actor --split-index 0 --out-dir runs/raw_feature_smoke/Actor_split0
 ```
+
+研发下一步不是重复跑 ego 10 split，而是实现一个快速、可控的 `raw + SSL embedding` / residual-to-raw evaluator，判断 GCL 表示是否能在 raw feature 之外提供增量；若不能，该路线应转为机制诊断论文或继续换 idea。

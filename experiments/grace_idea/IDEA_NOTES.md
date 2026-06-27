@@ -27,9 +27,9 @@
 - `--method cbr_gcl`：Cluster-Balanced Redundancy-Reduced GCL，当前最值得保留的 RR 条件性候选，但仍需 anti-degradation gate 后才可能成为主方法。
 - `--method gated_cbr_gcl`：基于 RR diagonal confidence 的 CBR gate，已降级为失败 gate / 消融资产。
 - `--method stable_cluster_cbr_gcl`：基于 cluster compactness / separation 的节点级 CBR 稳定权重，已降级为失败 gate / 诊断资产。
-- `--method ego_grace`：纯 ego-feature MLP encoder 的 GRACE ablation，当前显示异配图强信号，是 ego-preserving 机制的关键对照。
-- `--method residual_grace`：GCN branch + ego MLP branch 的 residual encoder，是当前最稳 active candidate。
-- `--method gated_ego_graph_grace`：基于 local feature-neighborhood agreement 的节点级 graph usage gate；异配强，但当前 v1 同配退化严重，不能作为最终主方法。
+- `--method ego_grace`：纯 ego-feature MLP encoder 的 GRACE ablation，当前显示异配图强信号，是 ego-preserving 机制的关键对照；但 WebKB raw-feature baseline 更强，不能直接包装为 SOTA 方法。
+- `--method residual_grace`：GCN branch + ego MLP branch 的 residual encoder，是当前最稳的 encoder-level diagnostic candidate；但同样未越过 WebKB raw-feature baseline。
+- `--method gated_ego_graph_grace`：基于 local feature-neighborhood agreement 的节点级 graph usage gate；异配强，但当前 v1 与 `--graph-gate-min 0.5` 同配退化严重，不能作为最终主方法。
 
 `es_weighted` 的设计边界：
 
@@ -192,9 +192,11 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 
 - `residual_grace` 在 Texas/Cornell/Wisconsin/Actor × split0-9 上全面正向：Actor +0.064868/+0.090895，Cornell +0.172973/+0.183641，Texas +0.102703/+0.188203，Wisconsin +0.180392/+0.199546。
 - `residual_grace` 同配 quick sanity：Cora -0.008477/-0.009624，CiteSeer +0.006678/+0.012899，PubMed +0.012003/+0.014253；当前基本安全，但 Cora 需要复核。
-- `ego_grace` split0-2 比 `residual_grace` 更强，说明 ego-feature preservation 是核心机制，也意味着必须保留 MLP-only baseline，否则论文叙事不成立。
-- `gated_ego_graph_grace` split0-2 在 Texas/Cornell/Actor 很强，但 Cora/CiteSeer/PubMed 同配 quick sanity 严重退化；当前 v1 不能作为最终主方法。
-- 当前 active candidate 收缩为 Ego-Preserving / Graph-Usage Calibrated GCL：以 `residual_grace` 作为稳健主线，`ego_grace` 作为必要强 baseline，下一步设计 homophily-safe graph usage gate。
+- `ego_grace` split0-9 相对 GRACE 仍稳定强正向：Actor +0.070855/+0.099576，Cornell +0.172973/+0.141093，Texas +0.124324/+0.232101，Wisconsin +0.225490/+0.274924。
+- `ego_grace` 与 `residual_grace` 的对齐结果显示：Texas/Wisconsin/Actor 上 ego-only 更强，Cornell 上 residual 更稳；最终方法不应固定为纯 ego-only 或固定 residual，而应学习/诊断“何时使用 graph propagation”。
+- `gated_ego_graph_grace` split0-2 在 Texas/Cornell/Actor 很强，但 Cora/CiteSeer/PubMed 同配 quick sanity 严重退化；`--graph-gate-min 0.5` 仍未修复同配问题，Cora/CiteSeer/PubMed 分别为 -0.184167/-0.224984、-0.052198/-0.045933、-0.038056/-0.031795。
+- 新增 `evaluate_raw_features.py` 后，WebKB raw-feature baseline 明显强于当前 SSL embeddings：Texas raw - ego +0.094595/+0.149131，Cornell +0.072973/+0.074007，Wisconsin +0.068627/+0.069676；Actor micro 上 ego 略优 raw，但 macro 基本持平。
+- 当前 active candidate 必须从“encoder 改法直接 SOTA”收缩为 Feature-Anchored / Graph-Usage Calibrated GCL：以 raw features 为硬 baseline，证明 GCL embedding 或 graph branch 能提供 raw 之外的增量，或者转向机制论文路线解释 GCN-based GCL 何时破坏 raw-feature separability。
 
 正式实验前仍需补齐：
 
@@ -225,6 +227,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `ego_grace` 支持纯 MLP ego encoder。
 - `residual_grace` 支持 `--ego-gate-init`，并记录 `ego_gate`。
 - `gated_ego_graph_grace` 支持 `--graph-gate-temperature`、`--graph-gate-threshold`、`--graph-gate-min`、`--graph-gate-max`，并记录 `graph_gate_*`。
+- `evaluate_raw_features.py` 支持对原始 `data.x` 使用当前同一套 mask/random linear evaluation 协议，作为 ego/residual/GRACE 的 feature-only 硬 baseline。
 
 示例 split-aware 命令：
 
@@ -246,5 +249,7 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - 已实现并复核 `cbr_gcl`，不建议继续简单调 `cbr_rr_weight`。
 - 已实现并筛选基于 RR diagonal confidence 的 `gated_cbr_gcl`，该单信号 gate 失败，不建议继续调 diagonal threshold。
 - 已实现并筛选 `stable_cluster_cbr_gcl`，该 cluster compactness/separation gate 未通过 Cornell/Actor 压力测试，不建议继续沿 CBR gate 小修小补。
-- 当前应优先推进 Ego-Preserving / Graph-Usage Calibrated GCL：先扩展 `ego_grace` 10 split，与 `residual_grace` 对齐；再设计 homophily-safe graph usage gate，修复 `gated_ego_graph_grace` 在 Cora/CiteSeer/PubMed 的同配退化。
+- 当前应优先推进 Feature-Anchored / Graph-Usage Calibrated GCL：先实现快速、可控的 raw + SSL concat evaluator 或 residual-to-raw evaluator，判断 SSL 是否提供 raw 之外的增量；再考虑新的 graph usage gate。
+- 暂停继续调 `gated_ego_graph_grace` 的 `graph_gate_min/max`；`--graph-gate-min 0.5` 已显示同配退化仍严重。
+- 加入 Chameleon/Squirrel 前，先确认当前 loader/evaluator 能支持对应固定 split；若 WebKB raw-feature baseline 已远强于 SSL，WebKB 只能作为机制诊断而非 accuracy SOTA 主战场。
 - 本目录中的 SGFN / context-gated SGFN 只作为负结果、诊断工具和消融资产保留。
