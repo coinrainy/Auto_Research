@@ -296,3 +296,14 @@ python summarize_method_comparison.py --rw-summary results/diagnostics/reliabili
 3. 若不满足路线 A 成功标准，立即停止方法扩展，切换路线 B。
 
 理由：当前 failure analysis 给出了一个非常具体、低成本、可证伪的假设；如果 degree gate 无效，就能快速证明“继续堆 gate”不值得。
+
+## 2026-06-27 代码路线调整
+
+用户决定停止维护此前自建的 RW-GCL scaffold。旧代码框架已经从仓库中删除，后续方法实现不再基于根目录 `train.py` / `src/rwgcl/` / `configs/` / `scripts/` 体系推进。
+
+新的实现约束：
+
+- `baselines/GRACE` 作为外部 baseline submodule 保持不动；
+- `experiments/grace_idea/` 是从 GRACE 复制出的工作副本；
+- 后续 reliability、negative weighting、split-aware 评估等 idea 应在 `experiments/grace_idea/` 中以最小侵入方式实现；
+- 旧实验结论仅作为研究判断记录保留，不再对应当前可运行代码入口。

@@ -1,7 +1,0 @@
-name: PubMed
-group: homophily
-loader: Planetoid
-metric: accuracy
-root: data/Planetoid
-split: public
-notes: Larger Planetoid citation graph; use chunked similarity if needed.

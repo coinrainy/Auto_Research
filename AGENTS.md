@@ -244,3 +244,9 @@
   - 已按用户要求跟踪 `baselines/`；由于 `baselines/GRACE` 本身是外部 Git 仓库，已作为 Git submodule 纳入父仓库。
   - submodule 路径：`baselines/GRACE`；来源远程：`https://github.com/CRIPAC-DIG/GRACE.git`。
   - 当前父仓库新增 `.gitmodules` 与 `baselines/GRACE` gitlink，用于记录 baseline 来源与版本。
+- 2026-06-27 代码路线切换：
+  - 用户认为继续维护自建 RW-GCL 代码框架不合适，要求删除此前自写 scaffold，并改为基于本地 `baselines/GRACE` 做实验。
+  - 已从仓库中移除旧框架代码与配置入口：根目录 `train.py`、`eval.py`、`diagnose.py`、汇总/诊断脚本、`src/rwgcl/`、`configs/`、`scripts/`、`results/` 占位文件与根目录 `requirements.txt`。
+  - 保留 `baselines/GRACE` submodule 不动，作为可追溯 baseline。
+  - 已将 GRACE 普通文件复制到 `experiments/grace_idea/`，后续 idea 改动应在该工作副本中进行，避免污染 baseline。
+  - 新增 `experiments/README.md` 与 `experiments/grace_idea/IDEA_NOTES.md` 记录目录用途与协作约束。

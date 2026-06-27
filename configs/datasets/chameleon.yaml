@@ -1,7 +1,0 @@
-name: Chameleon
-group: heterophily
-loader: WikipediaNetwork
-metric: accuracy
-root: data/WikipediaNetwork
-split: geom-gcn
-notes: WikipediaNetwork heterophily benchmark.

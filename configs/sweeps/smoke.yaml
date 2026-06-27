@@ -1,9 +1,0 @@
-name: smoke
-datasets:
-  - Cora
-  - Texas
-methods:
-  - configs/methods/grace.yaml
-  - configs/methods/rw_gcl_two_stage.yaml
-seeds:
-  - 0
