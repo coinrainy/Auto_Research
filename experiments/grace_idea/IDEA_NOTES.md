@@ -21,6 +21,7 @@
 - `--method sgfn`：Stability-Guided False-Negative attenuation，已降级为负结果/诊断资产。
 - `--method spectral_mix`：Adaptive Spectral Mix GCL，已降级为失败原型/诊断资产。
 - `--method pbcl`：Prototype-Balanced Contrastive Learning，已降级为失败原型/诊断资产。
+- `--method pccl`：Prototype Consistency Contrastive Learning，已降级为失败原型/诊断资产。
 
 `es_weighted` 的设计边界：
 
@@ -89,6 +90,20 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - normal 不稳定优于 shuffled；Cornell 与 Wisconsin 上 shuffled 经常接近或超过 normal。
 - 当前结论：简单 prototype-density anchor reweighting 不能作为主候选；保留为 density/prototype 诊断资产。
 
+`pccl` 的设计边界：
+
+- warmup 后用两个增强 view 的 encoder embedding 均值做 consensus embedding。
+- 对 consensus embedding 做 KMeans 得到 prototype centers。
+- 用 consensus-to-prototype soft target 监督两个 view 的 prototype assignment。
+- 增加 prototype usage balance loss 抑制塌缩。
+- `--shuffle-weights` 在 PCCL 中表示打乱节点-prototype target 对应关系，用作机制 control。
+
+`pccl` 当前研究判断：
+
+- Cornell macro 有局部正向，但 Texas/Wisconsin micro 为负，Actor 近零略负。
+- normal 不稳定优于 shuffled；Cornell 与 Texas 上 normal-shuffled 均值为负。
+- 当前结论：当前 KMeans soft target 不可靠，prototype consistency objective 不能作为主候选；保留为 prototype-level objective 诊断资产。
+
 正式实验前仍需补齐：
 
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
@@ -109,6 +124,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `sgfn` 支持 `--fn-context-gate local_feature|degree_inverse|local_feature_degree` 与 `--fn-context-pair-mode product|min|anchor`，但当前筛选结果显示这些 gate 未能救活主线。
 - `spectral_mix` 支持 `--spectral-mix-mode adaptive|low|high|random`、`--spectral-mix-temperature`、`--spectral-mix-jitter` 与 `--spectral-high-scale`。
 - `pbcl` 支持 `--pbcl-num-prototypes`、`--pbcl-kmeans-iters`、`--pbcl-weight-power`、`--pbcl-min-weight`、`--pbcl-max-weight`。
+- `pccl` 支持 `--pccl-num-prototypes`、`--pccl-kmeans-iters`、`--pccl-prototype-temperature`、`--pccl-target-temperature`、`--pccl-consistency-weight`、`--pccl-balance-weight`。
 
 示例 split-aware 命令：
 
@@ -124,5 +140,6 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - 暂停 naive `spectral_mix` 扩展，不继续补 Chameleon/Squirrel。
 - 若继续 spectral 方向，只做小消融定位失败机制：`adaptive` vs `low` vs `high` vs `random`。
 - 暂停 PBCL 扩展，不继续跑 10 splits；简单 anchor reweighting 已被 shuffled control 证伪。
-- 下一轮应重新寻找更强 idea，优先改变 contrastive objective、prototype-level objective 或 view selection decision，而不是单纯替换特征或重加权 anchor。
+- 暂停 PCCL 扩展，不继续跑 10 splits；简单 KMeans prototype soft-target consistency 已被 shuffled control 证伪。
+- 下一轮应重新寻找更强 idea，优先改变 view selection decision、训练目标的冗余消除机制，或引入可靠性更强的 EMA/structure-aware prototype，而不是单纯替换特征、重加权 anchor 或模仿即时 KMeans target。
 - 本目录中的 SGFN / context-gated SGFN 只作为负结果、诊断工具和消融资产保留。

@@ -42,6 +42,7 @@ def parse_args():
                             'sgfn',
                             'spectral_mix',
                             'pbcl',
+                            'pccl',
                         ])
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--epochs', type=int, default=None)
@@ -79,6 +80,12 @@ def parse_args():
     parser.add_argument('--pbcl-weight-power', type=float, default=1.0)
     parser.add_argument('--pbcl-min-weight', type=float, default=0.25)
     parser.add_argument('--pbcl-max-weight', type=float, default=4.0)
+    parser.add_argument('--pccl-num-prototypes', type=int, default=0)
+    parser.add_argument('--pccl-kmeans-iters', type=int, default=10)
+    parser.add_argument('--pccl-prototype-temperature', type=float, default=0.2)
+    parser.add_argument('--pccl-target-temperature', type=float, default=0.1)
+    parser.add_argument('--pccl-consistency-weight', type=float, default=0.05)
+    parser.add_argument('--pccl-balance-weight', type=float, default=0.01)
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -112,12 +119,12 @@ def validate_args(args):
     if args.shuffle_weights and args.random_weights:
         raise ValueError('Use at most one of --shuffle-weights and --random-weights.')
     if (args.shuffle_weights or args.random_weights) and args.method not in [
-            'es_weighted', 'sgfn', 'pbcl']:
+            'es_weighted', 'sgfn', 'pbcl', 'pccl']:
         raise ValueError('Weight controls are only valid with weighted methods.')
 
 
 def weight_control_name(args):
-    if args.method not in ['es_weighted', 'sgfn', 'pbcl']:
+    if args.method not in ['es_weighted', 'sgfn', 'pbcl', 'pccl']:
         return 'none'
     if args.shuffle_weights:
         return 'shuffled'
@@ -292,7 +299,7 @@ def embedding_stability_weights(target, z1, z2, args):
 
 
 @torch.no_grad()
-def kmeans_assignments(embeddings, num_clusters, num_iters, args, epoch):
+def kmeans_assignments_and_centers(embeddings, num_clusters, num_iters, args, epoch):
     embeddings = F.normalize(embeddings.detach().float(), dim=1)
     num_nodes = embeddings.size(0)
     num_clusters = max(1, min(num_clusters, num_nodes))
@@ -316,6 +323,18 @@ def kmeans_assignments(embeddings, num_clusters, num_iters, args, epoch):
             centers,
         )
         centers = F.normalize(centers, dim=1)
+    return assignments, centers
+
+
+@torch.no_grad()
+def kmeans_assignments(embeddings, num_clusters, num_iters, args, epoch):
+    assignments, _ = kmeans_assignments_and_centers(
+        embeddings,
+        num_clusters,
+        num_iters,
+        args,
+        epoch,
+    )
     return assignments
 
 
@@ -347,6 +366,58 @@ def prototype_balance_weights(z1, z2, args, epoch):
     )
     weights = weights / weights.mean().clamp_min(1e-12)
     return weights.detach()
+
+
+def prototype_consistency_objective(z1, z2, args, epoch):
+    consensus = F.normalize(((z1.detach() + z2.detach()) * 0.5).float(), dim=1)
+    _, centers = kmeans_assignments_and_centers(
+        consensus,
+        args.resolved_pccl_num_prototypes,
+        args.pccl_kmeans_iters,
+        args,
+        epoch,
+    )
+    centers = centers.to(z1.device, dtype=z1.dtype).detach()
+    z1_norm = F.normalize(z1, dim=1)
+    z2_norm = F.normalize(z2, dim=1)
+    logits1 = torch.mm(z1_norm, centers.t()) / max(args.pccl_prototype_temperature, 1e-12)
+    logits2 = torch.mm(z2_norm, centers.t()) / max(args.pccl_prototype_temperature, 1e-12)
+
+    with torch.no_grad():
+        target_logits = (
+            torch.mm(consensus.to(z1.device, dtype=z1.dtype), centers.t())
+            / max(args.pccl_target_temperature, 1e-12)
+        )
+        targets = F.softmax(target_logits, dim=1)
+        if args.shuffle_weights:
+            generator = make_control_generator(args, epoch)
+            permutation = torch.randperm(targets.size(0), generator=generator)
+            targets = targets[permutation.to(targets.device)]
+        elif args.random_weights:
+            generator = make_control_generator(args, epoch)
+            targets = torch.rand(targets.shape, generator=generator).to(
+                targets.device,
+                dtype=targets.dtype,
+            )
+            targets = targets / targets.sum(1, keepdim=True).clamp_min(1e-12)
+
+    consistency = (
+        -(targets * F.log_softmax(logits1, dim=1)).sum(1).mean()
+        + -(targets * F.log_softmax(logits2, dim=1)).sum(1).mean()
+    ) * 0.5
+    usage = (
+        F.softmax(logits1, dim=1).mean(0)
+        + F.softmax(logits2, dim=1).mean(0)
+    ) * 0.5
+    uniform = usage.new_full(usage.shape, 1.0 / usage.numel())
+    balance = (usage * (usage.clamp_min(1e-12) / uniform).log()).sum()
+    entropy = -(usage * usage.clamp_min(1e-12).log()).sum()
+    diagnostics = {
+        'prototype_usage_entropy': entropy.item(),
+        'prototype_usage_max': usage.max().item(),
+        'prototype_usage_min': usage.min().item(),
+    }
+    return consistency, balance, diagnostics
 
 
 @torch.no_grad()
@@ -599,26 +670,46 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         pair_denominator_weights=pair_denominator_weights,
     )
     attraction_loss = z1.new_tensor(0.0)
+    prototype_consistency_loss = z1.new_tensor(0.0)
+    prototype_balance_loss = z1.new_tensor(0.0)
+    prototype_diagnostics = {}
     if (
         args.method == 'sgfn'
         and use_weighting
         and args.fn_attraction_weight > 0.0
     ):
         attraction_loss = false_negative_attraction_loss(z1, z2, weights)
-    loss = contrastive_loss + args.fn_attraction_weight * attraction_loss
+    if args.method == 'pccl' and epoch > args.warmup_epochs:
+        (
+            prototype_consistency_loss,
+            prototype_balance_loss,
+            prototype_diagnostics,
+        ) = prototype_consistency_objective(z1, z2, args, epoch)
+    loss = (
+        contrastive_loss
+        + args.fn_attraction_weight * attraction_loss
+        + args.pccl_consistency_weight * prototype_consistency_loss
+        + args.pccl_balance_weight * prototype_balance_loss
+    )
 
     loss.backward()
     optimizer.step()
     if teacher is not None:
         update_teacher(teacher, model, args.ema_decay)
 
+    stage = 'weighted' if use_weighting else 'warmup_or_grace'
+    if args.method == 'pccl' and epoch > args.warmup_epochs:
+        stage = 'prototype'
     log = {
         'loss': loss.item(),
         'contrastive_loss': contrastive_loss.item(),
         'fn_attraction_loss': attraction_loss.item(),
-        'stage': 'weighted' if use_weighting else 'warmup_or_grace',
+        'prototype_consistency_loss': prototype_consistency_loss.item(),
+        'prototype_balance_loss': prototype_balance_loss.item(),
+        'stage': stage,
         'weight_control': weight_control_name(args),
     }
+    log.update(prototype_diagnostics)
     if weights is not None:
         log.update({
             'weight_mean': weights.mean().item(),
@@ -663,7 +754,7 @@ def prepare_save_dir(args, seed):
     control = weight_control_name(args)
     control_suffix = (
         f'_{control}'
-        if args.method in ['es_weighted', 'sgfn', 'pbcl'] and control != 'normal'
+        if args.method in ['es_weighted', 'sgfn', 'pbcl', 'pccl'] and control != 'normal'
         else ''
     )
     run_name = f'{args.dataset}_{args.method}{control_suffix}_seed{seed}{split_suffix}'
@@ -688,6 +779,11 @@ def append_train_log(run_dir, row):
         'loss',
         'contrastive_loss',
         'fn_attraction_loss',
+        'prototype_consistency_loss',
+        'prototype_balance_loss',
+        'prototype_usage_entropy',
+        'prototype_usage_max',
+        'prototype_usage_min',
         'stage',
         'weight_mean',
         'weight_std',
@@ -812,6 +908,13 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'pbcl_weight_power': args.pbcl_weight_power,
         'pbcl_min_weight': args.pbcl_min_weight,
         'pbcl_max_weight': args.pbcl_max_weight,
+        'pccl_num_prototypes': args.pccl_num_prototypes,
+        'resolved_pccl_num_prototypes': args.resolved_pccl_num_prototypes,
+        'pccl_kmeans_iters': args.pccl_kmeans_iters,
+        'pccl_prototype_temperature': args.pccl_prototype_temperature,
+        'pccl_target_temperature': args.pccl_target_temperature,
+        'pccl_consistency_weight': args.pccl_consistency_weight,
+        'pccl_balance_weight': args.pccl_balance_weight,
         'pair_shuffle_mode': args.pair_shuffle_mode,
         'pair_normalization': args.pair_normalization,
         'pair_reallocation_alpha': args.pair_reallocation_alpha,
@@ -872,6 +975,10 @@ def main():
         args.pbcl_num_prototypes if args.pbcl_num_prototypes > 0
         else dataset.num_classes
     )
+    args.resolved_pccl_num_prototypes = (
+        args.pccl_num_prototypes if args.pccl_num_prototypes > 0
+        else dataset.num_classes
+    )
     teacher = build_teacher(model) if args.method in ['es_weighted', 'sgfn'] else None
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -884,7 +991,7 @@ def main():
         f'(I) | dataset={args.dataset}, method={args.method}, seed={seed}, '
         f'split_index={args.split_index}, device={device}'
     )
-    if args.method in ['es_weighted', 'sgfn', 'pbcl']:
+    if args.method in ['es_weighted', 'sgfn', 'pbcl', 'pccl']:
         print(
             f'(I) | warmup_epochs={args.warmup_epochs}, ema_decay={args.ema_decay}, '
             f'anchor_weighting={not args.no_anchor_weighting}, '
@@ -911,6 +1018,15 @@ def main():
                 f'pbcl_weight_power={args.pbcl_weight_power}, '
                 f'pbcl_min_weight={args.pbcl_min_weight}, '
                 f'pbcl_max_weight={args.pbcl_max_weight}'
+            )
+        if args.method == 'pccl':
+            print(
+                f'(I) | pccl_num_prototypes={args.resolved_pccl_num_prototypes}, '
+                f'pccl_kmeans_iters={args.pccl_kmeans_iters}, '
+                f'pccl_prototype_temperature={args.pccl_prototype_temperature}, '
+                f'pccl_target_temperature={args.pccl_target_temperature}, '
+                f'pccl_consistency_weight={args.pccl_consistency_weight}, '
+                f'pccl_balance_weight={args.pccl_balance_weight}'
             )
     if args.method == 'spectral_mix':
         print(

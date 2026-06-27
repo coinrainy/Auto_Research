@@ -451,3 +451,17 @@
   - 保留资产：PBCL 代码、prototype-density 权重链路、normal/shuffled control；下一轮若继续 prototype 方向，必须转向 prototype-level objective 或跨视图原型一致性，而不是仅做 anchor reweighting。
   - 已验证命令：`python -m py_compile train.py summarize_runs.py model.py`、`bash -n scripts/run_split_study.sh`、`python train.py --dataset Texas --method pbcl --seed 0 --split-index 0 --epochs 3 --warmup-epochs 1 --pbcl-kmeans-iters 3 --save-dir /tmp/pbcl_smoke --overwrite --skip-eval --log-every 1`。
   - 下一步建议命令：暂不继续 PBCL 扩展；建议先设计 prototype-level contrastive / decorrelation objective，或重新构思能改变 view selection decision 的新方法。
+- 2026-06-28 PCCL 候选实现与降级：
+  - 已新增研究日志：`docs/pccl_candidate_research_log.md`。
+  - 已在 `experiments/grace_idea/train.py` 中新增 `--method pccl`，实现 prototype-level cross-view consistency + prototype usage balance objective。
+  - PCCL 机制：warmup 后用两个 view 的 encoder embedding 均值做 consensus embedding；对其 KMeans 得到 prototype centers；用 consensus-to-prototype soft target 监督两个 view 的 prototype assignment；`--shuffle-weights` 打乱节点-prototype soft target 对应关系作为机制 control。
+  - 已新增/记录参数：`--pccl-num-prototypes`、`--pccl-kmeans-iters`、`--pccl-prototype-temperature`、`--pccl-target-temperature`、`--pccl-consistency-weight`、`--pccl-balance-weight`。
+  - 已更新 `scripts/run_split_study.sh` 与 `summarize_runs.py`，支持 PCCL normal/shuffled 批跑与汇总。
+  - 已完成 PCCL sanity：Texas/Cornell/Wisconsin/Actor × splits 0-2 × seed0 × 100 epochs，共 36 个 run，全部 completed。
+  - 汇总文件：`experiments/grace_idea/runs/summaries/pccl_splits0-2_seed0_e100_paired.csv` 与 `experiments/grace_idea/runs/summaries/pccl_splits0-2_seed0_e100_aggregate.csv`。
+  - PCCL normal 相对 GRACE：Actor F1Mi/F1Ma -0.000877/-0.001739；Cornell +0.009009/+0.034401；Texas -0.009009/-0.001840；Wisconsin -0.026144/+0.019288。
+  - PCCL normal - shuffled：Actor -0.000658/+0.002131；Cornell -0.009009/-0.015757；Texas -0.027027/-0.023827；Wisconsin -0.019608/+0.002649。
+  - 决策：PCCL 未通过最小标准。Cornell macro 有局部正向，但 Texas/Wisconsin micro 为负，且 normal 多数情况下不优于 shuffled；即时 KMeans soft target 不可靠。
+  - 保留资产：prototype consistency / balance objective 代码、prototype usage 诊断日志、normal/shuffled target control；若继续 prototype 路线，应改为 EMA prototype、high-confidence assignment 或 structure-aware prototype。
+  - 已验证命令：`python -m py_compile train.py summarize_runs.py model.py`、`bash -n scripts/run_split_study.sh`、`python train.py --dataset Texas --method pccl --seed 0 --split-index 0 --epochs 3 --warmup-epochs 1 --pccl-kmeans-iters 3 --save-dir /tmp/pccl_smoke_conservative --overwrite --skip-eval --log-every 1`。
+  - 下一步建议命令：暂不继续 PCCL 扩展；下一轮优先探索 view selection decision 或 redundancy-reduction objective，而不是即时 KMeans prototype imitation。

@@ -6,7 +6,7 @@ from statistics import mean, pstdev
 
 
 RUN_PATTERN = re.compile(
-    r'^(?P<dataset>.+)_(?P<method>grace|es_weighted|sgfn|spectral_mix|pbcl)'
+    r'^(?P<dataset>.+)_(?P<method>grace|es_weighted|sgfn|spectral_mix|pbcl|pccl)'
     r'(?:_(?P<variant>normal|shuffled|uniform_random|random))?_seed(?P<seed>\d+)'
     r'(?:_split(?P<split>\d+))?$'
 )
@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument('--paired-out', required=True)
     parser.add_argument('--aggregate-out', required=True)
     parser.add_argument('--target-method', default='es_weighted',
-                        choices=['es_weighted', 'sgfn', 'spectral_mix', 'pbcl'])
+                        choices=['es_weighted', 'sgfn', 'spectral_mix', 'pbcl', 'pccl'])
     return parser.parse_args()
 
 
