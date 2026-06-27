@@ -46,6 +46,7 @@ def parse_args():
                             'rr_gcl',
                             'hybrid_rr_gcl',
                             'cbr_gcl',
+                            'gated_cbr_gcl',
                         ])
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--epochs', type=int, default=None)
@@ -97,6 +98,9 @@ def parse_args():
     parser.add_argument('--cbr-kmeans-iters', type=int, default=10)
     parser.add_argument('--cbr-min-weight', type=float, default=0.25)
     parser.add_argument('--cbr-max-weight', type=float, default=4.0)
+    parser.add_argument('--cbr-gate-min-diag', type=float, default=0.82)
+    parser.add_argument('--cbr-gate-temperature', type=float, default=0.03)
+    parser.add_argument('--cbr-gate-min-scale', type=float, default=0.0)
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -131,14 +135,14 @@ def validate_args(args):
         raise ValueError('Use at most one of --shuffle-weights and --random-weights.')
     if (args.shuffle_weights or args.random_weights) and args.method not in [
             'es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl', 'hybrid_rr_gcl',
-            'cbr_gcl']:
+            'cbr_gcl', 'gated_cbr_gcl']:
         raise ValueError('Weight controls are only valid with weighted methods.')
 
 
 def weight_control_name(args):
     if args.method not in [
             'es_weighted', 'sgfn', 'pbcl', 'pccl', 'rr_gcl', 'hybrid_rr_gcl',
-            'cbr_gcl']:
+            'cbr_gcl', 'gated_cbr_gcl']:
         return 'none'
     if args.shuffle_weights:
         return 'shuffled'
@@ -725,7 +729,8 @@ def weighted_standardize(values, weights):
     return centered / var.sqrt().clamp_min(1e-4)
 
 
-def cluster_balanced_redundancy_reduction_objective(model, z1, z2, args, epoch):
+def cluster_balanced_redundancy_reduction_objective(
+        model, z1, z2, args, epoch, gated=False):
     weights, diagnostics = cluster_balance_weights(z1, z2, args, epoch)
     h1 = model.projection(z1)
     h2 = model.projection(z2)
@@ -742,13 +747,26 @@ def cluster_balanced_redundancy_reduction_objective(model, z1, z2, args, epoch):
     h2 = weighted_standardize(h2, weights)
     weighted_h2 = h2 * weights.view(-1, 1)
     cross_correlation = torch.mm(h1.t(), weighted_h2) / weights.sum().clamp_min(1e-12)
+    diag_mean = torch.diagonal(cross_correlation).mean()
     on_diag = (torch.diagonal(cross_correlation) - 1.0).pow(2).sum()
     off_diag = off_diagonal(cross_correlation).pow(2).sum()
-    loss = args.rr_loss_scale * (on_diag + args.rr_offdiag_weight * off_diag)
+    raw_loss = args.rr_loss_scale * (on_diag + args.rr_offdiag_weight * off_diag)
+    gate_scale = raw_loss.new_tensor(1.0)
+    if gated:
+        temperature = max(args.cbr_gate_temperature, 1e-12)
+        gate_scale = torch.sigmoid(
+            (diag_mean.detach() - args.cbr_gate_min_diag) / temperature
+        )
+        min_scale = min(max(args.cbr_gate_min_scale, 0.0), 1.0)
+        if min_scale > 0.0:
+            gate_scale = gate_scale * (1.0 - min_scale) + min_scale
+    loss = raw_loss * gate_scale
     diagnostics.update({
+        'cbr_raw_rr_loss': raw_loss.item(),
+        'cbr_gate_scale': gate_scale.item(),
         'rr_on_diag_loss': on_diag.item(),
         'rr_off_diag_loss': off_diag.item(),
-        'rr_cross_corr_diag_mean': torch.diagonal(cross_correlation).mean().item(),
+        'rr_cross_corr_diag_mean': diag_mean.item(),
         'rr_cross_corr_offdiag_mean_abs': (
             off_diagonal(cross_correlation).abs().mean().item()
         ),
@@ -820,7 +838,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
                 args,
                 epoch,
             )
-        elif args.method == 'cbr_gcl' and epoch > args.warmup_epochs:
+        elif args.method in ['cbr_gcl', 'gated_cbr_gcl'] and epoch > args.warmup_epochs:
             cbr_rr_loss, rr_diagnostics = (
                 cluster_balanced_redundancy_reduction_objective(
                     model,
@@ -828,6 +846,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
                     z2,
                     args,
                     epoch,
+                    gated=args.method == 'gated_cbr_gcl',
                 )
             )
         else:
@@ -869,8 +888,12 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         stage = 'redundancy_reduction'
     if args.method == 'hybrid_rr_gcl':
         stage = 'contrastive_plus_rr'
-    if args.method == 'cbr_gcl' and epoch > args.warmup_epochs:
-        stage = 'cluster_balanced_rr'
+    if args.method in ['cbr_gcl', 'gated_cbr_gcl'] and epoch > args.warmup_epochs:
+        stage = (
+            'gated_cluster_balanced_rr'
+            if args.method == 'gated_cbr_gcl'
+            else 'cluster_balanced_rr'
+        )
     log = {
         'loss': loss.item(),
         'contrastive_loss': contrastive_loss.item(),
@@ -936,6 +959,7 @@ def prepare_save_dir(args, seed):
             'rr_gcl',
             'hybrid_rr_gcl',
             'cbr_gcl',
+            'gated_cbr_gcl',
         ] and control != 'normal'
         else ''
     )
@@ -962,6 +986,8 @@ def append_train_log(run_dir, row):
         'contrastive_loss',
         'rr_loss',
         'cbr_rr_loss',
+        'cbr_raw_rr_loss',
+        'cbr_gate_scale',
         'fn_attraction_loss',
         'prototype_consistency_loss',
         'prototype_balance_loss',
@@ -1120,6 +1146,9 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'cbr_kmeans_iters': args.cbr_kmeans_iters,
         'cbr_min_weight': args.cbr_min_weight,
         'cbr_max_weight': args.cbr_max_weight,
+        'cbr_gate_min_diag': args.cbr_gate_min_diag,
+        'cbr_gate_temperature': args.cbr_gate_temperature,
+        'cbr_gate_min_scale': args.cbr_gate_min_scale,
         'pair_shuffle_mode': args.pair_shuffle_mode,
         'pair_normalization': args.pair_normalization,
         'pair_reallocation_alpha': args.pair_reallocation_alpha,
@@ -1244,13 +1273,15 @@ def main():
             f'hybrid_rr_weight={args.hybrid_rr_weight}, '
             f'positive_control={weight_control_name(args)}'
         )
-    if args.method == 'cbr_gcl':
+    if args.method in ['cbr_gcl', 'gated_cbr_gcl']:
         print(
             f'(I) | warmup_epochs={args.warmup_epochs}, '
             f'cbr_num_clusters={args.resolved_cbr_num_clusters}, '
             f'cbr_kmeans_iters={args.cbr_kmeans_iters}, '
             f'cbr_rr_weight={args.cbr_rr_weight}, '
             f'rr_offdiag_weight={args.rr_offdiag_weight}, '
+            f'cbr_gate_min_diag={args.cbr_gate_min_diag}, '
+            f'cbr_gate_temperature={args.cbr_gate_temperature}, '
             f'positive_control={weight_control_name(args)}'
         )
     if args.method == 'spectral_mix':

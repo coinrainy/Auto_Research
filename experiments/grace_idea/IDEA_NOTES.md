@@ -25,6 +25,7 @@
 - `--method rr_gcl`：Redundancy-Reduced GCL，保留为条件性线索/诊断资产，尚非 active SOTA candidate。
 - `--method hybrid_rr_gcl`：GRACE InfoNCE + RR 小权重正则，已降级为条件性诊断资产，提示 RR 可能改善 macro/少数类覆盖但全局固定权重不稳。
 - `--method cbr_gcl`：Cluster-Balanced Redundancy-Reduced GCL，当前最值得保留的 RR 条件性候选，但仍需 anti-degradation gate 后才可能成为主方法。
+- `--method gated_cbr_gcl`：基于 RR diagonal confidence 的 CBR gate，已降级为失败 gate / 消融资产。
 
 `es_weighted` 的设计边界：
 
@@ -150,6 +151,20 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - 当前结论：CBR 是目前 RR 方向最值得继续的条件性候选，支持“cluster-balanced RR 改善少数/弱类覆盖”的机制线索；但 Actor 近零略负、Cornell micro control 不稳，不能作为 SOTA-ready 主方法。
 - 下一步必须实现 anti-degradation gate，而不是继续全局调 `cbr_rr_weight`。
 
+`gated_cbr_gcl` 的设计边界：
+
+- 在 `cbr_gcl` 的基础上，用 weighted cross-correlation diagonal mean 作为 positive correspondence confidence；
+- gate scale 为 `sigmoid((diag_mean - cbr_gate_min_diag) / cbr_gate_temperature)`；
+- 实际 RR loss 为 `raw_CBR_RR * gate_scale`；
+- 支持 `--cbr-gate-min-diag`、`--cbr-gate-temperature`、`--cbr-gate-min-scale`；
+- `--shuffle-weights` 仍只打乱 RR positive correspondence。
+
+`gated_cbr_gcl` 当前研究判断：
+
+- 默认 `cbr_gate_min_diag=0.82` 在 split0-2 上保护了 Actor，但削弱 Texas，并使 Wisconsin micro 明显退化。
+- 宽松 `cbr_gate_min_diag=0.78` 恢复 Texas，但 Cornell F1Mi/F1Ma 变为 -0.036036/-0.080680，normal 远低于 shuffled。
+- 当前结论：单一 RR diagonal confidence 不是可靠 anti-degradation gate，停止继续调该阈值；该方法只保留为 gate 消融资产。
+
 正式实验前仍需补齐：
 
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
@@ -174,6 +189,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `rr_gcl` 支持 `--rr-offdiag-weight` 与 `--rr-loss-scale`，并复用 `--shuffle-weights` 做 positive correspondence control。
 - `hybrid_rr_gcl` 支持 `--hybrid-rr-weight`，并复用 RR 参数与 positive correspondence control。
 - `cbr_gcl` 支持 `--cbr-rr-weight`、`--cbr-num-clusters`、`--cbr-kmeans-iters`、`--cbr-min-weight`、`--cbr-max-weight`，并记录 cluster balance diagnostics。
+- `gated_cbr_gcl` 支持 CBR 的所有参数，并额外支持 `--cbr-gate-min-diag`、`--cbr-gate-temperature`、`--cbr-gate-min-scale`。
 
 示例 split-aware 命令：
 
@@ -193,5 +209,6 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - 暂不扩裸 RR-GCL 到 10 splits；先实现 hybrid objective 或 adaptive mixing，检验能否保留 Cornell 的 class-level 收益同时减少 Actor/Texas/Wisconsin 退化。
 - 暂停固定全局 hybrid RR 权重搜索；`0.01` 和 `0.001` 均未通过 Texas / normal-vs-shuffled 机制压力测试。
 - 已实现并复核 `cbr_gcl`，不建议继续简单调 `cbr_rr_weight`。
-- 下一轮应优先实现 `gated_cbr_gcl`：用 cluster compactness/confidence、RR diagnostic 或 local graph context 决定何时启用 CBR，以保留 Texas/Wisconsin macro 信号并避免 Actor 退化。
+- 已实现并筛选基于 RR diagonal confidence 的 `gated_cbr_gcl`，该单信号 gate 失败，不建议继续调 diagonal threshold。
+- 下一轮应优先实现 `stable_cluster_cbr_gcl`：先记录 cluster assignment stability、cluster compactness/separation，再判断是否用于 gate；目标是保留 CBR 的 Texas/Wisconsin 线索并避免 Actor/Cornell 退化。
 - 本目录中的 SGFN / context-gated SGFN 只作为负结果、诊断工具和消融资产保留。

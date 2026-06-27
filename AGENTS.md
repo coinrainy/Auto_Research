@@ -511,3 +511,19 @@
   - 当前判断：CBR-GCL 是目前 RR 方向最值得保留的条件性候选，比固定 Hybrid RR 更干净，尤其 Texas/Wisconsin 的 normal-vs-shuffled 不再系统性失败；但效果偏小且 Actor 近零略负，Cornell micro control 不稳，仍不是 SOTA-ready 主方法。
   - 下一步建议：实现 `gated_cbr_gcl`，用 cluster compactness/confidence、RR diagnostic 或 local graph context 决定何时启用 CBR；目标是在保留 Texas/Wisconsin macro 信号的同时避免 Actor 退化。
   - 已验证命令：`python -m py_compile train.py summarize_runs.py model.py`、`bash -n scripts/run_split_study.sh`、`python summarize_runs.py --runs-dir runs/cbr_gcl_splits0-9_seed0_e100 --target-method cbr_gcl --paired-out runs/summaries/cbr_gcl_splits0-9_seed0_e100_paired.csv --aggregate-out runs/summaries/cbr_gcl_splits0-9_seed0_e100_aggregate.csv`。
+- 2026-06-28 Gated CBR-GCL 实现与降级：
+  - 已新增研究日志：`docs/gated_cbr_gcl_candidate_research_log.md`。
+  - 已在 `experiments/grace_idea/train.py` 中新增 `--method gated_cbr_gcl`，在 CBR-GCL 基础上加入 RR diagonal confidence gate。
+  - gate 机制：`gate_scale = sigmoid((diag_mean - cbr_gate_min_diag) / cbr_gate_temperature)`；实际 CBR loss 为 `raw_CBR_RR * gate_scale`。
+  - 新增参数：`--cbr-gate-min-diag`、`--cbr-gate-temperature`、`--cbr-gate-min-scale`；新增日志：`cbr_raw_rr_loss`、`cbr_gate_scale`。
+  - 已更新 `scripts/run_split_study.sh` 与 `summarize_runs.py`，支持 `gated_cbr_gcl` normal/shuffled 批跑和汇总，并确保长方法名优先解析。
+  - smoke 验证：`python train.py --dataset Texas --method gated_cbr_gcl --seed 0 --split-index 0 --epochs 3 --warmup-epochs 1 --save-dir /tmp/gated_cbr_smoke --overwrite --skip-eval --log-every 1`，第 2 epoch 后进入 `gated_cluster_balanced_rr`，日志显示 raw RR 被 gate scale 缩放。
+  - 默认 gate `cbr_gate_min_diag=0.82`：已完成 Texas/Cornell/Wisconsin/Actor × splits 0-2 × seed0 × 100 epochs，共 36 个 run，输出 `runs/summaries/gated_cbr_gcl_splits0-2_seed0_e100_aggregate.csv`。
+  - `0.82` normal vs GRACE：Actor +0.000219/-0.001782；Cornell +0.018018/+0.052043；Texas +0.009009/-0.010165；Wisconsin -0.032680/+0.010650。
+  - `0.82` normal - shuffled：Actor +0.001535/+0.001241；Cornell -0.009009/-0.014896；Texas 0/0；Wisconsin -0.032680/+0.010650。
+  - 宽松 gate `cbr_gate_min_diag=0.78`：已完成同样 36 个 run，输出 `runs/summaries/gated_cbr_gcl_diag078_splits0-2_seed0_e100_aggregate.csv`。
+  - `0.78` normal vs GRACE：Actor -0.000439/-0.002001；Cornell -0.036036/-0.080680；Texas +0.027027/+0.024448；Wisconsin 约 0/-0.000417。
+  - `0.78` normal - shuffled：Actor +0.001754/+0.000017；Cornell -0.072072/-0.112982；Texas +0.027027/+0.012444；Wisconsin 约 0/-0.000417。
+  - 当前判断：单一 RR diagonal confidence gate 失败。`0.82` 保护 Actor 但牺牲 Texas/Wisconsin；`0.78` 恢复 Texas 但 Cornell 崩溃。停止继续调 diagonal threshold，该方法降级为 gate 消融资产。
+  - 下一步建议：实现 `stable_cluster_cbr_gcl`，先记录 cluster assignment stability 与 cluster compactness/separation，再决定是否作为 gate；不要继续围绕 RR diagonal mean 单信号调参。
+  - 已验证命令：`python -m py_compile train.py summarize_runs.py model.py`、`bash -n scripts/run_split_study.sh`、`python summarize_runs.py --runs-dir runs/gated_cbr_gcl_diag078_splits0-2_seed0_e100 --target-method gated_cbr_gcl --paired-out runs/summaries/gated_cbr_gcl_diag078_splits0-2_seed0_e100_paired.csv --aggregate-out runs/summaries/gated_cbr_gcl_diag078_splits0-2_seed0_e100_aggregate.csv`。
