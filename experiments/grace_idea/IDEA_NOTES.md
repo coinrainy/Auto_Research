@@ -27,18 +27,21 @@
 - 默认将 reliability 用作 positive anchor weighting。
 - 可通过 `--negative-weighting` 将 reliability 同时用于 InfoNCE denominator candidate weighting，低可靠节点作为负样本时贡献更小。
 - reliability 只作为 stop-gradient 权重使用，不把权重估计路径反传回模型。
+- 可通过 `--shuffle-weights` 做分布保持的 reliability-node 对应打乱控制。
+- 可通过 `--random-weights` 做随机 reliability 控制。
+- 默认拒绝写入已有非空 run 目录；如确需覆盖，显式添加 `--overwrite`。
 
 最小 smoke 命令：
 
 ```bash
 cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
 python train.py --dataset Cora --method grace --epochs 2 --skip-eval
-python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1 --negative-weighting --skip-eval --save-dir runs/smoke
+python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1 --negative-weighting --skip-eval --save-dir runs/smoke --overwrite
+python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1 --shuffle-weights --skip-eval --save-dir runs/smoke_controls --overwrite
 ```
 
 正式实验前仍需补齐：
 
-- GRACE baseline 与 `es_weighted` 的同 split / 同 seed 对齐脚本；
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
 - negative weighting 的 false-negative pressure 诊断。
 
@@ -50,7 +53,16 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `--eval-mode auto` 对异配数据集默认使用固定 `train/val/test` mask；对原 GRACE 数据集保持随机 linear probe。
 - `--eval-mode mask` 可强制使用 mask 评估。
 - `--eval-mode random` 可强制使用原 GRACE 风格随机 linear probe。
-- `summarize_runs.py` 可从 `runs/` 目录生成 matched paired summary 与 dataset aggregate summary。
+- `scripts/run_split_study.sh` 可通过 `DATASETS`、`SPLITS`、`SEEDS`、`METHODS`、`ES_CONTROLS` 做 split-aware 批跑。
+- `summarize_runs.py` 可从 `runs/` 目录生成 matched paired summary 与 dataset aggregate summary，并兼容 `es_weighted_shuffled` / `es_weighted_random` 控制组。
+
+示例 split-aware 命令：
+
+```bash
+cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
+DATASETS="Texas Cornell" SPLITS="0 1 2" SEEDS="0" ES_CONTROLS="normal shuffled random" SAVE_DIR="runs/split_control_sanity" scripts/run_split_study.sh
+python summarize_runs.py --runs-dir runs/split_control_sanity --paired-out runs/summaries/split_control_sanity_paired.csv --aggregate-out runs/summaries/split_control_sanity_aggregate.csv
+```
 
 近期需要补齐：
 

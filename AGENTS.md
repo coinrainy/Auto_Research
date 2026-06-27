@@ -293,3 +293,16 @@
   - 理论边界：EMA teacher embedding stability 只能作为 view reliability 的无标签代理，不能直接等价于分类语义可靠性；若要主张 false-negative 机制，仍需 pairwise negative reliability 或 label-based denominator pressure 诊断。
   - 当前建议：先修可证伪实验平台，包括 run id/overwrite、shuffled/random control、split-aware runner、confusion matrix delta、downstream error bucket、false-negative pressure 与 degree/local structure 诊断；暂缓 degree gate、closed-loop augmentation 和 SOTA baseline 扩展。
   - 已验证当前仓库状态为 clean before audit edits；本轮未新增训练实验。
+- 2026-06-27 GRACE idea 缺点修复第一批：
+  - 已在 `experiments/grace_idea/train.py` 增加 `--shuffle-weights` 与 `--random-weights`，支持 normal / shuffled / random 三种 `es_weighted` 控制组；`shuffle` 保留原始 reliability 分布但打乱节点对应，`random` 生成随机权重。
+  - 已增加 `--overwrite` 防污染机制：默认遇到已有非空 run 目录会报错，避免重复运行时旧 `train_log.csv` 与新 `eval_summary.csv` 混写；显式 `--overwrite` 才会删除并重建该 run 目录。
+  - 已增强 metadata：保存完整命令、Python/PyTorch/PyG/CUDA 信息、git commit、git status、GRACE submodule 状态、`model_seed`、`split_index` 与 `weight_control`。
+  - 已保存 `final_raw_weights` 与 `final_weights`，便于后续区分原始 embedding-stability 权重和 shuffled/random 控制后的实际训练权重。
+  - 已新增 split-aware 批跑脚本：`experiments/grace_idea/scripts/run_split_study.sh`，支持环境变量 `DATASETS`、`SPLITS`、`SEEDS`、`METHODS`、`ES_CONTROLS`、`SAVE_DIR`、`OVERWRITE`、`TRAIN_EXTRA_ARGS`。
+  - 已更新 `experiments/grace_idea/summarize_runs.py`，兼容旧 run 名与新 run 名 `es_weighted_shuffled` / `es_weighted_random`，并在 paired / aggregate 表中输出 normal-minus-control delta。
+  - 已将 `experiments/grace_idea/requirements.txt` 中的 `sklearn` 改为 `scikit-learn`。
+  - 已更新 `experiments/grace_idea/IDEA_NOTES.md` 与 `docs/grace_idea_system_audit.md`，标注已修复项和剩余优先项。
+  - 已验证：`python -m py_compile train.py model.py eval.py summarize_runs.py`、`bash -n scripts/run_split_study.sh`、`python train.py --help`、旧 `runs/hetero_splits0-2_seed0_e100` 汇总兼容。
+  - 已完成短 smoke：`DATASETS=Cora SPLITS=0 SEEDS=0 METHODS=es_weighted ES_CONTROLS="normal shuffled random" EPOCHS=1 WARMUP_EPOCHS=0 SAVE_DIR=/tmp/grace_split_runner_smoke MANIFEST_PATH=/tmp/grace_split_runner_smoke/run_manifest.csv OVERWRITE=1 TRAIN_EXTRA_ARGS="--skip-eval" scripts/run_split_study.sh`，三种控制组均 completed。
+  - 已验证防污染逻辑：对 `/tmp/grace_split_runner_smoke/Cora_es_weighted_seed0` 不带 `--overwrite` 重跑会按预期抛出 `FileExistsError`。
+  - 剩余优先项：confusion matrix delta 自动摘要、downstream error bucket、label-based false-negative pressure、degree/local structure 诊断，以及 Chameleon/Squirrel 数据集接入。

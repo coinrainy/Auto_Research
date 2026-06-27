@@ -6,9 +6,12 @@ from statistics import mean, pstdev
 
 
 RUN_PATTERN = re.compile(
-    r'^(?P<dataset>.+)_(?P<method>grace|es_weighted)_seed(?P<seed>\d+)'
+    r'^(?P<dataset>.+)_(?P<method>grace|es_weighted)'
+    r'(?:_(?P<variant>normal|shuffled|random))?_seed(?P<seed>\d+)'
     r'(?:_split(?P<split>\d+))?$'
 )
+
+CONTROL_VARIANTS = ['shuffled', 'random']
 
 
 def parse_args():
@@ -44,9 +47,14 @@ def load_runs(runs_dir):
             continue
         eval_row = read_eval_summary(eval_path)
         train_row = read_last_train_row(train_path)
+        method = match.group('method')
+        variant = match.group('variant')
+        if variant is None:
+            variant = 'normal' if method == 'es_weighted' else 'baseline'
         row = {
             'dataset': match.group('dataset'),
-            'method': match.group('method'),
+            'method': method,
+            'variant': variant,
             'seed': int(match.group('seed')),
             'split': int(match.group('split') or 0),
             'F1Mi': float(eval_row['F1Mi_mean']),
@@ -71,17 +79,15 @@ def make_paired_rows(runs):
              and r['split'] == split and r['method'] == 'grace'),
             None,
         )
-        es_weighted = next(
-            (r for r in runs if r['dataset'] == dataset and r['seed'] == seed
-             and r['split'] == split and r['method'] == 'es_weighted'),
-            None,
-        )
+        es_weighted = find_run(runs, dataset, seed, split, 'es_weighted', 'normal')
         if grace is None or es_weighted is None:
             continue
         row = {
             'dataset': dataset,
             'seed': seed,
+            'model_seed': seed,
             'split': split,
+            'split_index': split,
             'grace_F1Mi': grace['F1Mi'],
             'es_weighted_F1Mi': es_weighted['F1Mi'],
             'delta_F1Mi': es_weighted['F1Mi'] - grace['F1Mi'],
@@ -93,6 +99,20 @@ def make_paired_rows(runs):
             'es_weighted_weight_mean': es_weighted['weight_mean'],
             'es_weighted_weight_std': es_weighted['weight_std'],
         }
+        for variant in CONTROL_VARIANTS:
+            control = find_run(runs, dataset, seed, split, 'es_weighted', variant)
+            if control is None:
+                continue
+            row[f'es_weighted_{variant}_F1Mi'] = control['F1Mi']
+            row[f'delta_F1Mi_normal_minus_{variant}'] = (
+                es_weighted['F1Mi'] - control['F1Mi']
+            )
+            row[f'es_weighted_{variant}_F1Ma'] = control['F1Ma']
+            row[f'delta_F1Ma_normal_minus_{variant}'] = (
+                es_weighted['F1Ma'] - control['F1Ma']
+            )
+            row[f'es_weighted_{variant}_weight_mean'] = control['weight_mean']
+            row[f'es_weighted_{variant}_weight_std'] = control['weight_std']
         class_keys = sorted(k for k in grace if k.startswith('F1Class'))
         for class_key in class_keys:
             row[f'grace_{class_key}'] = grace[class_key]
@@ -100,6 +120,20 @@ def make_paired_rows(runs):
             row[f'delta_{class_key}'] = es_weighted[class_key] - grace[class_key]
         paired.append(row)
     return paired
+
+
+def find_run(runs, dataset, seed, split, method, variant):
+    return next(
+        (
+            r for r in runs
+            if r['dataset'] == dataset
+            and r['seed'] == seed
+            and r['split'] == split
+            and r['method'] == method
+            and r['variant'] == variant
+        ),
+        None,
+    )
 
 
 def summarize(values):
@@ -118,7 +152,7 @@ def make_aggregate_rows(paired):
         rows = [row for row in paired if row['dataset'] == dataset]
         f1mi = summarize([row['delta_F1Mi'] for row in rows])
         f1ma = summarize([row['delta_F1Ma'] for row in rows])
-        aggregate.append({
+        aggregate_row = {
             'dataset': dataset,
             'num_pairs': len(rows),
             'delta_F1Mi_mean': f1mi['mean'],
@@ -131,7 +165,27 @@ def make_aggregate_rows(paired):
             'delta_F1Ma_positive': f1ma['positive'],
             'delta_F1Ma_zero': f1ma['zero'],
             'delta_F1Ma_negative': f1ma['negative'],
-        })
+        }
+        for variant in CONTROL_VARIANTS:
+            f1mi_key = f'delta_F1Mi_normal_minus_{variant}'
+            f1ma_key = f'delta_F1Ma_normal_minus_{variant}'
+            f1mi_values = [row[f1mi_key] for row in rows if f1mi_key in row]
+            f1ma_values = [row[f1ma_key] for row in rows if f1ma_key in row]
+            if f1mi_values:
+                f1mi_control = summarize(f1mi_values)
+                aggregate_row[f'{f1mi_key}_mean'] = f1mi_control['mean']
+                aggregate_row[f'{f1mi_key}_pop_std'] = f1mi_control['pop_std']
+                aggregate_row[f'{f1mi_key}_positive'] = f1mi_control['positive']
+                aggregate_row[f'{f1mi_key}_zero'] = f1mi_control['zero']
+                aggregate_row[f'{f1mi_key}_negative'] = f1mi_control['negative']
+            if f1ma_values:
+                f1ma_control = summarize(f1ma_values)
+                aggregate_row[f'{f1ma_key}_mean'] = f1ma_control['mean']
+                aggregate_row[f'{f1ma_key}_pop_std'] = f1ma_control['pop_std']
+                aggregate_row[f'{f1ma_key}_positive'] = f1ma_control['positive']
+                aggregate_row[f'{f1ma_key}_zero'] = f1ma_control['zero']
+                aggregate_row[f'{f1ma_key}_negative'] = f1ma_control['negative']
+        aggregate.append(aggregate_row)
     return aggregate
 
 
@@ -140,7 +194,11 @@ def write_csv(path, rows):
         return
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(rows[0].keys())
+    fieldnames = []
+    for row in rows:
+        for key in row:
+            if key not in fieldnames:
+                fieldnames.append(key)
     with path.open('w', newline='') as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()

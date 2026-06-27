@@ -4,6 +4,6 @@ torch-sparse
 torch-cluster
 torch-spline
 torch-geometric >= 1.4.3
-sklearn
+scikit-learn
 numpy
 pyyaml

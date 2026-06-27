@@ -3,13 +3,18 @@ import csv
 import json
 import os.path as osp
 import random
+import shutil
+import subprocess
+import sys
 from copy import deepcopy
 from pathlib import Path
 from time import perf_counter as t
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch_geometric
 import torch_geometric.transforms as T
 import yaml
 from torch_geometric.datasets import Actor, CitationFull, Planetoid, WebKB
@@ -41,9 +46,13 @@ def parse_args():
     parser.add_argument('--min-weight', type=float, default=0.05)
     parser.add_argument('--negative-weighting', action='store_true')
     parser.add_argument('--no-anchor-weighting', action='store_true')
+    parser.add_argument('--shuffle-weights', action='store_true')
+    parser.add_argument('--random-weights', action='store_true')
+    parser.add_argument('--control-seed', type=int, default=None)
     parser.add_argument('--eval-ratio', type=float, default=0.1)
     parser.add_argument('--skip-eval', action='store_true')
     parser.add_argument('--save-dir', type=str, default=None)
+    parser.add_argument('--overwrite', action='store_true')
     parser.add_argument('--log-every', type=int, default=1)
     parser.add_argument('--split-index', type=int, default=0)
     parser.add_argument('--eval-mode', type=str, default='auto',
@@ -53,9 +62,27 @@ def parse_args():
 
 def set_seed(seed):
     random.seed(seed)
+    np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def validate_args(args):
+    if args.shuffle_weights and args.random_weights:
+        raise ValueError('Use at most one of --shuffle-weights and --random-weights.')
+    if (args.shuffle_weights or args.random_weights) and args.method != 'es_weighted':
+        raise ValueError('Weight controls are only valid with --method es_weighted.')
+
+
+def weight_control_name(args):
+    if args.method != 'es_weighted':
+        return 'none'
+    if args.shuffle_weights:
+        return 'shuffled'
+    if args.random_weights:
+        return 'random'
+    return 'normal'
 
 
 def get_device(gpu_id):
@@ -165,6 +192,32 @@ def embedding_stability_weights(teacher, z1, z2, data, args):
     return weights.detach()
 
 
+def make_control_generator(args, epoch):
+    base_seed = args.control_seed
+    if base_seed is None:
+        base_seed = args.resolved_seed + 1000003
+    generator = torch.Generator(device='cpu')
+    generator.manual_seed(base_seed + epoch * 9176 + args.split_index * 131)
+    return generator
+
+
+def apply_weight_control(weights, args, epoch):
+    if weights is None:
+        return None
+    if args.shuffle_weights:
+        generator = make_control_generator(args, epoch)
+        permutation = torch.randperm(weights.numel(), generator=generator)
+        return weights[permutation.to(weights.device)].detach()
+    if args.random_weights:
+        generator = make_control_generator(args, epoch)
+        random_weights = torch.rand(weights.numel(), generator=generator)
+        random_weights = random_weights.to(weights.device, dtype=weights.dtype)
+        if args.min_weight > 0.0:
+            random_weights = random_weights * (1.0 - args.min_weight) + args.min_weight
+        return random_weights.detach()
+    return weights
+
+
 def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     model.train()
     optimizer.zero_grad()
@@ -174,9 +227,11 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     z2 = model(x_2, edge_index_2)
 
     weights = None
+    raw_weights = None
     use_weighting = args.method == 'es_weighted' and epoch > args.warmup_epochs
     if use_weighting:
-        weights = embedding_stability_weights(teacher, z1, z2, data, args)
+        raw_weights = embedding_stability_weights(teacher, z1, z2, data, args)
+        weights = apply_weight_control(raw_weights, args, epoch)
 
     pair_weights = None if args.no_anchor_weighting else weights
     denominator_weights = weights if args.negative_weighting else None
@@ -196,6 +251,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     log = {
         'loss': loss.item(),
         'stage': 'weighted' if use_weighting else 'warmup_or_grace',
+        'weight_control': weight_control_name(args),
     }
     if weights is not None:
         log.update({
@@ -204,7 +260,14 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
             'weight_min': weights.min().item(),
             'weight_max': weights.max().item(),
         })
-    return log, weights
+    if raw_weights is not None:
+        log.update({
+            'raw_weight_mean': raw_weights.mean().item(),
+            'raw_weight_std': raw_weights.std(unbiased=False).item(),
+            'raw_weight_min': raw_weights.min().item(),
+            'raw_weight_max': raw_weights.max().item(),
+        })
+    return log, weights, raw_weights
 
 
 @torch.no_grad()
@@ -220,8 +283,17 @@ def prepare_save_dir(args, seed):
     save_dir.mkdir(parents=True, exist_ok=True)
     split_dataset = args.dataset in ['Texas', 'Cornell', 'Wisconsin', 'Actor']
     split_suffix = f'_split{args.split_index}' if args.eval_mode == 'mask' or split_dataset else ''
-    run_name = f'{args.dataset}_{args.method}_seed{seed}{split_suffix}'
+    control = weight_control_name(args)
+    control_suffix = f'_{control}' if args.method == 'es_weighted' and control != 'normal' else ''
+    run_name = f'{args.dataset}_{args.method}{control_suffix}_seed{seed}{split_suffix}'
     run_dir = save_dir / run_name
+    if run_dir.exists() and any(run_dir.iterdir()):
+        if not args.overwrite:
+            raise FileExistsError(
+                f'Run directory already exists and is not empty: {run_dir}. '
+                'Use --overwrite or choose a different --save-dir.'
+            )
+        shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
 
@@ -238,6 +310,11 @@ def append_train_log(run_dir, row):
         'weight_std',
         'weight_min',
         'weight_max',
+        'raw_weight_mean',
+        'raw_weight_std',
+        'raw_weight_min',
+        'raw_weight_max',
+        'weight_control',
         'epoch_time',
         'total_time',
     ]
@@ -275,6 +352,44 @@ def save_eval_details(run_dir, eval_stats):
         json.dump(details, handle, indent=2)
 
 
+def run_command(command, cwd=None):
+    try:
+        return subprocess.check_output(
+            command,
+            cwd=cwd,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return None
+
+
+def repo_root():
+    return Path(__file__).resolve().parents[2]
+
+
+def collect_runtime_metadata(device):
+    root = repo_root()
+    return {
+        'argv': sys.argv,
+        'python_version': sys.version,
+        'torch_version': torch.__version__,
+        'torch_geometric_version': torch_geometric.__version__,
+        'cuda_available': torch.cuda.is_available(),
+        'cuda_version': torch.version.cuda,
+        'device': str(device),
+        'cuda_device_name': (
+            torch.cuda.get_device_name(device) if device.type == 'cuda' else None
+        ),
+        'git_commit': run_command(['git', 'rev-parse', 'HEAD'], cwd=root),
+        'git_status_short': run_command(['git', 'status', '--short'], cwd=root),
+        'grace_submodule_status': run_command(
+            ['git', 'submodule', 'status', 'baselines/GRACE'],
+            cwd=root,
+        ),
+    }
+
+
 def save_metadata(run_dir, args, config, seed, device, eval_stats):
     if run_dir is None:
         return
@@ -282,16 +397,21 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'dataset': args.dataset,
         'method': args.method,
         'seed': seed,
+        'model_seed': seed,
+        'split_index': args.split_index,
+        'weight_control': weight_control_name(args),
         'device': str(device),
         'args': vars(args),
         'config': config,
         'eval_stats': eval_stats,
+        'runtime': collect_runtime_metadata(device),
     }
     with (run_dir / 'metadata.json').open('w') as handle:
-        json.dump(metadata, handle, indent=2)
+        json.dump(metadata, handle, indent=2, default=str)
 
 
-def save_artifacts(run_dir, model, data, embeddings, final_weights, args, config):
+def save_artifacts(run_dir, model, data, embeddings, final_weights, final_raw_weights,
+                   args, config):
     if run_dir is None:
         return
     torch.save({
@@ -303,6 +423,10 @@ def save_artifacts(run_dir, model, data, embeddings, final_weights, args, config
         'val_mask': data.val_mask.detach().cpu() if hasattr(data, 'val_mask') else None,
         'test_mask': data.test_mask.detach().cpu() if hasattr(data, 'test_mask') else None,
         'final_weights': None if final_weights is None else final_weights.detach().cpu(),
+        'final_raw_weights': (
+            None if final_raw_weights is None else final_raw_weights.detach().cpu()
+        ),
+        'weight_control': weight_control_name(args),
         'model_state_dict': model.state_dict(),
         'args': vars(args),
         'config': config,
@@ -311,8 +435,10 @@ def save_artifacts(run_dir, model, data, embeddings, final_weights, args, config
 
 def main():
     args = parse_args()
+    validate_args(args)
     config = yaml.load(open(args.config), Loader=SafeLoader)[args.dataset]
     seed = config['seed'] if args.seed is None else args.seed
+    args.resolved_seed = seed
     if args.epochs is not None:
         config['num_epochs'] = args.epochs
     set_seed(seed)
@@ -340,16 +466,28 @@ def main():
         print(
             f'(I) | warmup_epochs={args.warmup_epochs}, ema_decay={args.ema_decay}, '
             f'anchor_weighting={not args.no_anchor_weighting}, '
-            f'negative_weighting={args.negative_weighting}'
+            f'negative_weighting={args.negative_weighting}, '
+            f'weight_control={weight_control_name(args)}'
         )
 
     start = t()
     prev = start
     final_weights = None
+    final_raw_weights = None
     for epoch in range(1, config['num_epochs'] + 1):
-        log, epoch_weights = train_epoch(model, teacher, data, optimizer, config, args, epoch)
+        log, epoch_weights, epoch_raw_weights = train_epoch(
+            model,
+            teacher,
+            data,
+            optimizer,
+            config,
+            args,
+            epoch,
+        )
         if epoch_weights is not None:
             final_weights = epoch_weights
+        if epoch_raw_weights is not None:
+            final_raw_weights = epoch_raw_weights
 
         now = t()
         log.update({
@@ -398,7 +536,16 @@ def main():
     save_eval_summary(run_dir, eval_stats)
     save_eval_details(run_dir, eval_stats)
     save_metadata(run_dir, args, config, seed, device, eval_stats)
-    save_artifacts(run_dir, model, data, embeddings, final_weights, args, config)
+    save_artifacts(
+        run_dir,
+        model,
+        data,
+        embeddings,
+        final_weights,
+        final_raw_weights,
+        args,
+        config,
+    )
 
 
 if __name__ == '__main__':

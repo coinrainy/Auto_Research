@@ -301,3 +301,22 @@ python summarize_runs.py --runs-dir runs/hetero_splits0-2_seed0_e100 --paired-ou
 
 > We study whether node-wise embedding stability under graph augmentations can serve as an unsupervised view reliability signal for reweighting GRACE-style contrastive training. Current evidence suggests conditional benefits and important failure modes, rather than a universal heterophily improvement.
 
+## 2026-06-27 缺点修复进展
+
+本轮已先修复一批不改变方法假设、但会影响实验可信度的工程缺口：
+
+- 已在 `train.py` 增加 `--shuffle-weights` 与 `--random-weights`，支持 normal / shuffled / random 三种 `es_weighted` 控制组。
+- 已增加 `--overwrite`；默认遇到已有非空 run 目录会报错，避免重复运行时追加旧 `train_log.csv` 并覆盖新产物。
+- 已在 metadata 中记录完整命令、Python/PyTorch/PyG/CUDA 信息、git commit、git status 与 GRACE submodule 状态。
+- 已设置 NumPy 随机种子，减少 linear probe 与控制组随机性的额外漂移。
+- 已新增 `experiments/grace_idea/scripts/run_split_study.sh`，可显式循环 `DATASETS × SPLITS × SEEDS × METHODS × ES_CONTROLS`。
+- 已更新 `summarize_runs.py`，兼容旧 run 名以及新控制组 run 名：`es_weighted_shuffled`、`es_weighted_random`。
+- 已将 `requirements.txt` 中的旧包名 `sklearn` 改为 `scikit-learn`。
+
+仍未修复、下一批优先：
+
+- confusion matrix delta 自动摘要；
+- downstream error bucket 诊断；
+- label-based false-negative pressure 诊断；
+- degree / local structure / reliability 关系分析；
+- Chameleon/Squirrel 数据集接入。
