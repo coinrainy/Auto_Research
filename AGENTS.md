@@ -121,3 +121,11 @@
   - 已验证：`python summarize_reliability_pairs.py --help`、`python -m compileall train.py eval.py diagnose.py summarize_reliability_pairs.py src`、`DATASETS=Texas SEEDS=0 WARMUP_EPOCHS=1 STAGE2_EPOCHS=1 EVAL_EPOCHS=5 bash scripts/run_small_reliability_study.sh`。
   - 本次 1+1 epoch 仅用于流程 smoke，不作为正式实验结论；输出已生成 `results/diagnostics/reliability_pair_summary.csv`，短跑中 Texas seed0 normal/shuffled accuracy 仍持平。
   - 下一步建议：运行更接近真实的小实验，例如 `DATASETS="Texas Wisconsin" SEEDS="0 1 2" WARMUP_EPOCHS=20 STAGE2_EPOCHS=50 EVAL_EPOCHS=50 bash scripts/run_small_reliability_study.sh`，再查看 `results/diagnostics/reliability_pair_summary.csv` 的 paired accuracy delta 与 view consistency gap。
+- 2026-06-27 小规模 reliability 对照实验执行：
+  - 已执行：`DATASETS="Texas Wisconsin" SEEDS="0 1 2" WARMUP_EPOCHS=20 STAGE2_EPOCHS=50 EVAL_EPOCHS=50 PAIRS_PATH=results/diagnostics/reliability_pair_runs_texas_wisconsin_s0-2.csv SUMMARY_PATH=results/diagnostics/reliability_pair_summary_texas_wisconsin_s0-2.csv bash scripts/run_small_reliability_study.sh`。
+  - 共完成 12 个 RW-GCL run：Texas/Wisconsin × seeds 0/1/2 × normal/shuffled，全部 status=completed；Wisconsin 首次运行已完成 PyG 数据下载与处理。
+  - 输出文件：`results/diagnostics/reliability_pair_runs_texas_wisconsin_s0-2.csv` 与 `results/diagnostics/reliability_pair_summary_texas_wisconsin_s0-2.csv`。
+  - paired accuracy delta（normal - shuffled）：Texas 三个 seed 分别为 +0.027027、+0.054054、-0.027027，均值 +0.018018；Wisconsin 三个 seed 分别为 -0.019608、0.000000、0.000000，均值 -0.006536。
+  - view consistency 诊断：所有 6 个 normal run 的 high-low bucket consistency gap 均为正，范围约 0.076716 到 0.128259，说明当前 reliability 排序和跨视图 consistency 有对应关系；但 shuffled control 的 accuracy 差异仍不稳定，不能据此声称机制已经充分成立。
+  - 当前解释：Texas 有轻微信号，Wisconsin 暂无正向性能信号；这仍属于 early-stage sanity run，需要扩大 seed、加入 GRACE 对照和更长训练后再判断方法有效性。
+  - 下一步建议：优先跑 GRACE 与 RW-GCL normal/shuffled 的同配置对照，或将 seeds 扩展到 0-9 后做 paired mean/std；同时实现 baseline-vs-method 的汇总脚本，避免只比较 normal 与 shuffled。
