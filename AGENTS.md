@@ -12,8 +12,8 @@
 
 - 目标：在 2026 年投稿/发表一篇图对比学习方向的顶会或顶刊论文。
 - 主要任务：节点分类。
-- 当前状态：尚无稳定研究方向，也没有明确具体 idea。
-- 当前工作流：`academic-research-suite` -> `deep-research` -> `socratic` mode。
+- 当前状态：已收敛到 pair reliability-weighted GCL 方向，并形成 two-stage 最小实验计划。
+- 当前工作流：`academic-research-suite` -> `experiment-agent` -> `plan` mode。
 
 ## 本轮任务记录
 
@@ -74,3 +74,7 @@
   - 第 4 步：优先实现 shuffled reliability、weighted false negative mass、view consistency 三个机制诊断，而不是先堆更多模型模块。
   - 第 5 步：若最小原型在机制诊断上成立，再决定是否加入 high/low-pass context gate 与 closed-loop augmentation。
   - 当前不建议事项：暂不写完整论文大纲；暂不冲大规模 OGB；暂不把 closed-loop、curriculum、high/low-pass gate 全部放进主方法。
+- 2026-06-27 experiment-agent plan 输出：
+  - 已创建实验计划文档：`docs/two_stage_reliability_weighted_gcl_experiment_plan.md`。
+  - 计划覆盖代码结构、数据集、baseline、two-stage 方法定义、核心指标、shuffled reliability、weighted false negative mass、view consistency、核心 ablation 与第一周任务表。
+  - 下一步建议：按计划先创建实验仓库骨架，再实现数据加载、GRACE smoke baseline 和 RW-GCL two-stage 最小原型。
