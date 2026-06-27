@@ -228,6 +228,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `residual_grace` 支持 `--ego-gate-init`，并记录 `ego_gate`。
 - `gated_ego_graph_grace` 支持 `--graph-gate-temperature`、`--graph-gate-threshold`、`--graph-gate-min`、`--graph-gate-max`，并记录 `graph_gate_*`。
 - `evaluate_raw_features.py` 支持对原始 `data.x` 使用当前同一套 mask/random linear evaluation 协议，作为 ego/residual/GRACE 的 feature-only 硬 baseline。
+- `evaluate_feature_fusion.py` 支持递归读取 `artifacts.pt`，在同一 split 下评估 `raw`、`ssl`、`raw+ssl concat`，并输出 concat 相对 raw/ssl 的 paired delta 与 aggregate summary。
 
 示例 split-aware 命令：
 
@@ -249,7 +250,10 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - 已实现并复核 `cbr_gcl`，不建议继续简单调 `cbr_rr_weight`。
 - 已实现并筛选基于 RR diagonal confidence 的 `gated_cbr_gcl`，该单信号 gate 失败，不建议继续调 diagonal threshold。
 - 已实现并筛选 `stable_cluster_cbr_gcl`，该 cluster compactness/separation gate 未通过 Cornell/Actor 压力测试，不建议继续沿 CBR gate 小修小补。
-- 当前应优先推进 Feature-Anchored / Graph-Usage Calibrated GCL：先实现快速、可控的 raw + SSL concat evaluator 或 residual-to-raw evaluator，判断 SSL 是否提供 raw 之外的增量；再考虑新的 graph usage gate。
+- 当前应优先推进 Raw-Anchored Residual/Complement GCL：`evaluate_feature_fusion.py` 已显示 SSL embedding 可能包含 raw 之外的互补信息，但 post-hoc concat 对 C 搜索敏感，不能作为最终方法。
+- 完整 C 网格 split0-2：`ego_grace` concat - raw 在 Actor/Cornell/Texas 为正、Wisconsin 为负；`residual_grace` 仅 Actor 稳定正向，Cornell/Texas/Wisconsin 为负。
+- 固定 C=1 的 10 split 快速筛查：ego/residual concat - raw 在 Actor/Cornell/Texas/Wisconsin 均为正，但该证据只能说明存在互补信号，不足以支撑 SOTA claim。
+- 下一步应实现显式 raw-anchored residual/complement objective 或 light-validation fusion，而不是继续把 `ego_grace` / `residual_grace` 单独包装为方法。
 - 暂停继续调 `gated_ego_graph_grace` 的 `graph_gate_min/max`；`--graph-gate-min 0.5` 已显示同配退化仍严重。
 - 加入 Chameleon/Squirrel 前，先确认当前 loader/evaluator 能支持对应固定 split；若 WebKB raw-feature baseline 已远强于 SSL，WebKB 只能作为机制诊断而非 accuracy SOTA 主战场。
 - 本目录中的 SGFN / context-gated SGFN 只作为负结果、诊断工具和消融资产保留。

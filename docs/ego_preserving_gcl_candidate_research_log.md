@@ -280,3 +280,73 @@ python evaluate_raw_features.py --dataset Actor --split-index 0 --out-dir runs/r
 ```
 
 研发下一步不是重复跑 ego 10 split，而是实现一个快速、可控的 `raw + SSL embedding` / residual-to-raw evaluator，判断 GCL 表示是否能在 raw feature 之外提供增量；若不能，该路线应转为机制诊断论文或继续换 idea。
+
+## 2026-06-28 raw + SSL fusion 增量评估
+
+新增脚本：
+
+```bash
+python evaluate_feature_fusion.py --runs-dir runs/ego_grace_splits0-9_seed0_e100 --include-methods ego_grace
+```
+
+脚本功能：
+
+- 递归读取 `artifacts.pt`；
+- 用同一 dataset/split 的 raw `data.x` 与已保存 SSL embedding 重新评估；
+- 支持 `raw`、`ssl`、`concat` 三种表示；
+- 对 concat 采用 raw block 与 SSL block 分别 L2 normalize 后拼接；
+- 输出 per-run 表、paired delta 表与 dataset aggregate 表。
+
+### 完整 C 网格：split0-2 校准
+
+输出：
+
+- `experiments/grace_idea/runs/summaries/feature_fusion_ego_residual_splits0-2_aggregate.csv`
+- `experiments/grace_idea/runs/summaries/feature_fusion_residual_splits0-2_aggregate.csv`
+
+`ego_grace` concat - raw：
+
+| Dataset | F1Mi | F1Ma | F1Mi positive/zero/negative | F1Ma positive/zero/negative |
+| --- | ---: | ---: | --- | --- |
+| Actor | +0.019298 | +0.014279 | 3/0/0 | 3/0/0 |
+| Cornell | +0.018018 | +0.006552 | 2/1/0 | 1/1/1 |
+| Texas | +0.018018 | +0.036499 | 1/2/0 | 1/2/0 |
+| Wisconsin | -0.013072 | -0.020250 | 0/2/1 | 0/2/1 |
+
+`residual_grace` concat - raw：
+
+| Dataset | F1Mi | F1Ma | F1Mi positive/zero/negative | F1Ma positive/zero/negative |
+| --- | ---: | ---: | --- | --- |
+| Actor | +0.016228 | +0.018583 | 3/0/0 | 3/0/0 |
+| Cornell | -0.009009 | -0.008758 | 1/1/1 | 2/0/1 |
+| Texas | -0.036036 | -0.049192 | 0/1/2 | 0/1/2 |
+| Wisconsin | -0.026144 | -0.027646 | 0/1/2 | 0/1/2 |
+
+判断：完整 C 网格下，后验 concat 不是稳健方法。`ego_grace` 在 Actor/Cornell/Texas 有增量，但 Wisconsin 负；`residual_grace` 只有 Actor 稳定正向，在 WebKB 小图上反而更容易损伤 raw separability。
+
+### 固定 C=1：10 split 快速筛查
+
+输出：
+
+- `experiments/grace_idea/runs/summaries/feature_fusion_ego_splits0-9_fast_aggregate.csv`
+- `experiments/grace_idea/runs/summaries/feature_fusion_residual_splits0-9_fast_aggregate.csv`
+
+固定 `C=1` 的快速筛查中，concat - raw 在 4 个异配数据集上均为正：
+
+| Dataset | ego F1Mi/F1Ma | residual F1Mi/F1Ma |
+| --- | ---: | ---: |
+| Actor | +0.014013 / +0.016407 | +0.006645 / +0.008116 |
+| Cornell | +0.045946 / +0.051876 | +0.064865 / +0.084247 |
+| Texas | +0.040541 / +0.072808 | +0.062162 / +0.125084 |
+| Wisconsin | +0.017647 / +0.028493 | +0.019608 / +0.047159 |
+
+判断：这说明 SSL embedding 可能包含 raw 之外的互补信息，但该信号对 evaluation C 搜索敏感，不能把 post-hoc concat 当成最终方法。更合理的新候选是：
+
+> Raw-Anchored Residual/Complement GCL：显式把 raw feature 作为 anchor，把 GCL encoder 学到的表示约束为 raw 之外的补充通道，并通过稳定的 validation-free 或 light-validation 融合机制避免破坏 raw separability。
+
+当前路线取舍：
+
+- 放弃把 `ego_grace` / `residual_grace` 单独包装成 SOTA encoder；
+- 放弃继续手调 `gated_ego_graph_grace` 的 local agreement gate；
+- 保留 ego/residual 作为机制证据：GCN-based GRACE 损害异配图上的 raw-feature separability，ego preservation 能恢复部分语义；
+- 下一步应实现显式 residual-complement 训练或融合，而不是只做后验 concat。

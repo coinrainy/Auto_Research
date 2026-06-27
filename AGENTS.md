@@ -553,3 +553,14 @@
   - 已验证命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python -m py_compile train.py summarize_runs.py model.py evaluate_raw_features.py`、`bash -n scripts/run_split_study.sh`、`python evaluate_raw_features.py --dataset Actor --split-index 0 --out-dir runs/raw_feature_smoke/Actor_split0`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python evaluate_raw_features.py --dataset Actor --split-index 0 --out-dir runs/raw_feature_smoke/Actor_split0`。
   - 下一步研发建议：实现快速 `raw + SSL embedding` / residual-to-raw evaluator，并补 Chameleon/Squirrel loader 后测试 ego/residual 是否在 raw baseline 不占绝对优势的数据集上提供稳定增量。
+- 2026-06-28 raw+SSL fusion 增量评估：
+  - 已新增 `experiments/grace_idea/evaluate_feature_fusion.py`，支持递归读取 `artifacts.pt`，在同一 dataset/split 下评估 `raw`、`ssl`、`raw+ssl concat`，并生成 per-run、paired delta 与 aggregate summary。
+  - 已完成 smoke：`python evaluate_feature_fusion.py --run-dir runs/ego_grace_splits0-2_seed0_e100/Actor_ego_grace_seed0_split0 --out /tmp/fusion_smoke_runs.csv --aggregate-out /tmp/fusion_smoke_aggregate.csv`。
+  - 完整 C 网格 split0-2 输出：`runs/summaries/feature_fusion_ego_residual_splits0-2_aggregate.csv` 与 `runs/summaries/feature_fusion_residual_splits0-2_aggregate.csv`。
+  - 完整 C 网格结论：`ego_grace` concat - raw 在 Actor/Cornell/Texas 为正（F1Mi +0.019298/+0.018018/+0.018018），Wisconsin 为负（-0.013072）；`residual_grace` 仅 Actor 为正（+0.016228），Cornell/Texas/Wisconsin 为负（-0.009009/-0.036036/-0.026144）。
+  - 固定 C=1 的 10 split 快速筛查输出：`runs/summaries/feature_fusion_ego_splits0-9_fast_aggregate.csv` 与 `runs/summaries/feature_fusion_residual_splits0-9_fast_aggregate.csv`。
+  - 固定 C=1 快速筛查中 concat - raw 在四个异配数据集均为正：ego F1Mi delta Actor +0.014013、Cornell +0.045946、Texas +0.040541、Wisconsin +0.017647；residual F1Mi delta Actor +0.006645、Cornell +0.064865、Texas +0.062162、Wisconsin +0.019608。
+  - 当前判断：SSL embedding 确实可能包含 raw 之外的互补信息，但后验 concat 对 C 搜索敏感，不能作为最终方法；当前 active candidate 调整为 Raw-Anchored Residual/Complement GCL。
+  - 放弃/暂停事项：不把 `ego_grace` 或 `residual_grace` 单独包装成 SOTA encoder；不继续手调 `gated_ego_graph_grace` 的 `graph_gate_min/max`；不把 post-hoc concat 当主方法。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python evaluate_feature_fusion.py --runs-dir runs/ego_grace_splits0-9_seed0_e100 --include-methods ego_grace --solver lbfgs --c-min-power 0 --c-max-power 1 --out runs/summaries/feature_fusion_ego_splits0-9_fast_runs.csv --aggregate-out runs/summaries/feature_fusion_ego_splits0-9_fast_aggregate.csv`。
+  - 下一步研发建议：实现显式 raw-anchored residual/complement objective 或 light-validation fusion，使 SSL 通道学习 raw feature 之外的补充信息，而不是只在评估时拼接。
