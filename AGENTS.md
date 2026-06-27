@@ -347,3 +347,8 @@
   - [INSIGHT] 用户更倾向做“新方法”论文，而不是 benchmark、纯机制诊断或应用型论文。
   - [INSIGHT] 原硬约束继续保留：单卡 RTX 3060 12GB、节点分类优先、小中型数据集、不走大规模 OGB 主线。
   - 下一步建议：围绕“从其他领域迁移什么机制到 GCL/GSSL”进行候选问题收敛，同时避免再次落入仅靠 heuristic 权重且实验信号不稳定的路线。
+- 2026-06-27 新方向 Layer 1 痛点选择：
+  - [INSIGHT] 用户最想解决的 GCL/GSSL 痛点是 positive/negative construction，具体聚焦 false negative contamination。
+  - [INSIGHT] 用户首选从 PU learning 借鉴方法，其次考虑 uncertainty estimation。
+  - 当前新方向边界：仍为 GCL/GSSL 新方法论文，问题中心从“增强视图/样本可靠性”转向“无标签图对比学习中如何把负样本集合重新表述为 unlabeled mixture，并处理其中潜在 positives”。
+  - 下一步建议：进入 Socratic Layer 1 后半段，明确 PU learning 在 GCL 中的对象映射：什么是 positive、什么是 unlabeled、false negative contamination 如何估计或约束，以及该设定相比现有 false-negative mining 工作的不可替代性。
