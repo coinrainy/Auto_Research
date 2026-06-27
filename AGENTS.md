@@ -352,3 +352,7 @@
   - [INSIGHT] 用户首选从 PU learning 借鉴方法，其次考虑 uncertainty estimation。
   - 当前新方向边界：仍为 GCL/GSSL 新方法论文，问题中心从“增强视图/样本可靠性”转向“无标签图对比学习中如何把负样本集合重新表述为 unlabeled mixture，并处理其中潜在 positives”。
   - 下一步建议：进入 Socratic Layer 1 后半段，明确 PU learning 在 GCL 中的对象映射：什么是 positive、什么是 unlabeled、false negative contamination 如何估计或约束，以及该设定相比现有 false-negative mining 工作的不可替代性。
+- 2026-06-27 PU learning 候选回退：
+  - 用户明确表示不再打算引入 PU learning，并希望回退到上一轮“从其他领域借鉴什么机制”的问题。
+  - 上一条关于 PU learning 的方向记录标记为已回退，不再作为当前默认路线；false negative contamination 是否继续作为核心痛点仍需重新确认。
+  - 下一步建议：重新选择外部方法来源，可优先确认是否保留 uncertainty estimation，或是否改向 causal representation、distributionally robust optimization、optimal transport、masked/denoising modeling、curriculum/self-paced learning 等机制。
