@@ -81,7 +81,7 @@ def weight_control_name(args):
     if args.shuffle_weights:
         return 'shuffled'
     if args.random_weights:
-        return 'random'
+        return 'uniform_random'
     return 'normal'
 
 
@@ -218,6 +218,17 @@ def apply_weight_control(weights, args, epoch):
     return weights
 
 
+def weight_diagnostics(weights):
+    if weights is None:
+        return {}
+    weights = weights.detach().float().clamp_min(0.0)
+    ess = weights.sum().pow(2) / weights.pow(2).sum().clamp_min(1e-12)
+    return {
+        'weight_ess': ess.item(),
+        'weight_ess_ratio': (ess / weights.numel()).item(),
+    }
+
+
 def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     model.train()
     optimizer.zero_grad()
@@ -260,12 +271,16 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
             'weight_min': weights.min().item(),
             'weight_max': weights.max().item(),
         })
+        log.update(weight_diagnostics(weights))
     if raw_weights is not None:
+        raw_diag = weight_diagnostics(raw_weights)
         log.update({
             'raw_weight_mean': raw_weights.mean().item(),
             'raw_weight_std': raw_weights.std(unbiased=False).item(),
             'raw_weight_min': raw_weights.min().item(),
             'raw_weight_max': raw_weights.max().item(),
+            'raw_weight_ess': raw_diag.get('weight_ess'),
+            'raw_weight_ess_ratio': raw_diag.get('weight_ess_ratio'),
         })
     return log, weights, raw_weights
 
@@ -310,10 +325,14 @@ def append_train_log(run_dir, row):
         'weight_std',
         'weight_min',
         'weight_max',
+        'weight_ess',
+        'weight_ess_ratio',
         'raw_weight_mean',
         'raw_weight_std',
         'raw_weight_min',
         'raw_weight_max',
+        'raw_weight_ess',
+        'raw_weight_ess_ratio',
         'weight_control',
         'epoch_time',
         'total_time',

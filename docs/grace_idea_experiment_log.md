@@ -238,7 +238,7 @@ Texas split 0 完整完成了 GRACE、normal、shuffled、random 四组：
 - ES normal - shuffled：F1Mi +0.081081，F1Ma +0.091133。
 - ES normal - random：F1Mi -0.027027，F1Ma -0.048121。
 
-因此，random control 在 Texas split 0 上反而优于 normal reliability。该结果和“embedding-stability reliability 非随机有效”的当前预期不符，已按用户要求中止后续批跑。
+因此，旧命名下的 random control 在 Texas split 0 上反而优于 normal reliability。该 control 实际是 `[min_weight, 1]` 上的 uniform-random 权重，后续代码与文档统一命名为 `uniform_random`；它不保留 normal reliability 的权重分布，不能直接当作 distribution-matched random reliability 反证。
 
 中断时已额外完成 Texas split 1 的 GRACE、normal、shuffled 三组；random split 1 尚未完成。部分汇总文件：
 
@@ -251,14 +251,60 @@ python summarize_runs.py --runs-dir runs/split_control_texas_cornell_s0_splits0-
 ### 当前解释
 
 - shuffled control 在 Texas split 0 明显低于 normal，说明“同一权重分布但打乱节点对应”会伤害结果，这一项仍支持 reliability-node 对应有一定信息。
-- random control 明显高于 normal，说明当前 normal 权重太接近全 1，实际扰动较弱；而随机宽分布权重可能产生了更强的 anchor reweighting / regularization。
-- 该结果削弱了“当前 reliability 本身带来收益”的强主张。至少需要补一个 distribution-matched random control，或将 random control 的权重分布匹配到 normal reliability 后再判断。
+- uniform-random control 明显高于 normal，说明当前 normal 权重太接近全 1，实际扰动较弱；而随机宽分布权重可能产生了更强的 anchor reweighting / regularization。
+- 该结果削弱了“当前 reliability 本身带来收益”的强主张，但不能替代分布保持的 shuffled control。主随机化证据仍应优先看 normal 与 shuffled 的差异。
 - 在修正控制设计前，不应继续扩大 Texas/Cornell/Actor 的多 seed / 多 split 实验。
 
 ### 下一步建议
 
 优先修正 control 设计，而不是继续跑大矩阵：
 
-- 新增 `--random-permute-distribution` 或将现有 `--random-weights` 改为可选 distribution-matched random：从 normal raw weights 采样/置乱/分位数匹配，而不是 uniform random。
+- 将旧 `random` 统一改名为 `uniform_random`，避免误读为 distribution-matched random reliability；主 control 使用 `--shuffle-weights`。
 - 增加权重强度控制：例如报告 effective sample size、weight std、min/max，并做 `weight_power` 的小范围 sanity。
-- 复跑 Texas split 0：GRACE、normal、shuffled、distribution-matched random、uniform-random，确认 random 反超是否来自宽分布正则化。
+- 复跑 Texas split 0：GRACE、normal、shuffled、uniform-random，确认宽分布随机正则化是否仍会反超；机制主判断只看 normal vs shuffled。
+
+## 2026-06-27 Theory-aligned control validation
+
+本轮目的：
+
+- 检查当前 `experiments/grace_idea/` 实现是否和修正后的理论预设一致。
+- 将旧 `random` control 明确改名为 `uniform_random`，避免误读为分布保持随机 reliability。
+- 增加 effective sample size ratio，量化权重强度，而不是只看 mean/std。
+- 在修正后代码上复跑最小 Texas split0 sanity。
+
+执行命令：
+
+```bash
+cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
+DATASETS="Texas" SPLITS="0" SEEDS="0" METHODS="grace es_weighted" ES_CONTROLS="normal shuffled uniform_random" EPOCHS=100 WARMUP_EPOCHS=20 SAVE_DIR="runs/theory_aligned_texas_split0_e100_ess" MANIFEST_PATH="runs/theory_aligned_texas_split0_e100_ess/run_manifest.csv" LOG_EVERY=100 scripts/run_split_study.sh
+python summarize_runs.py --runs-dir runs/theory_aligned_texas_split0_e100_ess --paired-out runs/summaries/theory_aligned_texas_split0_e100_ess_paired.csv --aggregate-out runs/summaries/theory_aligned_texas_split0_e100_ess_aggregate.csv
+```
+
+### 代码/理论对齐结论
+
+- 当前可运行主方法是 `embedding_stability_only`，不是 combined reliability，也不包含 projection head softmax prediction consistency。
+- `--shuffle-weights` 是主随机化 control：保留 reliability 分布，打乱 node-weight 对应。
+- `--random-weights` 已统一命名为 `uniform_random`：它生成 `[min_weight, 1]` 宽分布随机权重，不保留 normal reliability 分布。
+- 默认 loss 只做 positive anchor weighting；未启用 `--negative-weighting` 时，不应声称解决 false negative / hard negative imbalance。
+
+### 验证结果
+
+| Dataset | Split | Method / Control | F1Mi | F1Ma | Weight mean | Weight std | ESS ratio |
+|---|---:|---|---:|---:|---:|---:|---:|
+| Texas | 0 | GRACE | 0.675676 | 0.341133 |  |  |  |
+| Texas | 0 | ES normal | 0.675676 | 0.341133 | 0.967304 | 0.014481 | 0.999776 |
+| Texas | 0 | ES shuffled | 0.621622 | 0.315909 | 0.966539 | 0.014453 | 0.999776 |
+| Texas | 0 | ES uniform_random | 0.648649 | 0.321429 | 0.519213 | 0.267754 | 0.789928 |
+
+关键 delta：
+
+- ES normal - GRACE：F1Mi +0.000000，F1Ma +0.000000。
+- ES normal - shuffled：F1Mi +0.054054，F1Ma +0.025224。
+- ES normal - uniform_random：F1Mi +0.027027，F1Ma +0.019704。
+
+### 当前解释
+
+- `normal > shuffled` 支持“embedding-stability 权重与节点对应关系包含信息”的 sanity，但这只是单 split/single seed。
+- `normal = GRACE` 说明本轮不能声称方法带来性能提升。
+- `uniform_random` 的 ESS ratio 明显低于 normal/shuffled，确认它是更强的随机 reweighting 压力测试，而不是主随机化 control。
+- 后续如果继续实验，应优先扩展少量 splits/seeds 的 normal vs shuffled，并补 downstream error、degree/local structure 与 label-based false-negative pressure 诊断；暂不建议上 degree gate 或 closed-loop 模块。

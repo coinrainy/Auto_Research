@@ -28,7 +28,7 @@
 - 可通过 `--negative-weighting` 将 reliability 同时用于 InfoNCE denominator candidate weighting，低可靠节点作为负样本时贡献更小。
 - reliability 只作为 stop-gradient 权重使用，不把权重估计路径反传回模型。
 - 可通过 `--shuffle-weights` 做分布保持的 reliability-node 对应打乱控制。
-- 可通过 `--random-weights` 做随机 reliability 控制。
+- 可通过 `--random-weights` 做 uniform-random 权重压力测试；它不保留 normal reliability 的分布，不应当作主随机化 control。
 - 默认拒绝写入已有非空 run 目录；如确需覆盖，显式添加 `--overwrite`。
 
 最小 smoke 命令：
@@ -54,13 +54,14 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `--eval-mode mask` 可强制使用 mask 评估。
 - `--eval-mode random` 可强制使用原 GRACE 风格随机 linear probe。
 - `scripts/run_split_study.sh` 可通过 `DATASETS`、`SPLITS`、`SEEDS`、`METHODS`、`ES_CONTROLS` 做 split-aware 批跑。
-- `summarize_runs.py` 可从 `runs/` 目录生成 matched paired summary 与 dataset aggregate summary，并兼容 `es_weighted_shuffled` / `es_weighted_random` 控制组。
+- `train_log.csv` 记录权重均值、方差、min/max 与 effective sample size ratio，用于判断 reliability 权重是否实质上接近等权。
+- `summarize_runs.py` 可从 `runs/` 目录生成 matched paired summary 与 dataset aggregate summary，并兼容 `es_weighted_shuffled` / `es_weighted_uniform_random` 控制组；旧的 `es_weighted_random` 历史目录仍可解析。
 
 示例 split-aware 命令：
 
 ```bash
 cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
-DATASETS="Texas Cornell" SPLITS="0 1 2" SEEDS="0" ES_CONTROLS="normal shuffled random" SAVE_DIR="runs/split_control_sanity" scripts/run_split_study.sh
+DATASETS="Texas Cornell" SPLITS="0 1 2" SEEDS="0" ES_CONTROLS="normal shuffled uniform_random" SAVE_DIR="runs/split_control_sanity" scripts/run_split_study.sh
 python summarize_runs.py --runs-dir runs/split_control_sanity --paired-out runs/summaries/split_control_sanity_paired.csv --aggregate-out runs/summaries/split_control_sanity_aggregate.csv
 ```
 

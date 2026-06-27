@@ -320,6 +320,18 @@
 - 2026-06-27 当前情况快照：
   - 当前主线已从旧自建 RW-GCL scaffold 切换到 `experiments/grace_idea/`，以 GRACE 工作副本为唯一可运行代码事实源；`baselines/GRACE` 保持为只读 submodule。
   - 当前方法不再是 combined pair reliability，而是 `es_weighted`：基于 EMA teacher 的 encoder embedding stability 做 node-wise view reliability / augmentation-stability-aware weighting。
-  - 已支持 normal、shuffled、uniform-random 三类 `es_weighted` control；早停实验显示 Texas split0 上 normal 优于 shuffled，但低于 uniform-random，因此不能声称 reliability 本身已经被严格证明有效。
-  - 当前研究判断：不要继续扩大多 seed / 多 split 主实验，也不要上 degree gate、closed-loop 或复杂模块；优先修正 control 设计和独立诊断。
-  - 下一步最小 no-regret 任务：实现 distribution-matched random control，报告 effective sample size / weight std / min-max，并复跑 Texas split0 的 GRACE、normal、shuffled、distribution-matched random 与 uniform-random。
+  - 已支持 normal、shuffled、uniform-random 三类 `es_weighted` control；其中 `shuffled` 是分布保持、打乱节点对应的主随机化 control，`uniform_random` 是宽分布随机权重压力测试。
+  - 当前研究判断：不要上 degree gate、closed-loop 或复杂模块；先把 split/seed 协议、权重强度诊断与独立错误诊断做扎实。
+  - 下一步最小 no-regret 任务：围绕 normal vs shuffled 扩展少量 splits/seeds，并补 downstream error、degree/local structure、label-based false-negative pressure 诊断；`uniform_random` 只作为一般 reweighting 正则化对照。
+- 2026-06-27 理论-实现对齐检查与验证：
+  - 已新增 `docs/grace_idea_theory_implementation_check.md`，逐项记录当前最小理论预设与实现状态。
+  - 对齐结论：当前可运行方法是 `embedding_stability_only`，不包含 projection softmax prediction consistency；这是有意收缩，用于避免“projection 维度一致性被误当成分类预测一致性”的定义错位。
+  - loss 默认只做 positive anchor weighting；`--negative-weighting` 只有显式开启时才进入 denominator candidate weighting，因此默认实验不能声称已经解决 false negative / hard negative imbalance。
+  - 已将旧 `random` control 统一解释并重命名为 `uniform_random`；代码输出目录、metadata 与汇总脚本均使用/兼容 `uniform_random`，旧 `es_weighted_random` 历史目录仍可解析。
+  - 已在 `train_log.csv` 与 `summarize_runs.py` 增加 effective sample size ratio，用于区分 normal reliability 近似等权和 uniform-random 宽分布 reweighting。
+  - 已验证：`python -m compileall train.py summarize_runs.py`、`bash -n scripts/run_split_study.sh`、旧 `runs/split_control_texas_cornell_s0_splits0-2_e100` 汇总兼容。
+  - 已按对齐后协议复跑 Texas split0 seed0：`DATASETS="Texas" SPLITS="0" SEEDS="0" METHODS="grace es_weighted" ES_CONTROLS="normal shuffled uniform_random" EPOCHS=100 WARMUP_EPOCHS=20 SAVE_DIR="runs/theory_aligned_texas_split0_e100_ess" MANIFEST_PATH="runs/theory_aligned_texas_split0_e100_ess/run_manifest.csv" LOG_EVERY=100 scripts/run_split_study.sh`。
+  - 验证结果：GRACE F1Mi/F1Ma=0.675676/0.341133；ES-normal=0.675676/0.341133；ES-shuffled=0.621622/0.315909；ES-uniform_random=0.648649/0.321429。
+  - 关键 delta：normal - GRACE = 0/0；normal - shuffled = +0.054054/+0.025224；normal - uniform_random = +0.027027/+0.019704。
+  - 权重强度：normal ESS ratio=0.999776，shuffled ESS ratio=0.999776，uniform_random ESS ratio=0.789928；说明 uniform_random 与 normal/shuffled 分布强度不同，不能作为主 reliability mapping control。
+  - 当前解释：本轮支持 `shuffled` 主 control 的方向性 sanity，但 normal 与 GRACE 仅持平，仍不能声称方法性能有效；下一步应做更少量但更严谨的 split/seed 复核与独立诊断。

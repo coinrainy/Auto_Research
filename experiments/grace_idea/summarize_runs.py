@@ -7,11 +7,11 @@ from statistics import mean, pstdev
 
 RUN_PATTERN = re.compile(
     r'^(?P<dataset>.+)_(?P<method>grace|es_weighted)'
-    r'(?:_(?P<variant>normal|shuffled|random))?_seed(?P<seed>\d+)'
+    r'(?:_(?P<variant>normal|shuffled|uniform_random|random))?_seed(?P<seed>\d+)'
     r'(?:_split(?P<split>\d+))?$'
 )
 
-CONTROL_VARIANTS = ['shuffled', 'random']
+CONTROL_VARIANTS = ['shuffled', 'uniform_random', 'random']
 
 
 def parse_args():
@@ -31,6 +31,11 @@ def read_last_train_row(path):
     with path.open() as handle:
         rows = list(csv.DictReader(handle))
     return rows[-1]
+
+
+def optional_float(row, key):
+    value = row.get(key, '')
+    return float(value) if value != '' and value is not None else ''
 
 
 def load_runs(runs_dir):
@@ -60,8 +65,10 @@ def load_runs(runs_dir):
             'F1Mi': float(eval_row['F1Mi_mean']),
             'F1Ma': float(eval_row['F1Ma_mean']),
             'final_loss': float(train_row['loss']),
-            'weight_mean': float(train_row['weight_mean']) if train_row['weight_mean'] else '',
-            'weight_std': float(train_row['weight_std']) if train_row['weight_std'] else '',
+            'weight_mean': optional_float(train_row, 'weight_mean'),
+            'weight_std': optional_float(train_row, 'weight_std'),
+            'weight_ess_ratio': optional_float(train_row, 'weight_ess_ratio'),
+            'raw_weight_ess_ratio': optional_float(train_row, 'raw_weight_ess_ratio'),
         }
         for key, value in eval_row.items():
             if key.startswith('F1Class') and key.endswith('_mean'):
@@ -98,6 +105,8 @@ def make_paired_rows(runs):
             'es_weighted_final_loss': es_weighted['final_loss'],
             'es_weighted_weight_mean': es_weighted['weight_mean'],
             'es_weighted_weight_std': es_weighted['weight_std'],
+            'es_weighted_weight_ess_ratio': es_weighted['weight_ess_ratio'],
+            'es_weighted_raw_weight_ess_ratio': es_weighted['raw_weight_ess_ratio'],
         }
         for variant in CONTROL_VARIANTS:
             control = find_run(runs, dataset, seed, split, 'es_weighted', variant)
@@ -113,6 +122,10 @@ def make_paired_rows(runs):
             )
             row[f'es_weighted_{variant}_weight_mean'] = control['weight_mean']
             row[f'es_weighted_{variant}_weight_std'] = control['weight_std']
+            row[f'es_weighted_{variant}_weight_ess_ratio'] = control['weight_ess_ratio']
+            row[f'es_weighted_{variant}_raw_weight_ess_ratio'] = control[
+                'raw_weight_ess_ratio'
+            ]
         class_keys = sorted(k for k in grace if k.startswith('F1Class'))
         for class_key in class_keys:
             row[f'grace_{class_key}'] = grace[class_key]

@@ -27,6 +27,10 @@ run_train() {
   local model_seed="$3"
   local method="$4"
   local control="$5"
+  local reported_control="${control}"
+  if [[ "${reported_control}" == "random" ]]; then
+    reported_control="uniform_random"
+  fi
 
   local args=(
     python train.py
@@ -50,7 +54,7 @@ run_train() {
     args+=(--warmup-epochs "${WARMUP_EPOCHS}")
     if [[ "${control}" == "shuffled" ]]; then
       args+=(--shuffle-weights)
-    elif [[ "${control}" == "random" ]]; then
+    elif [[ "${control}" == "random" || "${control}" == "uniform_random" ]]; then
       args+=(--random-weights)
     elif [[ "${control}" != "normal" ]]; then
       echo "Unsupported ES control: ${control}" >&2
@@ -63,13 +67,13 @@ run_train() {
     args+=("${extra_args[@]}")
   fi
 
-  echo "[run] dataset=${dataset} split=${split_index} seed=${model_seed} method=${method} control=${control}"
+  echo "[run] dataset=${dataset} split=${split_index} seed=${model_seed} method=${method} control=${reported_control}"
   if "${args[@]}"; then
     printf '%s,%s,%s,%s,%s,completed\n' \
-      "${dataset}" "${split_index}" "${model_seed}" "${method}" "${control}" >> "${MANIFEST_PATH}"
+      "${dataset}" "${split_index}" "${model_seed}" "${method}" "${reported_control}" >> "${MANIFEST_PATH}"
   else
     printf '%s,%s,%s,%s,%s,failed\n' \
-      "${dataset}" "${split_index}" "${model_seed}" "${method}" "${control}" >> "${MANIFEST_PATH}"
+      "${dataset}" "${split_index}" "${model_seed}" "${method}" "${reported_control}" >> "${MANIFEST_PATH}"
     return 1
   fi
 }
@@ -89,4 +93,3 @@ for dataset in ${DATASETS}; do
     done
   done
 done
-

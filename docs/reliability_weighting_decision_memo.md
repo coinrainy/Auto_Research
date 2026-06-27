@@ -183,14 +183,14 @@ METHOD_CONFIG=configs/methods/rw_gcl_degree_gate.yaml METHOD_NAME=rw_gcl_degree_
 
 - 实现 negative weighting，或将当前 label-based false-negative pressure 诊断扩展为 sampled-negative / denominator-level 机制证据。
 - 深化 homophily non-degradation：解释 PubMed 轻微退化，必要时加入 homophily-specific safety gate 或报告为限制。
-- 做 shuffled reliability 与 random reliability 的双 control。
+- 做 shuffled reliability 主 control，并把 uniform-random weighting 作为宽分布正则化压力测试单独报告。
 - 增加 reliability bucket 的 label agreement / false positive positive-pair risk 诊断。
 - 将 Wisconsin/Cornell/Squirrel 作为 honest negative results，而不是隐藏失败。
 
 ### 路线 B 成功标准
 
 - 证明 reliability ranking 稳定对应 view consistency，并至少在核心正例上对应错误对比信号下降；
-- 证明 shuffled/random reliability 不能复制机制诊断；
+- 证明 shuffled reliability 不能复制机制诊断；uniform-random 结果只用于区分 reliability mapping 与一般 reweighting 正则化。
 - homophily 数据集不显著退化；
 - PubMed 退化能被诊断解释，或通过 conservative setting 缓解；
 - performance claim 降级为 conditional improvement，而非 SOTA。
@@ -199,7 +199,7 @@ METHOD_CONFIG=configs/methods/rw_gcl_degree_gate.yaml METHOD_NAME=rw_gcl_degree_
 
 - label-based false negative / false positive 诊断不支持 reliability；
 - homophily 数据集明显退化；
-- shuffled/random reliability 在机制诊断上也成立；
+- shuffled reliability 在机制诊断上也成立，或 uniform-random 在性能上系统性压过 normal 且无法由权重强度差异解释；
 - 机制诊断只能解释 view consistency，不能解释任何错误对比信号。
 
 ## 当前推荐
