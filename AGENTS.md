@@ -66,3 +66,11 @@
 - 当前推荐主 RQ：在无标签节点分类的 Graph Contrastive Learning 中，能否通过跨视图 embedding stability 与 prediction consistency 估计 pair reliability，并用 reliability-weighted contrastive loss 削弱不可靠正样本与疑似 false negative 的影响，从而在部分 heterophily graphs 上提升稳健性，同时不显著损害 homophily graphs 上的性能？
 - 下一步执行建议：进入 experiment-agent 或手动实验规划阶段，先实现 two-stage reliability-weighted GCL 最小原型，再做 shuffled reliability 与 false negative mass 诊断。
 - GitHub 上传记录：已将当前目录初始化为 Git 仓库，创建并绑定 GitHub 私有仓库 `coinrainy/Auto_Research`，已推送 `main` 分支。
+- 2026-06-27 后续路线更新：
+  - 当前应切换到 `academic-research-suite` -> `experiment-agent` -> `plan` 阶段，而不是继续扩大选题或直接写论文。
+  - 第 1 步：搭建可复现实验仓库骨架，固定数据集加载、训练入口、配置文件、日志与结果表格式。
+  - 第 2 步：先复现 2-3 个轻量 baseline（建议 GRACE、BGRL、CCA-SSG 或 DGI），确认 Cora/CiteSeer/PubMed 与至少 3 个 heterophily 数据集能稳定跑通。
+  - 第 3 步：实现 two-stage reliability-weighted GCL 最小原型，只包含 warm-up、embedding stability、prediction consistency、reliability-weighted InfoNCE。
+  - 第 4 步：优先实现 shuffled reliability、weighted false negative mass、view consistency 三个机制诊断，而不是先堆更多模型模块。
+  - 第 5 步：若最小原型在机制诊断上成立，再决定是否加入 high/low-pass context gate 与 closed-loop augmentation。
+  - 当前不建议事项：暂不写完整论文大纲；暂不冲大规模 OGB；暂不把 closed-loop、curriculum、high/low-pass gate 全部放进主方法。
