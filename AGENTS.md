@@ -361,3 +361,8 @@
   - [INSIGHT] false negative contamination 仍保留为当前 GCL/GSSL 新方法论文的核心痛点。
   - 当前收敛焦点改为：在不预设外部方法来源的情况下，重新定义 GCL/GSSL 中 false negative contamination 的问题形态、发生条件、可观测信号与可证伪实验。
   - 下一步建议：优先回答 false negative contamination 发生在什么训练对象上、为什么现有 debiased / hard-negative / mining 方法仍不足、以及新方法应改变 loss、sampling、queue/memory、augmentation 还是训练日程。
+- 2026-06-27 实验实现协议纠偏：
+  - 用户指出此前实验代码主要由 Codex 自行实现，而不是先确认是否基于已有作者框架/公开框架搭建；数据划分、评估协议等会影响最终结果的细节也未充分咨询用户。
+  - [INSIGHT] 后续图对比学习/GSSL 实验进入实现前，必须先设置“实验协议确认门”：确认代码基底、baseline 来源、dataset split、evaluation protocol、seed 数量、hyperparameter tuning 范围、指标与结果汇总方式。
+  - 当前原则：新方法可以自行实现核心模块，但 baseline、数据划分和评估方式应优先对齐目标论文/公开框架；若选择自实现，必须明确记录原因、偏差风险和 sanity check。
+  - 下一步建议：在继续实现任何新 false-negative 方法前，先产出一份 `experiment protocol checklist`，由用户确认后再写代码或跑实验。
