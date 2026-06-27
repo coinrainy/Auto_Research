@@ -55,7 +55,8 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `--fn-consensus feature` 在 Texas/Cornell 上有局部改善，但 Wisconsin/Actor 仍失败，也不能作为主方法。
 - 当前保留的是 pair-level denominator attenuation、shuffled pair mapping control 与 label-only false-negative pressure 诊断；下一代方法必须先判断“何时不应 attenuation”，而不是继续增强全局 attenuation。
 - `row_mean` reallocation 机制更干净但性能弱；`blend_row_mean` 与 `fn_attraction_weight=0.1` 在 4 个 heterophily 数据集 sanity 中整体负向。
-- 当前方向应转为 context-gated false-negative calibration；若门控版仍不能避免 Wisconsin/Actor 退化，则放弃 false-negative attenuation 主线，重新构思 GCL idea。
+- 已实现并筛选 context-gated false-negative calibration。`local_feature_degree + product` 在 Texas split0 early stop；`degree_inverse + anchor` 在 Texas/Cornell 有正向，但 Wisconsin 三个 split 全部 micro 退化、Actor 近零且 normal 低于 shuffled。
+- 当前决策：停止 teacher-similarity false-negative attenuation 主线。保留代码和诊断作为负结果资产，下一轮重新构思 GCL idea。
 
 正式实验前仍需补齐：
 
@@ -74,6 +75,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `train_log.csv` 记录权重均值、方差、min/max 与 effective sample size ratio，用于判断 reliability 权重是否实质上接近等权。
 - `summarize_runs.py` 可从 `runs/` 目录生成 matched paired summary 与 dataset aggregate summary，并兼容 `es_weighted` / `sgfn` 的 normal、shuffled、uniform_random 控制组。
 - `analyze_pair_weights.py` 可对 `sgfn` run 做 label-only false-negative pressure 诊断；该诊断不参与训练，只用于机制验证。
+- `sgfn` 支持 `--fn-context-gate local_feature|degree_inverse|local_feature_degree` 与 `--fn-context-pair-mode product|min|anchor`，但当前筛选结果显示这些 gate 未能救活主线。
 
 示例 split-aware 命令：
 
@@ -86,6 +88,6 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 
 近期需要补齐：
 
-- context-gated false-negative calibration 的最小实现；
-- gate 与 downstream error、degree、local structure 的独立诊断；
-- 若 gate 版通过 Texas/Cornell/Wisconsin/Actor 的 3-split 筛选，再接 Chameleon/Squirrel 和 ProGCL / GRAPE / GraphRank 对照。
+- 新研究问题构思，不再默认围绕 false-negative attenuation。
+- 若继续使用本工作副本，优先考虑不依赖 teacher pair-risk 的新 GCL 目标或增强机制。
+- 本目录中的 SGFN / context-gated SGFN 只作为负结果、诊断工具和消融资产保留。

@@ -200,6 +200,59 @@ normal - shuffled：
 
 下一轮应转向：先判定节点/区域是否适合 false-negative attenuation，再局部启用 attenuation。候选名称可暂定为 `context-gated false-negative calibration`，其核心不应是“更强 attenuation”，而应是“何时不做 attenuation”。
 
+### context-gated SGFN 筛选
+
+实现更新：
+
+- `train.py` 新增 `--fn-context-gate none|local_feature|degree_inverse|local_feature_degree`。
+- `train.py` 新增 `--fn-context-pair-mode product|min|anchor`。
+- `local_feature` 基于节点特征与邻居均值特征的一致性，试图识别局部语义可依赖区域。
+- `degree_inverse` 基于反 degree confidence，试图避免高连接区域的过度 false-negative attenuation。
+- gate 只作为 stop-gradient 风险调节项，不参与反向传播。
+
+第一版 `local_feature_degree + product` 在 Texas split0 即 early stop：normal F1Mi 0.6216，GRACE/shuffled 为 0.6757，说明该 gate 的 pair 映射本身有害。
+
+第二版 `degree_inverse + anchor` 完成 Texas/Cornell/Wisconsin/Actor × splits 0-2 × seed0 × 100 epochs。
+
+输出文件：
+
+- `runs/summaries/cg_sgfn_degree_anchor_splits0-2_seed0_e100_aggregate.csv`
+- `runs/summaries/cg_sgfn_degree_anchor_splits0-2_seed0_e100_pair_weights_aggregate.csv`
+
+CG-SGFN degree-anchor normal - GRACE：
+
+- Texas：F1Mi +0.027027，F1Ma +0.024252；3/3 split micro 正向。
+- Cornell：F1Mi +0.018018，F1Ma -0.000860；2/3 split micro 正向，1/3 持平。
+- Wisconsin：F1Mi -0.039216，F1Ma +0.012694；3/3 split micro 负向。
+- Actor：F1Mi -0.001096，F1Ma -0.000727；接近零且略负。
+
+normal - shuffled：
+
+- Texas：F1Mi +0.045045，F1Ma +0.020655。
+- Cornell：F1Mi +0.009009，F1Ma +0.006257。
+- Wisconsin：F1Mi -0.039216，F1Ma +0.013112。
+- Actor：F1Mi -0.003289，F1Ma -0.005172。
+
+判断：
+
+- degree-anchor gate 相比前两版更干净地强化了 Texas，也让 Cornell 略正。
+- 但它没有解决最关键的 Wisconsin 退化，且 Actor normal 仍低于 shuffled。
+- 由于目标是 2026 顶会/顶刊级新方法，而不是单数据集/条件性技巧，context-gated SGFN 也应降级为失败筛选。
+
+### 当前最终决策：停止 false-negative attenuation 主线
+
+到目前为止，默认 SGFN、feature-consensus SGFN、local-feature-degree gate、degree-anchor gate 都不能同时满足“跨数据集性能提升 + normal 优于 shuffled + 非退化”的最低标准。
+
+因此当前不再继续围绕 teacher-similarity false-negative attenuation 做小修小补。该主线的可复用资产是：
+
+- pair-denominator weighting 实现；
+- shuffled pair mapping control；
+- label-only false-negative pressure 诊断；
+- context gate 代码；
+- 一组负结果，用于约束下一轮 idea 不要重蹈 heuristic pair weighting 的路径。
+
+下一轮研究应重新构思，不再以“估计并削弱 false negative”作为默认核心机制。
+
 ## 下一步建议命令
 
 ```bash
@@ -210,3 +263,5 @@ DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2" SEEDS="0" METHODS="grace
 停止标准：
 
 - 若下一代 context-gated 版本不能同时满足：Texas 不低于默认 SGFN、Wisconsin/Actor 不退化、normal 至少在 3/4 个数据集上不低于 shuffled，则继续放弃该 false-negative attenuation 主线，重新构思新的 GCL idea。
+
+该停止标准已经被 degree-anchor gate 触发。建议下一步改换问题定义，而不是继续调参。

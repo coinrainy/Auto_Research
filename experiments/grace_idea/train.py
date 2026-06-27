@@ -50,6 +50,18 @@ def parse_args():
     parser.add_argument('--fn-attraction-weight', type=float, default=0.0)
     parser.add_argument('--fn-consensus', type=str, default='none',
                         choices=['none', 'feature'])
+    parser.add_argument('--fn-context-gate', type=str, default='none',
+                        choices=[
+                            'none',
+                            'local_feature',
+                            'degree_inverse',
+                            'local_feature_degree',
+                        ])
+    parser.add_argument('--fn-context-temperature', type=float, default=0.5)
+    parser.add_argument('--fn-context-threshold', type=float, default=0.0)
+    parser.add_argument('--fn-degree-threshold', type=float, default=0.0)
+    parser.add_argument('--fn-context-pair-mode', type=str, default='product',
+                        choices=['product', 'min', 'anchor'])
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -240,13 +252,77 @@ def false_negative_pair_weights(target, data, args):
         feature_sim = torch.mm(features, features.t())
         risk = risk * row_standardized_risk(feature_sim, args)
 
+    context_gate = false_negative_context_gate(data, args)
+    if context_gate is not None:
+        risk = risk * pair_context_gate(context_gate, args)
+
     keep = (1.0 - risk).clamp(0.0, 1.0)
     if args.fn_attenuation_power != 1.0:
         keep = keep.pow(args.fn_attenuation_power)
     if args.min_weight > 0.0:
         keep = keep * (1.0 - args.min_weight) + args.min_weight
     keep.fill_diagonal_(1.0)
-    return keep.detach()
+    return keep.detach(), None if context_gate is None else context_gate.detach()
+
+
+@torch.no_grad()
+def standardized_vector(values):
+    values = values.detach().float()
+    return (values - values.mean()) / values.std(unbiased=False).clamp_min(1e-12)
+
+
+@torch.no_grad()
+def local_feature_agreement(data):
+    x = F.normalize(data.x.detach().float(), dim=1)
+    source, target = data.edge_index
+    aggregate = torch.zeros_like(x)
+    degree = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
+    aggregate.index_add_(0, target, x[source])
+    degree.index_add_(0, target, torch.ones_like(target, dtype=x.dtype))
+    neighbor_mean = aggregate / degree.clamp_min(1.0).view(-1, 1)
+    agreement = F.cosine_similarity(x, neighbor_mean, dim=1)
+    agreement = torch.where(degree > 0, agreement, torch.zeros_like(agreement))
+    return agreement
+
+
+@torch.no_grad()
+def inverse_degree_confidence(data, args):
+    _, target = data.edge_index
+    degree = torch.zeros(data.x.size(0), device=data.x.device, dtype=torch.float32)
+    degree.index_add_(0, target, torch.ones_like(target, dtype=degree.dtype))
+    degree_score = standardized_vector(torch.log1p(degree))
+    return torch.sigmoid(
+        (args.fn_degree_threshold - degree_score)
+        / max(args.fn_context_temperature, 1e-12)
+    )
+
+
+@torch.no_grad()
+def false_negative_context_gate(data, args):
+    if args.fn_context_gate == 'none':
+        return None
+    temperature = max(args.fn_context_temperature, 1e-12)
+    gates = []
+    if args.fn_context_gate in ['local_feature', 'local_feature_degree']:
+        local_score = standardized_vector(local_feature_agreement(data))
+        gates.append(torch.sigmoid((local_score - args.fn_context_threshold) / temperature))
+    if args.fn_context_gate in ['degree_inverse', 'local_feature_degree']:
+        gates.append(inverse_degree_confidence(data, args))
+    if not gates:
+        return None
+    gate = gates[0]
+    for other in gates[1:]:
+        gate = gate * other
+    return gate.clamp(0.0, 1.0)
+
+
+@torch.no_grad()
+def pair_context_gate(node_gate, args):
+    if args.fn_context_pair_mode == 'anchor':
+        return node_gate.view(-1, 1)
+    if args.fn_context_pair_mode == 'min':
+        return torch.minimum(node_gate.view(-1, 1), node_gate.view(1, -1))
+    return node_gate.view(-1, 1) * node_gate.view(1, -1)
 
 
 def make_control_generator(args, epoch):
@@ -359,6 +435,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
 
     weights = None
     raw_weights = None
+    context_gate = None
     use_weighting = args.method in ['es_weighted', 'sgfn'] and epoch > args.warmup_epochs
     if use_weighting:
         target = teacher_clean_embeddings(teacher, data)
@@ -366,7 +443,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
             raw_weights = embedding_stability_weights(target, z1, z2, args)
             weights = apply_weight_control(raw_weights, args, epoch)
         else:
-            raw_weights = false_negative_pair_weights(target, data, args)
+            raw_weights, context_gate = false_negative_pair_weights(target, data, args)
             weights = apply_pair_weight_control(raw_weights, args, epoch)
             weights = normalize_pair_weights(weights, args)
 
@@ -424,7 +501,14 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
             'raw_weight_ess': raw_diag.get('weight_ess'),
             'raw_weight_ess_ratio': raw_diag.get('weight_ess_ratio'),
         })
-    return log, weights, raw_weights
+    if context_gate is not None:
+        log.update({
+            'context_gate_mean': context_gate.mean().item(),
+            'context_gate_std': context_gate.std(unbiased=False).item(),
+            'context_gate_min': context_gate.min().item(),
+            'context_gate_max': context_gate.max().item(),
+        })
+    return log, weights, raw_weights, context_gate
 
 
 @torch.no_grad()
@@ -481,6 +565,10 @@ def append_train_log(run_dir, row):
         'raw_weight_max',
         'raw_weight_ess',
         'raw_weight_ess_ratio',
+        'context_gate_mean',
+        'context_gate_std',
+        'context_gate_min',
+        'context_gate_max',
         'weight_control',
         'epoch_time',
         'total_time',
@@ -572,6 +660,11 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'fn_attenuation_power': args.fn_attenuation_power,
         'fn_attraction_weight': args.fn_attraction_weight,
         'fn_consensus': args.fn_consensus,
+        'fn_context_gate': args.fn_context_gate,
+        'fn_context_temperature': args.fn_context_temperature,
+        'fn_context_threshold': args.fn_context_threshold,
+        'fn_degree_threshold': args.fn_degree_threshold,
+        'fn_context_pair_mode': args.fn_context_pair_mode,
         'pair_shuffle_mode': args.pair_shuffle_mode,
         'pair_normalization': args.pair_normalization,
         'pair_reallocation_alpha': args.pair_reallocation_alpha,
@@ -586,7 +679,7 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
 
 
 def save_artifacts(run_dir, model, data, embeddings, final_weights, final_raw_weights,
-                   args, config):
+                   final_context_gate, args, config):
     if run_dir is None:
         return
     torch.save({
@@ -600,6 +693,9 @@ def save_artifacts(run_dir, model, data, embeddings, final_weights, final_raw_we
         'final_weights': None if final_weights is None else final_weights.detach().cpu(),
         'final_raw_weights': (
             None if final_raw_weights is None else final_raw_weights.detach().cpu()
+        ),
+        'final_context_gate': (
+            None if final_context_gate is None else final_context_gate.detach().cpu()
         ),
         'weight_control': weight_control_name(args),
         'model_state_dict': model.state_dict(),
@@ -651,6 +747,8 @@ def main():
                 f'fn_attenuation_power={args.fn_attenuation_power}, '
                 f'fn_attraction_weight={args.fn_attraction_weight}, '
                 f'fn_consensus={args.fn_consensus}, '
+                f'fn_context_gate={args.fn_context_gate}, '
+                f'fn_context_pair_mode={args.fn_context_pair_mode}, '
                 f'pair_shuffle_mode={args.pair_shuffle_mode}, '
                 f'pair_normalization={args.pair_normalization}, '
                 f'pair_reallocation_alpha={args.pair_reallocation_alpha}'
@@ -660,8 +758,9 @@ def main():
     prev = start
     final_weights = None
     final_raw_weights = None
+    final_context_gate = None
     for epoch in range(1, config['num_epochs'] + 1):
-        log, epoch_weights, epoch_raw_weights = train_epoch(
+        log, epoch_weights, epoch_raw_weights, epoch_context_gate = train_epoch(
             model,
             teacher,
             data,
@@ -674,6 +773,8 @@ def main():
             final_weights = epoch_weights
         if epoch_raw_weights is not None:
             final_raw_weights = epoch_raw_weights
+        if epoch_context_gate is not None:
+            final_context_gate = epoch_context_gate
 
         now = t()
         log.update({
@@ -729,6 +830,7 @@ def main():
         embeddings,
         final_weights,
         final_raw_weights,
+        final_context_gate,
         args,
         config,
     )

@@ -401,3 +401,15 @@
   - 下一轮方向：实现 `context-gated false-negative calibration`，核心是先判断节点/区域是否适合 attenuation，再局部启用；若门控版仍不能避免 Wisconsin/Actor 退化，则放弃 false-negative attenuation 主线，重新构思新的 GCL idea。
   - 已验证命令：`python -m py_compile train.py model.py eval.py summarize_runs.py analyze_pair_weights.py`、`bash -n scripts/run_split_study.sh`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2" SEEDS="0" METHODS="grace sgfn" ES_CONTROLS="normal shuffled" EPOCHS=100 WARMUP_EPOCHS=20 SAVE_DIR="runs/next_context_gated_sgfn_sanity" MANIFEST_PATH="runs/next_context_gated_sgfn_sanity/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 TRAIN_EXTRA_ARGS="<next-gate-args>" scripts/run_split_study.sh`。
+- 2026-06-28 context-gated SGFN 实现与主线停止：
+  - 已在 `experiments/grace_idea/train.py` 中实现 context gate 参数：`--fn-context-gate none|local_feature|degree_inverse|local_feature_degree`、`--fn-context-temperature`、`--fn-context-threshold`、`--fn-degree-threshold`、`--fn-context-pair-mode product|min|anchor`。
+  - gate 作为 stop-gradient 风险调节项，用于在 SGFN pair risk 转为 denominator keep weight 前决定是否局部启用 attenuation；同时保存 `context_gate_mean/std/min/max` 到 `train_log.csv`，保存 `final_context_gate` 到 artifact。
+  - 已验证 smoke：`python train.py --dataset Texas --method sgfn --seed 0 --split-index 0 --epochs 2 --warmup-epochs 1 --fn-context-gate local_feature_degree --fn-context-pair-mode product --save-dir /tmp/context_gate_smoke --overwrite --skip-eval --log-every 1`。
+  - `local_feature_degree + product` 在 Texas split0 early stop：normal F1Mi=0.6216，GRACE/shuffled=0.6757，说明该 gate 的 pair 映射有害。
+  - `degree_inverse + anchor` 完成 Texas/Cornell/Wisconsin/Actor × splits 0-2 × seed0 × 100 epochs，共 36 个 run，输出 `runs/summaries/cg_sgfn_degree_anchor_splits0-2_seed0_e100_aggregate.csv` 与 pair-weight 诊断表。
+  - degree-anchor normal - GRACE（F1Mi mean）：Texas +0.027027、Cornell +0.018018、Wisconsin -0.039216、Actor -0.001096。
+  - degree-anchor normal - shuffled（F1Mi mean）：Texas +0.045045、Cornell +0.009009、Wisconsin -0.039216、Actor -0.003289。
+  - 机制诊断仍显示 weighted false-negative pressure 有下降，但 Wisconsin/Actor accuracy 不跟随改善，说明当前 false-negative pressure 诊断不足以保证 downstream benefit。
+  - 决策：context-gated SGFN 也未通过最低标准；正式停止 teacher-similarity false-negative attenuation 主线，不再围绕该 idea 做小修小补。
+  - 保留资产：pair denominator weighting、shuffled pair control、label-only false-negative pressure 诊断、context gate 实现与负结果。
+  - 下一步建议：重新构思 GCL idea，不再默认以 false-negative attenuation 为核心；优先寻找能改变 representation objective 或 augmentation semantics 的新机制。
