@@ -12,8 +12,8 @@
 
 - 目标：在 2026 年投稿/发表一篇图对比学习方向的顶会或顶刊论文。
 - 主要任务：节点分类。
-- 当前状态：已收敛到 pair reliability-weighted GCL 方向，并形成 two-stage 最小实验计划。
-- 当前工作流：`academic-research-suite` -> `experiment-agent` -> `run/validate` mode。
+- 当前状态：用户已决定放弃/暂停当前 reliability-weighted GCL / embedding-stability weighting idea，重新进行研究问题构思。
+- 当前工作流：`academic-research-suite` -> `deep-research` -> `socratic` mode。
 
 ## 本轮任务记录
 
@@ -335,3 +335,9 @@
   - 关键 delta：normal - GRACE = 0/0；normal - shuffled = +0.054054/+0.025224；normal - uniform_random = +0.027027/+0.019704。
   - 权重强度：normal ESS ratio=0.999776，shuffled ESS ratio=0.999776，uniform_random ESS ratio=0.789928；说明 uniform_random 与 normal/shuffled 分布强度不同，不能作为主 reliability mapping control。
   - 当前解释：本轮支持 `shuffled` 主 control 的方向性 sanity，但 normal 与 GRACE 仅持平，仍不能声称方法性能有效；下一步应做更少量但更严谨的 split/seed 复核与独立诊断。
+- 2026-06-27 研究方向重启：
+  - 用户明确表示希望放弃当前 idea，重新进行构思。
+  - 当前旧线状态：reliability-weighted GCL / embedding-stability weighting 方向暂停，不再作为默认推进路线；既有实验与文档保留为负结果和经验记录。
+  - 新工作流切换为 `academic-research-suite` -> `deep-research` -> `socratic` mode，从 Layer 1 problem framing 重新开始。
+  - 新一轮构思仍默认保留现实约束：单卡 RTX 3060 12GB、以节点分类或相邻可验证任务为主、优先选择有限算力可复现的图学习/图自监督学习方向。
+  - 下一步建议：先回答新一轮 Socratic Layer 1 的核心取舍问题，明确是否继续留在 GCL/GSSL、是否保留 heterophily、是否愿意切换到更工程/诊断/benchmark/robustness 的论文形态。
