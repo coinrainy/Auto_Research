@@ -187,3 +187,12 @@
   - 已验证：`bash -n scripts/run_small_reliability_study.sh`。
   - 已做默认行为 smoke：`DATASETS=Texas SEEDS=0 WARMUP_EPOCHS=1 STAGE2_EPOCHS=1 EVAL_EPOCHS=5 PAIRS_PATH=results/diagnostics/reliability_pair_runs_runner_smoke.csv SUMMARY_PATH=results/diagnostics/reliability_pair_summary_runner_smoke.csv bash scripts/run_small_reliability_study.sh`，normal/shuffled 均 completed，并成功生成 paired summary。
   - 该改动不等于选择路线 A 或 B，只是为后续 degree gate、random reliability、negative weighting 等变体复用同一 paired normal/shuffled 实验流程。
+- 2026-06-27 label-based false-negative pressure 诊断：
+  - 已新增 `analyze_false_negative_pressure.py`，用标签做离线诊断，计算同标签非自身节点在 embedding softmax denominator 中占的质量；该诊断不进入训练，只用于机制解释。
+  - 已验证脚本：`python analyze_false_negative_pressure.py --help`、`python -m compileall analyze_false_negative_pressure.py`。
+  - 已对 heterophily6 运行：`python analyze_false_negative_pressure.py --comparison results/diagnostics/rw_gcl_vs_grace_heterophily6_s0-9.csv --run-out results/diagnostics/false_negative_pressure_runs_heterophily6_s0-9.csv --bucket-out results/diagnostics/false_negative_pressure_buckets_heterophily6_s0-9.csv --summary-out results/diagnostics/false_negative_pressure_summary_heterophily6_s0-9.csv --chunk-size 1024`；输出 run 级 60 行、bucket 级 180 行，全部 status=computed。
+  - 已对 homophily 运行：`python analyze_false_negative_pressure.py --comparison results/diagnostics/rw_gcl_vs_grace_homophily_s0-9.csv --run-out results/diagnostics/false_negative_pressure_runs_homophily_s0-9.csv --bucket-out results/diagnostics/false_negative_pressure_buckets_homophily_s0-9.csv --summary-out results/diagnostics/false_negative_pressure_summary_homophily_s0-9.csv --chunk-size 512`；输出 run 级 30 行、bucket 级 90 行，全部 status=computed。
+  - 关键结果：Texas 的 weighted - unweighted FN pressure = -0.003087，high-low FN pressure gap = -0.124443，reliability-pressure corr = -0.207178，是目前最支持机制的正例。
+  - 其他数据集的 weighted - unweighted FN pressure 接近 0：Chameleon +0.000194、Squirrel +0.000022、Actor -0.000187、Cornell -0.000449、Wisconsin -0.000733；说明 view consistency gap 不等价于 false-negative pressure 改善。
+  - Homophily 上 FN pressure 变化也接近 0：Cora +0.000081、CiteSeer +0.000100、PubMed +0.000007；PubMed 轻微退化不能简单归因于 FN pressure 增加。
+  - 当前解释：机制主张应收缩为“Texas 上同时满足性能提升、shuffled control 支持与 false-negative pressure 下降；其他数据集主要支持 reliability ranking 与 view consistency，而不稳定支持错误对比信号下降”。

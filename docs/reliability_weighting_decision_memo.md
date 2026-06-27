@@ -66,6 +66,26 @@
 - PubMed 有约 1.12 个百分点下降，仍在早期设定的 1-2 个百分点观察带内，但不能写成完全无退化。
 - homophily 结果不支持继续把方法包装为全局提升器；更适合写成条件性方法，并在限制部分诚实说明 PubMed 风险。
 
+## Label-based False-negative Pressure
+
+该诊断只用于离线分析，不进入训练。定义为：对每个 anchor，计算同标签非自身节点在 embedding softmax denominator 中占的质量。数值越高，表示 InfoNCE 中潜在同类负样本压力越大。
+
+| Dataset | FN pressure | weighted - unweighted | high-low FN pressure gap | reliability-pressure corr | Interpretation |
+|---|---:|---:|---:|---:|---|
+| Texas | 0.404443 | -0.003087 | -0.124443 | -0.207178 | 最支持当前机制：高 reliability 桶同类负样本压力明显更低，positive weighting 略微降低整体压力 |
+| Wisconsin | 0.360142 | -0.000733 | +0.004351 | -0.065191 | 加权影响很弱，不能解释负向性能 |
+| Cornell | 0.300963 | -0.000449 | -0.012915 | -0.045121 | 机制信号弱，性能负向 |
+| Actor | 0.214085 | -0.000187 | -0.011010 | -0.085250 | 机制信号弱，性能近零 |
+| Chameleon | 0.221022 | +0.000194 | +0.011854 | +0.065086 | 小幅正向性能不是由降低 FN pressure 解释 |
+| Squirrel | 0.203202 | +0.000022 | +0.003296 | +0.010146 | view consistency 强但 FN pressure 不降，支持高 degree 稳定性偏置解释 |
+| Cora | 0.263036 | +0.000081 | +0.004606 | +0.025784 | homophily 上加权几乎不改变 FN pressure |
+| CiteSeer | 0.252294 | +0.000100 | +0.006916 | +0.069722 | homophily 上加权几乎不改变 FN pressure |
+| PubMed | 0.414388 | +0.000007 | +0.003068 | +0.005991 | PubMed 退化不由 FN pressure 增加直接解释 |
+
+当前最强机制证据来自 Texas，而不是所有数据集。更准确的表述应是：
+
+> reliability weighting 在 Texas 上同时满足性能提升、shuffled control 支持、以及 label-based false-negative pressure 下降；但在 Chameleon/Squirrel/Actor 等数据集上，view consistency gap 与 FN pressure 改善并不一致。
+
 ## Failure Analysis 线索
 
 | Dataset | high-low degree gap | high-low local homophily gap | high-low class entropy gap | Interpretation |
@@ -112,6 +132,7 @@ r'_i = normalize_or_clip(r_i * gate_i)
 - Chameleon normal - GRACE 保持非负；
 - Cora/CiteSeer/PubMed 的 mean degradation 不得比当前 two-stage 更差，PubMed 下降不超过 0.015；
 - view consistency gap 仍为正；
+- false-negative pressure weighted - unweighted 不得比当前 two-stage 更差；Squirrel/Actor 至少一个数据集的 high-low FN pressure gap 应下降；
 - degree high-low gap 相比原方法有下降，说明 gate 确实改变了 failure analysis 指向的偏置。
 
 ### 路线 A 停止标准
@@ -121,6 +142,7 @@ r'_i = normalize_or_clip(r_i * gate_i)
 - Texas 正向信号被破坏；
 - PubMed 或任一 homophily 数据集退化超过 0.02；
 - Squirrel/Actor/Cornell/Wisconsin 没有任何改善；
+- gate 改善 accuracy 但显著增加 false-negative pressure；
 - shuffled reliability 与 normal reliability 结果接近或更好；
 - gate 只改善一个数据集但引入 2 个以上数据集明显退化；
 - 新增超参数超过 2 个仍无法稳定。
@@ -145,7 +167,7 @@ METHOD_CONFIG=configs/methods/rw_gcl_degree_gate.yaml METHOD_NAME=rw_gcl_degree_
 
 最小补强内容：
 
-- 实现 negative weighting 或至少实现 label-based diagnostic false negative mass。
+- 实现 negative weighting，或将当前 label-based false-negative pressure 诊断扩展为 sampled-negative / denominator-level 机制证据。
 - 深化 homophily non-degradation：解释 PubMed 轻微退化，必要时加入 homophily-specific safety gate 或报告为限制。
 - 做 shuffled reliability 与 random reliability 的双 control。
 - 增加 reliability bucket 的 label agreement / false positive positive-pair risk 诊断。
@@ -153,7 +175,7 @@ METHOD_CONFIG=configs/methods/rw_gcl_degree_gate.yaml METHOD_NAME=rw_gcl_degree_
 
 ### 路线 B 成功标准
 
-- 证明 reliability ranking 稳定对应 view consistency 与某类错误对比信号下降；
+- 证明 reliability ranking 稳定对应 view consistency，并至少在核心正例上对应错误对比信号下降；
 - 证明 shuffled/random reliability 不能复制机制诊断；
 - homophily 数据集不显著退化；
 - PubMed 退化能被诊断解释，或通过 conservative setting 缓解；
