@@ -84,3 +84,11 @@
   - 已确认图学习主实现路线应采用 PyTorch Geometric；当前配置已按 PyG dataset loader 命名，下一步需要在 `src/rwgcl/data.py` 中接入真实 `Planetoid/WebKB/Actor/WikipediaNetwork` loader。
   - 已验证命令：`python train.py --help`、`python eval.py --help`、`python diagnose.py --help`、`python train.py --config configs/methods/grace.yaml --dataset Cora --seed 0`、`python train.py --config configs/methods/rw_gcl_two_stage.yaml --dataset Texas --seed 0`、`python eval.py`、`python diagnose.py --run_id <rw_gcl_run_id> --diagnostics shuffled_reliability false_negative_mass view_consistency`、`python -m compileall train.py eval.py diagnose.py src`。
   - 下一步建议：实现 PyG 数据加载与数据统计打印，随后接入 GRACE 的真实 smoke baseline。
+- 2026-06-27 PyG loader 与 GRACE smoke baseline：
+  - 已在 `src/rwgcl/data.py` 接入真实 PyG loader，支持 `Planetoid`、`WebKB`、`Actor`、`WikipediaNetwork` 与 `HeterophilousGraphDataset`，并实现节点数、边数、特征维度、类别数、split 数量、是否无向、edge label homophily 等统计打印。
+  - 针对 PyG `Planetoid` 通过 fsspec 下载 GitHub raw 文件时可能超时的问题，新增 Cora/CiteSeer/PubMed raw 文件 prefetch 逻辑，先下载到 PyG 期望缓存目录再交给 PyG process。
+  - 已实现最小 GRACE execute 路径：随机 edge drop / feature mask 双视图、GCN encoder、projection head、InfoNCE、linear probe、`embeddings.pt` 与训练日志保存。
+  - 已验证真实 PyG 数据加载：`python train.py --config configs/methods/grace.yaml --dataset Cora --describe-data` 与 `python train.py --config configs/methods/grace.yaml --dataset Texas --describe-data`。
+  - 已验证真实 GRACE smoke baseline：`python train.py --config configs/methods/grace.yaml --dataset Cora --seed 0 --mode execute --epochs 5 --eval-epochs 20` 与 `python train.py --config configs/methods/grace.yaml --dataset Texas --seed 0 --mode execute --epochs 5 --eval-epochs 20`。
+  - 已验证端到端 smoke：`bash scripts/run_smoke.sh` 与 `python -m compileall train.py eval.py diagnose.py src`。
+  - 下一步建议：实现 RW-GCL two-stage execute 路径，先做 positive reliability weighting only，然后接 shuffled reliability 诊断。

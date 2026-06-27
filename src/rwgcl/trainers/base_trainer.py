@@ -33,11 +33,15 @@ class BaseTrainer:
         dataset_spec: DatasetSpec,
         seed: int,
         results_dir: str | Path,
+        device: str = "auto",
+        split_index: int = 0,
     ) -> None:
         self.method_config = method_config
         self.dataset_spec = dataset_spec
         self.seed = seed
         self.results_dir = Path(results_dir)
+        self.device_name = device
+        self.split_index = split_index
         self.method_name = str(method_config.get("method", {}).get("name", self.trainer_name))
         self.run_id = make_run_id(self.method_name, dataset_spec.name, seed)
         self.run_dir = self.results_dir / "raw" / self.run_id
@@ -45,7 +49,7 @@ class BaseTrainer:
     def run(self, mode: str = "scaffold") -> RunResult:
         if mode != "scaffold":
             raise NotImplementedError(
-                "Only scaffold mode is implemented. Add the real training loop before using execute mode."
+                f"{self.trainer_name} does not implement execute mode yet."
             )
         return self.run_scaffold()
 
