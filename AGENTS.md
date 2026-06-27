@@ -232,3 +232,11 @@
   - component ablation normal - GRACE：combined（Texas -0.009009、Chameleon -0.003655、Squirrel -0.006724、Actor +0.003290）；embedding-only（Texas +0.009009、Chameleon 0.000000、Squirrel +0.002241、Actor +0.003728）；projection-only（Texas -0.009009、Chameleon -0.005848、Squirrel -0.000320、Actor -0.001316）。
   - 当前结论：combined reliability 不应继续作为主方法扩大；projection distribution consistency 不支持作为主 reliability 信号；若继续方法路线，最小候选应收缩为 embedding-stability-only，但当前效果很小，需要用户确认是否继续跑 10 splits / 多 seed / homophily safety。
   - 下一步需要用户人工确认：A1）将主方法收缩为 embedding-stability-only 并扩展验证；或 B）转为机制诊断/负结果论文路线，强调 projection stability 与分类语义可靠性错位。
+- 2026-06-27 当前工作目录重新识别：
+  - 当前工作目录为 `/root/autodl-tmp/Auto_Research`，是研究项目 `Auto_Research` 的根目录。
+  - 当前 Git 分支为 `main`，远程仓库为 `https://github.com/coinrainy/Auto_Research.git`，本地分支与 `origin/main` 同步。
+  - 最近提交为 `85dde02 docs: record split sanity findings`，其前序关键提交包括 `e29969f fix: repair reliability experiment protocol` 与 `092f4ba docs: revise reliability experiment plan`。
+  - 当前主要代码入口包括 `train.py`、`eval.py`、`diagnose.py`、`summarize_reliability_pairs.py`、`summarize_method_comparison.py`、`analyze_failure_patterns.py`、`analyze_false_negative_pressure.py` 与 `src/rwgcl/`。
+  - 当前核心配置包括 `configs/methods/rw_gcl_two_stage.yaml`、`configs/methods/rw_gcl_embedding_only.yaml`、`configs/methods/rw_gcl_projection_only.yaml` 与 `configs/methods/grace.yaml`。
+  - 当前实验决策文档为 `docs/reliability_weighting_decision_memo.md`；最新研究判断仍是：combined reliability 不应继续扩大，若继续方法路线应先人工确认是否转向 embedding-stability-only。
+  - 工作区唯一未跟踪项为 `baselines/`，其中包含 GRACE baseline 代码；本轮识别未将其纳入提交。
