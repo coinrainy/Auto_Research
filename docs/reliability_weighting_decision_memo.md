@@ -20,6 +20,20 @@
 - 路线 A：继续作为方法论文推进，加入最小 degree/local-graph-aware gate，检验当前 failure analysis 发现的偏置是否可修正。
 - 路线 B：收缩为机制诊断论文，暂不堆模块，补强 false negative / negative weighting / homophily non-degradation 证据。
 
+### 2026-06-27 实现审查后的证据降级
+
+用户对当前实现提出 5 个关键问题后，原先“立即进入路线 A degree gate”的推荐需要暂停，先修正实验定义和评估协议：
+
+1. 当前 `prediction_consistency` 并不是分类预测一致性，而是 projection head 输出维度上的 softmax 分布一致性。它更准确的名字应是 `projection_distribution_consistency` 或 `projection_stability`，不能直接声称捕捉分类语义。
+2. 当前 `view_consistency` 诊断存在循环验证：reliability 本身由 embedding stability 与 projection consistency 组成，再按 reliability 分桶统计这两个组成量，高低桶差异不能作为强独立机制证据。
+3. 当前 loss 只做 positive anchor weighting，没有调整 negative denominator，因此还没有直接解决 false negative / hard negative imbalance。低 reliability 节点训练信号被削弱，但仍作为其他节点的负样本存在。
+4. 当前 reliability 很可能偏向 degree 或 augmentation-stable 节点。Chameleon、Squirrel、Actor 的 high-reliability bucket 倾向高 degree，与 teacher-student stability 的定义一致，但高稳定不必然等于分类语义可靠。
+5. 当前 “10 seeds” 主要是同一 split 下的模型初始化与增强随机性变化，不是标准 Geom-GCN 10 splits。论文级实验必须显式循环 `split_index=0..9`，并区分 model seed 与 split index。
+
+因此，当前证据边界进一步收缩为：
+
+> 已有结果只能说明当前 reliability 分数能稳定排序“投影/嵌入跨视图稳定性”，并在 Texas 上与 accuracy 与 false-negative pressure 下降同时出现；它尚不能证明该分数等价于分类语义可靠性，也尚未证明方法解决了 false negative / hard negative imbalance。
+
 ## 证据边界
 
 ### 已支持
@@ -190,7 +204,26 @@ METHOD_CONFIG=configs/methods/rw_gcl_degree_gate.yaml METHOD_NAME=rw_gcl_degree_
 
 ## 当前推荐
 
-推荐先走路线 A 的最小 degree gate ablation，但只给它一次短窗口：
+本备忘录原先推荐先走路线 A 的最小 degree gate ablation，但在实现审查后应调整为：先修正实验协议，再决定 A/B。立即做 degree gate 会把“degree bias 的修补”建立在尚未澄清的 reliability 定义上，风险过高。
+
+### 修正后第一批 no-regret 实验
+
+这些实验不涉及路线 A/B 选择，应优先完成：
+
+- 实现 split-aware runner：同时记录 `dataset`、`split_index`、`model_seed`，并把 `split_index` 写入 metrics 与汇总表。
+- 复跑小规模标准 split sanity：Texas、Chameleon、Squirrel、Actor × `split_index=0..2` × `model_seed=0`，先观察结论是否跨 split 存在。
+- 增加独立诊断：bucket-wise test accuracy/error、reliability vs downstream error、label-based same-class negative pressure、degree/local homophily correlation，而不是只看组成分数的 high-low gap。
+- 做 reliability component ablation：embedding stability only、projection consistency only、combined reliability，判断当前收益来自哪个信号。
+- 暂缓 random reliability 与 degree gate，直到 projection consistency 的命名或替换完成。
+
+### 仍需用户确认的分岔
+
+完成上述修正后再二选一：
+
+- A：若跨 split 后 Texas/Chameleon 仍有正向，且 degree bias 诊断继续明显，再做 degree/local graph-aware gate。
+- B：若跨 split 结果消失，或机制证据仍只停留在 view/projection stability，则转为机制诊断论文或收缩为负结果/方法边界研究。
+
+旧 route A 建议保留为候选，但不再作为立即执行项：
 
 1. 先实现 degree-only gate。
 2. 只跑 Texas/Chameleon/Squirrel/Actor × seeds 0-2。

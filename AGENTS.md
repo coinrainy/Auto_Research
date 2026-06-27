@@ -196,3 +196,12 @@
   - 其他数据集的 weighted - unweighted FN pressure 接近 0：Chameleon +0.000194、Squirrel +0.000022、Actor -0.000187、Cornell -0.000449、Wisconsin -0.000733；说明 view consistency gap 不等价于 false-negative pressure 改善。
   - Homophily 上 FN pressure 变化也接近 0：Cora +0.000081、CiteSeer +0.000100、PubMed +0.000007；PubMed 轻微退化不能简单归因于 FN pressure 增加。
   - 当前解释：机制主张应收缩为“Texas 上同时满足性能提升、shuffled control 支持与 false-negative pressure 下降；其他数据集主要支持 reliability ranking 与 view consistency，而不稳定支持错误对比信号下降”。
+- 2026-06-27 方法实现审查与实验路线修正：
+  - 用户指出当前 `prediction_consistency` 实际是 projection head 输出维度上的 softmax 分布一致性，不是节点类别预测一致性；后续不得把它直接表述为分类语义一致性，更合适的命名是 projection distribution consistency / projection stability。
+  - 用户指出当前 `view_consistency` 诊断存在循环验证：reliability 由 embedding stability 与 projection consistency 组成，再按 reliability 分桶统计这两个组成量，不能作为强独立机制证据。
+  - 用户指出当前 loss 只做 positive anchor weighting，negative denominator 未调整，因此尚未直接解决 false negative / hard negative imbalance；低 reliability 节点仍会作为其他节点负样本存在。
+  - 用户指出 reliability 可能偏向 degree / augmentation-stable 节点，这与 Chameleon、Squirrel、Actor high-reliability bucket 的 degree gap 观察一致；高稳定不必然等于分类语义可靠。
+  - 用户指出当前 “10 seeds” 不是标准 10 个 Geom-GCN split；批跑脚本只循环模型 seed，没有循环 `split_index`，后续论文级实验必须区分 `split_index` 与 `model_seed`。
+  - 已更新 `docs/reliability_weighting_decision_memo.md`：原先“优先 route A degree gate”的推荐降级为“先修实验协议，再决定 A/B”。
+  - 下一步 no-regret 任务：实现 split-aware runner 与结果汇总，把 `split_index` 写入 metrics；增加独立诊断（bucket-wise test accuracy/error、reliability vs downstream error、label-based negative pressure、degree/local homophily correlation）；做 embedding stability only / projection consistency only / combined reliability 组件消融。
+  - 当前暂停事项：不继续扩大旧定义下的实验；暂缓 random reliability 与 degree gate，直到 projection consistency 命名或替换、split-aware 评估和独立诊断修正完成。
