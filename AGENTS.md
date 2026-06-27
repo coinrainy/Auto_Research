@@ -5,7 +5,7 @@
 - 回答与项目文档尽量使用中文。
 - 在当前工作目录内工作，不参考其他目录的项目代码。
 - 新项目需要维护 `AGENTS.md`，每次任务结束同步更新当前状态。
-- 如当前目录是 GitHub 仓库，任务结束后按用户要求同步上传；当前目录已初始化为 Git 仓库，远程目标为 GitHub 私有仓库 `coinrainy/Auto_Research`。
+- 如当前目录是 GitHub 仓库，任务结束后按用户要求同步上传；当前目录已初始化为 Git 仓库，远程目标为 GitHub 公开仓库 `coinrainy/Auto_Research`。
 - 每轮任务结束时给出建议的后续命令。
 
 ## 当前研究目标
@@ -65,7 +65,7 @@
   - [INSIGHT] 2x2 closed-loop ablation、high/low-pass gate 分析、超参数敏感性、聚类可视化、runtime/复杂度分析可根据结果进入附录或主文补充。
 - 当前推荐主 RQ：在无标签节点分类的 Graph Contrastive Learning 中，能否通过跨视图 embedding stability 与 prediction consistency 估计 pair reliability，并用 reliability-weighted contrastive loss 削弱不可靠正样本与疑似 false negative 的影响，从而在部分 heterophily graphs 上提升稳健性，同时不显著损害 homophily graphs 上的性能？
 - 下一步执行建议：进入 experiment-agent 或手动实验规划阶段，先实现 two-stage reliability-weighted GCL 最小原型，再做 shuffled reliability 与 false negative mass 诊断。
-- GitHub 上传记录：已将当前目录初始化为 Git 仓库，创建并绑定 GitHub 私有仓库 `coinrainy/Auto_Research`，已推送 `main` 分支。
+- GitHub 上传记录：已将当前目录初始化为 Git 仓库，创建并绑定 GitHub 仓库 `coinrainy/Auto_Research`，已推送 `main` 分支；2026-06-27 已按用户要求将仓库可见性改为公开。
 - 2026-06-27 后续路线更新：
   - 当前应切换到 `academic-research-suite` -> `experiment-agent` -> `plan` 阶段，而不是继续扩大选题或直接写论文。
   - 第 1 步：搭建可复现实验仓库骨架，固定数据集加载、训练入口、配置文件、日志与结果表格式。
