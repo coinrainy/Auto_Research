@@ -114,3 +114,10 @@
   - `view_consistency` 诊断已补充各 bucket 的 std。
   - 已验证：`bash scripts/run_smoke.sh`、`python -m compileall train.py eval.py diagnose.py src`。
   - 最近 smoke 中 `prediction_consistency_mean` 从此前接近 0.999 降至约 0.188，`positive_reliability_mean` 约 0.549；low/mid/high bucket 的 stability 与 consistency 均呈递增趋势，但 normal/shuffled accuracy 仍持平，需要后续多 seed/更长 epoch 评估。
+- 2026-06-27 小规模 reliability 对照实验流程：
+  - 已新增 `scripts/run_small_reliability_study.sh`，支持通过环境变量配置 `DATASETS`、`SEEDS`、`WARMUP_EPOCHS`、`STAGE2_EPOCHS`、`EVAL_EPOCHS`、`DEVICE` 与输出路径，自动成对运行 normal reliability 与 shuffled reliability。
+  - 已新增 `summarize_reliability_pairs.py`，从 `reliability_pair_runs.csv`、`main_results.csv` 与 `embeddings.pt`/`run_metadata.json` 中汇总 normal-vs-shuffled 的 accuracy delta、reliability 均值/方差，以及 high-low view consistency gap。
+  - 每对 normal/shuffled run 会写入独立诊断目录，避免后续批跑覆盖单次诊断文件。
+  - 已验证：`python summarize_reliability_pairs.py --help`、`python -m compileall train.py eval.py diagnose.py summarize_reliability_pairs.py src`、`DATASETS=Texas SEEDS=0 WARMUP_EPOCHS=1 STAGE2_EPOCHS=1 EVAL_EPOCHS=5 bash scripts/run_small_reliability_study.sh`。
+  - 本次 1+1 epoch 仅用于流程 smoke，不作为正式实验结论；输出已生成 `results/diagnostics/reliability_pair_summary.csv`，短跑中 Texas seed0 normal/shuffled accuracy 仍持平。
+  - 下一步建议：运行更接近真实的小实验，例如 `DATASETS="Texas Wisconsin" SEEDS="0 1 2" WARMUP_EPOCHS=20 STAGE2_EPOCHS=50 EVAL_EPOCHS=50 bash scripts/run_small_reliability_study.sh`，再查看 `results/diagnostics/reliability_pair_summary.csv` 的 paired accuracy delta 与 view consistency gap。
