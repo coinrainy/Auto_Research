@@ -36,7 +36,13 @@ def parse_args():
     parser.add_argument('--gpu_id', type=int, default=0)
     parser.add_argument('--config', type=str, default='config.yaml')
     parser.add_argument('--method', type=str, default='grace',
-                        choices=['grace', 'es_weighted', 'sgfn', 'spectral_mix'])
+                        choices=[
+                            'grace',
+                            'es_weighted',
+                            'sgfn',
+                            'spectral_mix',
+                            'pbcl',
+                        ])
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--batch-size', type=int, default=0)
@@ -68,6 +74,11 @@ def parse_args():
     parser.add_argument('--spectral-mix-jitter', type=float, default=0.1)
     parser.add_argument('--spectral-high-scale', type=float, default=1.0)
     parser.add_argument('--spectral-residual-alpha', type=float, default=1.0)
+    parser.add_argument('--pbcl-num-prototypes', type=int, default=0)
+    parser.add_argument('--pbcl-kmeans-iters', type=int, default=10)
+    parser.add_argument('--pbcl-weight-power', type=float, default=1.0)
+    parser.add_argument('--pbcl-min-weight', type=float, default=0.25)
+    parser.add_argument('--pbcl-max-weight', type=float, default=4.0)
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -101,12 +112,12 @@ def validate_args(args):
     if args.shuffle_weights and args.random_weights:
         raise ValueError('Use at most one of --shuffle-weights and --random-weights.')
     if (args.shuffle_weights or args.random_weights) and args.method not in [
-            'es_weighted', 'sgfn']:
+            'es_weighted', 'sgfn', 'pbcl']:
         raise ValueError('Weight controls are only valid with weighted methods.')
 
 
 def weight_control_name(args):
-    if args.method not in ['es_weighted', 'sgfn']:
+    if args.method not in ['es_weighted', 'sgfn', 'pbcl']:
         return 'none'
     if args.shuffle_weights:
         return 'shuffled'
@@ -277,6 +288,64 @@ def embedding_stability_weights(target, z1, z2, args):
         weights = weights.pow(args.weight_power)
     if args.min_weight > 0.0:
         weights = weights * (1.0 - args.min_weight) + args.min_weight
+    return weights.detach()
+
+
+@torch.no_grad()
+def kmeans_assignments(embeddings, num_clusters, num_iters, args, epoch):
+    embeddings = F.normalize(embeddings.detach().float(), dim=1)
+    num_nodes = embeddings.size(0)
+    num_clusters = max(1, min(num_clusters, num_nodes))
+    generator = make_control_generator(args, epoch)
+    init = torch.randperm(num_nodes, generator=generator)[:num_clusters]
+    centers = embeddings[init.to(embeddings.device)].clone()
+
+    assignments = torch.zeros(num_nodes, device=embeddings.device, dtype=torch.long)
+    for _ in range(max(1, num_iters)):
+        assignments = torch.mm(embeddings, centers.t()).argmax(dim=1)
+        updated = torch.zeros_like(centers)
+        counts = torch.bincount(assignments, minlength=num_clusters).to(
+            embeddings.device,
+            dtype=embeddings.dtype,
+        )
+        updated.index_add_(0, assignments, embeddings)
+        non_empty = counts > 0
+        centers = torch.where(
+            non_empty.view(-1, 1),
+            updated / counts.clamp_min(1.0).view(-1, 1),
+            centers,
+        )
+        centers = F.normalize(centers, dim=1)
+    return assignments
+
+
+@torch.no_grad()
+def prototype_balance_weights(z1, z2, args, epoch):
+    consensus = (z1.detach() + z2.detach()) * 0.5
+    assignments = kmeans_assignments(
+        consensus,
+        args.resolved_pbcl_num_prototypes,
+        args.pbcl_kmeans_iters,
+        args,
+        epoch,
+    )
+    counts = torch.bincount(
+        assignments,
+        minlength=args.resolved_pbcl_num_prototypes,
+    ).to(consensus.device, dtype=consensus.dtype)
+    used_counts = counts[counts > 0]
+    if used_counts.numel() == 0:
+        return torch.ones(consensus.size(0), device=consensus.device)
+    mean_count = used_counts.mean()
+    weights = mean_count / counts[assignments].clamp_min(1.0)
+    if args.pbcl_weight_power != 1.0:
+        weights = weights.pow(args.pbcl_weight_power)
+    weights = weights / weights.mean().clamp_min(1e-12)
+    weights = weights.clamp(
+        min=max(args.pbcl_min_weight, 0.0),
+        max=max(args.pbcl_max_weight, args.pbcl_min_weight),
+    )
+    weights = weights / weights.mean().clamp_min(1e-12)
     return weights.detach()
 
 
@@ -496,16 +565,23 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     weights = None
     raw_weights = None
     context_gate = None
-    use_weighting = args.method in ['es_weighted', 'sgfn'] and epoch > args.warmup_epochs
+    use_weighting = (
+        args.method in ['es_weighted', 'sgfn', 'pbcl']
+        and epoch > args.warmup_epochs
+    )
     if use_weighting:
-        target = teacher_clean_embeddings(teacher, data)
         if args.method == 'es_weighted':
+            target = teacher_clean_embeddings(teacher, data)
             raw_weights = embedding_stability_weights(target, z1, z2, args)
             weights = apply_weight_control(raw_weights, args, epoch)
-        else:
+        elif args.method == 'sgfn':
+            target = teacher_clean_embeddings(teacher, data)
             raw_weights, context_gate = false_negative_pair_weights(target, data, args)
             weights = apply_pair_weight_control(raw_weights, args, epoch)
             weights = normalize_pair_weights(weights, args)
+        else:
+            raw_weights = prototype_balance_weights(z1, z2, args, epoch)
+            weights = apply_weight_control(raw_weights, args, epoch)
 
     pair_weights = (
         None if args.method == 'sgfn' or args.no_anchor_weighting else weights
@@ -587,7 +663,7 @@ def prepare_save_dir(args, seed):
     control = weight_control_name(args)
     control_suffix = (
         f'_{control}'
-        if args.method in ['es_weighted', 'sgfn'] and control != 'normal'
+        if args.method in ['es_weighted', 'sgfn', 'pbcl'] and control != 'normal'
         else ''
     )
     run_name = f'{args.dataset}_{args.method}{control_suffix}_seed{seed}{split_suffix}'
@@ -730,6 +806,12 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'spectral_mix_jitter': args.spectral_mix_jitter,
         'spectral_high_scale': args.spectral_high_scale,
         'spectral_residual_alpha': args.spectral_residual_alpha,
+        'pbcl_num_prototypes': args.pbcl_num_prototypes,
+        'resolved_pbcl_num_prototypes': args.resolved_pbcl_num_prototypes,
+        'pbcl_kmeans_iters': args.pbcl_kmeans_iters,
+        'pbcl_weight_power': args.pbcl_weight_power,
+        'pbcl_min_weight': args.pbcl_min_weight,
+        'pbcl_max_weight': args.pbcl_max_weight,
         'pair_shuffle_mode': args.pair_shuffle_mode,
         'pair_normalization': args.pair_normalization,
         'pair_reallocation_alpha': args.pair_reallocation_alpha,
@@ -786,6 +868,10 @@ def main():
     train_mask, val_mask, test_mask = get_split_masks(data, args.split_index)
 
     model = build_model(config, dataset, device)
+    args.resolved_pbcl_num_prototypes = (
+        args.pbcl_num_prototypes if args.pbcl_num_prototypes > 0
+        else dataset.num_classes
+    )
     teacher = build_teacher(model) if args.method in ['es_weighted', 'sgfn'] else None
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -798,7 +884,7 @@ def main():
         f'(I) | dataset={args.dataset}, method={args.method}, seed={seed}, '
         f'split_index={args.split_index}, device={device}'
     )
-    if args.method in ['es_weighted', 'sgfn']:
+    if args.method in ['es_weighted', 'sgfn', 'pbcl']:
         print(
             f'(I) | warmup_epochs={args.warmup_epochs}, ema_decay={args.ema_decay}, '
             f'anchor_weighting={not args.no_anchor_weighting}, '
@@ -817,6 +903,14 @@ def main():
                 f'pair_shuffle_mode={args.pair_shuffle_mode}, '
                 f'pair_normalization={args.pair_normalization}, '
                 f'pair_reallocation_alpha={args.pair_reallocation_alpha}'
+            )
+        if args.method == 'pbcl':
+            print(
+                f'(I) | pbcl_num_prototypes={args.resolved_pbcl_num_prototypes}, '
+                f'pbcl_kmeans_iters={args.pbcl_kmeans_iters}, '
+                f'pbcl_weight_power={args.pbcl_weight_power}, '
+                f'pbcl_min_weight={args.pbcl_min_weight}, '
+                f'pbcl_max_weight={args.pbcl_max_weight}'
             )
     if args.method == 'spectral_mix':
         print(

@@ -437,3 +437,17 @@
   - 已更新 `docs/spectral_mix_candidate_research_log.md` 与 `experiments/grace_idea/IDEA_NOTES.md`，将 spectral_mix 降级为失败原型/机制线索。
   - 已验证命令：`python -m py_compile train.py summarize_runs.py`、`python train.py --dataset Texas --method spectral_mix --seed 0 --split-index 0 --epochs 2 --spectral-mix-mode adaptive --spectral-mix-jitter 0.1 --spectral-high-scale 0.5 --spectral-residual-alpha 0.5 --save-dir /tmp/spectral_residual_smoke --overwrite --skip-eval --log-every 1`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Texas Cornell Wisconsin Actor" SPLITS="0 1 2" SEEDS="0" METHODS="grace spectral_mix" EPOCHS=100 SAVE_DIR="runs/spectral_mix_mode_ablation_splits0-2_seed0_e100" MANIFEST_PATH="runs/spectral_mix_mode_ablation_splits0-2_seed0_e100/run_manifest.csv" OVERWRITE=1 LOG_EVERY=100 TRAIN_EXTRA_ARGS="--spectral-mix-mode low --spectral-high-scale 0.5 --spectral-residual-alpha 0.5" scripts/run_split_study.sh`。
+- 2026-06-28 PBCL 候选实现与降级：
+  - 已新增研究日志：`docs/pbcl_candidate_research_log.md`。
+  - 根据近期文献边界刷新，adaptive augmentation、spectral GCL、false/positive mining、degree-bias reweighting 与 prototype clustering 都已拥挤；PBCL 只作为“prototype-density anchor reweighting 是否有用”的快速可证伪原型。
+  - 已在 `experiments/grace_idea/train.py` 中新增 `--method pbcl`，支持 `--pbcl-num-prototypes`、`--pbcl-kmeans-iters`、`--pbcl-weight-power`、`--pbcl-min-weight`、`--pbcl-max-weight`。
+  - PBCL 机制：warmup 后用两个 view 的 encoder embedding 均值做 consensus embedding；对其 KMeans 聚类；按原型簇大小的逆频率生成 node-wise anchor weight；复用 `--shuffle-weights` 做节点-权重对应关系打乱 control。
+  - 已更新 `scripts/run_split_study.sh` 与 `summarize_runs.py`，支持 PBCL normal/shuffled 批跑与汇总。
+  - 已完成 PBCL sanity：Texas/Cornell/Wisconsin/Actor × splits 0-2 × seed0 × 100 epochs，共 36 个 run，全部 completed。
+  - 汇总文件：`experiments/grace_idea/runs/summaries/pbcl_splits0-2_seed0_e100_paired.csv` 与 `experiments/grace_idea/runs/summaries/pbcl_splits0-2_seed0_e100_aggregate.csv`。
+  - PBCL normal 相对 GRACE：Actor F1Mi/F1Ma -0.008114/-0.011311；Cornell +0.018018/+0.019889；Texas +0.009009/-0.002744；Wisconsin +0.000000/-0.013541。
+  - PBCL normal - shuffled：Actor -0.008114/-0.006809；Cornell -0.009009/-0.002785；Texas +0.018018/-0.013491；Wisconsin +0.013072/-0.033674。
+  - 决策：PBCL 未通过最小标准。Actor 三个 split 全负，Wisconsin macro 负向，且 Cornell/Wisconsin 上 shuffled 经常接近或超过 normal；简单 prototype-density anchor reweighting 不能作为主候选。
+  - 保留资产：PBCL 代码、prototype-density 权重链路、normal/shuffled control；下一轮若继续 prototype 方向，必须转向 prototype-level objective 或跨视图原型一致性，而不是仅做 anchor reweighting。
+  - 已验证命令：`python -m py_compile train.py summarize_runs.py model.py`、`bash -n scripts/run_split_study.sh`、`python train.py --dataset Texas --method pbcl --seed 0 --split-index 0 --epochs 3 --warmup-epochs 1 --pbcl-kmeans-iters 3 --save-dir /tmp/pbcl_smoke --overwrite --skip-eval --log-every 1`。
+  - 下一步建议命令：暂不继续 PBCL 扩展；建议先设计 prototype-level contrastive / decorrelation objective，或重新构思能改变 view selection decision 的新方法。

@@ -20,6 +20,7 @@
 - `--method es_weighted`：embedding-stability weighted GRACE，保留为历史/对照路线。
 - `--method sgfn`：Stability-Guided False-Negative attenuation，已降级为负结果/诊断资产。
 - `--method spectral_mix`：Adaptive Spectral Mix GCL，已降级为失败原型/诊断资产。
+- `--method pbcl`：Prototype-Balanced Contrastive Learning，已降级为失败原型/诊断资产。
 
 `es_weighted` 的设计边界：
 
@@ -75,6 +76,19 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - Cora/CiteSeer quick sanity 有小幅下降，因此暂不能声称 homophily non-degradation。
 - 当前定位是失败原型和机制线索：谱扰动可能帮助部分少数类，但当前 gate 没有可靠对齐下游语义。
 
+`pbcl` 的设计边界：
+
+- warmup 后用两个增强 view 的 encoder embedding 均值做 consensus embedding。
+- 对 consensus embedding 做轻量 KMeans，默认原型数为数据集类别数，也可用 `--pbcl-num-prototypes` 指定。
+- 按原型簇大小的逆频率生成 node-wise anchor weight，提高低密度原型节点在 InfoNCE 聚合中的权重。
+- 支持 `--shuffle-weights` / `--random-weights`，用于检验节点-原型密度对应关系是否真的有效。
+
+`pbcl` 当前研究判断：
+
+- Texas/Cornell split0-2 有局部正向，但 Actor 三个 split 全部负向，Wisconsin macro 负向。
+- normal 不稳定优于 shuffled；Cornell 与 Wisconsin 上 shuffled 经常接近或超过 normal。
+- 当前结论：简单 prototype-density anchor reweighting 不能作为主候选；保留为 density/prototype 诊断资产。
+
 正式实验前仍需补齐：
 
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
@@ -94,6 +108,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `analyze_pair_weights.py` 可对 `sgfn` run 做 label-only false-negative pressure 诊断；该诊断不参与训练，只用于机制验证。
 - `sgfn` 支持 `--fn-context-gate local_feature|degree_inverse|local_feature_degree` 与 `--fn-context-pair-mode product|min|anchor`，但当前筛选结果显示这些 gate 未能救活主线。
 - `spectral_mix` 支持 `--spectral-mix-mode adaptive|low|high|random`、`--spectral-mix-temperature`、`--spectral-mix-jitter` 与 `--spectral-high-scale`。
+- `pbcl` 支持 `--pbcl-num-prototypes`、`--pbcl-kmeans-iters`、`--pbcl-weight-power`、`--pbcl-min-weight`、`--pbcl-max-weight`。
 
 示例 split-aware 命令：
 
@@ -108,5 +123,6 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 
 - 暂停 naive `spectral_mix` 扩展，不继续补 Chameleon/Squirrel。
 - 若继续 spectral 方向，只做小消融定位失败机制：`adaptive` vs `low` vs `high` vs `random`。
-- 下一轮应重新寻找更强 idea，优先改变 contrastive objective 或 view selection decision，而不是单纯替换特征。
+- 暂停 PBCL 扩展，不继续跑 10 splits；简单 anchor reweighting 已被 shuffled control 证伪。
+- 下一轮应重新寻找更强 idea，优先改变 contrastive objective、prototype-level objective 或 view selection decision，而不是单纯替换特征或重加权 anchor。
 - 本目录中的 SGFN / context-gated SGFN 只作为负结果、诊断工具和消融资产保留。
