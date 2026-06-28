@@ -1096,3 +1096,17 @@
   - 当前不能声称 PCNV 是可投稿主方法；下一步只允许实现 entropy-guarded / adaptive prototype calibration，若 normal-vs-shuffled 与 usage entropy 问题不能同时改善，应放弃 prototype calibration 主线。
   - 已新增文档：`experiments/topvenue_gcl/docs/prototype_calibrated_natural_view_candidate.md`，并更新 `experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Texas Actor Chameleon Squirrel" METHODS="pcnv_gcl" SPLITS="0 1 2" SEEDS="0 1" EPOCHS=50 RUNS_DIR="runs/pcnv_guarded_s0-1_splits0-2_e50" RUN_TAG="normal" OVERWRITE=1 bash scripts/run_split_study.sh`；但在运行该命令前应先实现 entropy-guarded / confidence-weighted PCNV，而不是继续直接扩大 default/sharp PCNV。
+- 2026-06-29 Guarded PCNV 实现、复核与降级：
+  - 已实现 PCNV entropy-guarded / confidence-weighted 扩展：`pcnv_min_target_confidence`、`pcnv_confidence_power`、`pcnv_entropy_guard`、`pcnv_min_usage_entropy_frac`、`pcnv_entropy_guard_temperature`。
+  - 已实现 PCNV view-agreement gate 扩展：`pcnv_min_view_agreement`、`pcnv_view_agreement_power`；默认关闭，仅作为对照资产。
+  - 已新增诊断字段：`pcnv_guarded_consistency_loss`、`pcnv_target_confidence_mean`、`pcnv_view_agreement_mean`、`pcnv_view_weight_mean`、`pcnv_target_weight_mean`、`pcnv_entropy_guard_mean`，并同步到 `summarize_split_study.py`。
+  - 已验证：`python -m py_compile train.py summarize_split_study.py src/*.py`，以及 Texas/Chameleon guarded smoke。
+  - Sharp guarded PCNV（`runs/pcnv_guarded_split0_s0_e50/`）normal vs `gcn_mlp_gcl`：Texas +0.054054/+0.125000，Actor -0.007895/+0.001567，Chameleon +0.024123/+0.020505，Squirrel -0.012488/-0.010562。
+  - Sharp guarded normal-vs-shuffled：Texas +0.081081/+0.125427，Actor -0.006579/-0.006120，Chameleon +0.024123/+0.024941，Squirrel +0.007685/+0.015068；但 Actor/Squirrel baseline 失败，Chameleon/Squirrel usage entropy 极低。
+  - Soft guarded PCNV（`runs/pcnv_soft_guarded_split0_s0_e50/`）normal vs `gcn_mlp_gcl`：Texas +0.000000/+0.105497，Actor +0.006579/+0.011453，Chameleon +0.004386/+0.007861，Squirrel -0.015370/-0.023046。
+  - Soft guarded normal-vs-shuffled：Texas +0.054054/+0.176984，Actor +0.007895/+0.002728，Chameleon -0.013158/-0.012230，Squirrel -0.014409/-0.012190。说明 Chameleon shuffled 反超，Squirrel 仍失败。
+  - View-agreement gated PCNV（`runs/pcnv_view_guarded_split0_s0_e50/`）normal vs `gcn_mlp_gcl`：Texas +0.000000/+0.007042，Actor -0.002632/-0.004816，Chameleon -0.010965/-0.008340，Squirrel -0.038425/-0.033737；该子线明确失败，不补 shuffled。
+  - 当前裁决：PCNV 家族不再作为 active main idea，降级为 conditional / diagnostic asset；soft guarded 是最健康变体但未过机制门槛，sharp guarded 存在 prototype collapse，view-agreement gate 失败。
+  - 后续不再继续调 PCNV temperature、confidence、entropy guard 或 view-agreement 参数；下一代 idea 必须换机制，优先考虑节点级局部结构条件下的 objective selection 或更直接的 downstream separability proxy。
+  - 已更新文档：`experiments/topvenue_gcl/docs/prototype_calibrated_natural_view_candidate.md`、`experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/pcnv_soft_guarded_split0_s0_e50/runs_vs_gcn_mlp.csv` 查看最健康 PCNV 变体的逐数据集边界；随后应设计新机制，而不是继续扩大 PCNV。

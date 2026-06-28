@@ -67,6 +67,13 @@ pcnv_prototype_weight: 0.2
 pcnv_balance_weight: 0.05
 pcnv_assignment_temperature: 0.2
 pcnv_target_temperature: 0.1
+pcnv_min_target_confidence: 0.0
+pcnv_confidence_power: 0.0
+pcnv_min_view_agreement: 0.0
+pcnv_view_agreement_power: 0.0
+pcnv_entropy_guard: false
+pcnv_min_usage_entropy_frac: 0.5
+pcnv_entropy_guard_temperature: 0.1
 pcnv_shuffle_assignments: false
 variance_loss_weight: 1.0
 covariance_loss_weight: 0.01

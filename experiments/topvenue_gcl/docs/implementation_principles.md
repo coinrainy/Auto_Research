@@ -178,5 +178,10 @@ PCNV 当前裁决：
 - sharpened PCNV 使用 `--pcnv-prototype-weight 0.5 --pcnv-balance-weight 0.1 --pcnv-assignment-temperature 0.1 --pcnv-target-temperature 0.03`；
 - sharpened PCNV 在 Texas 达到 F1Mi/F1Ma=0.729730/0.459091，强于 default 与 shuffled，是当前最强 Texas 单点；
 - 但 sharpened PCNV 在 Squirrel 明显失败，且 Chameleon/Squirrel 的 prototype usage entropy 过低，提示原型坍塌；
-- 当前裁决是 active-but-risky：PCNV 有潜在新机制，但不能作为主方法定稿；
-- 下一步只能做 entropy-guarded / adaptive prototype calibration；如果 normal-vs-shuffled 与 usage entropy 问题不能同时改善，应放弃 prototype calibration 主线。
+- 已新增 entropy-guarded / confidence-weighted PCNV 与 view-agreement gated PCNV；
+- sharp guarded PCNV 在 Texas 达到强正向，但 Actor/Squirrel 失败，Chameleon/Squirrel usage entropy 明显过低；
+- soft guarded PCNV 是最健康变体：Texas macro 与 Actor 正向，但 Chameleon shuffled control 反超，Squirrel 仍失败；
+- view-agreement gated PCNV 在 Texas/Actor/Chameleon/Squirrel split0 seed0 上全面弱于 soft guarded，并使 Squirrel 明显退化；
+- 当前裁决：PCNV 已降级为 conditional / diagnostic asset，不再作为 active main idea；
+- 后续不再继续调 PCNV 的 temperature、confidence threshold、entropy guard 或 view-agreement gate；
+- 下一代方法必须换机制，优先考虑节点级局部结构条件下的 objective selection 或更直接的 downstream separability 代理。

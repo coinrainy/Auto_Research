@@ -12,7 +12,7 @@ Adaptive Objective-Activated MPNV (AOMPNV) 已降级为失败/条件性消融资
 
 Structure-Residual Gated Natural-View GCL (SRGNV) 已降级为失败/条件性消融资产，入口仍为 `--method srgnv_gcl`。它将 graph view 中与 ego view 正交的结构残差作为蒸馏目标，并用 raw feature propagation residual 做节点级 gate；但 split0 seed0 early gate 未过：Texas micro 持平但 macro 下降，Actor 仅弱正且 shuffled residual 更强，Chameleon/Squirrel 低于 baseline。因此不进入 splits 0-2 扩展。
 
-Prototype-Calibrated Natural-View GCL (PCNV) 暂时保留为 active-but-risky candidate，入口为 `--method pcnv_gcl`。它在 Natural-View bootstrap 上加入 trainable prototypes，并用 ego/graph 双视图的 prototype assignment consistency 做原型级语义校准。split0 seed0 early gate 中，default PCNV 在 Texas/Actor/Chameleon 相对 `gcn_mlp_gcl` 为正，但 Actor/Chameleon 的 `--pcnv-shuffle-assignments` control 同样强甚至更强；sharpened PCNV 在 Texas 给出当前最强单点结果且 normal > shuffled，但 Chameleon/Squirrel 出现 prototype usage entropy 过低的坍塌风险。因此 PCNV 不能直接作为主方法，下一步只允许做 entropy-guarded / adaptive prototype calibration；若 normal-vs-shuffled 与 usage entropy 问题不能同时改善，应放弃 prototype calibration 主线。
+Prototype-Calibrated Natural-View GCL (PCNV) 已降级为条件性/诊断资产，入口仍为 `--method pcnv_gcl`。它在 Natural-View bootstrap 上加入 trainable prototypes，并用 ego/graph 双视图的 prototype assignment consistency 做原型级语义校准。default、sharp guarded、soft guarded 与 view-agreement gated 版本均已完成 split0 seed0 early gate。soft guarded 是最健康变体，在 Texas macro 与 Actor 上有正向信号，但 Chameleon shuffled control 反超、Squirrel 明显失败；view-agreement gate 进一步退化。因此 PCNV 不再作为 active main idea，不继续调 temperature、confidence 或 view-agreement gate。
 
 新增 `--method afpnv_gcl` 和 `--method bspnv_gcl`：分别对应置信度加权与 semantic/spatial/bootstrap branch selection。二者都已经跑通 Chameleon/Squirrel 10 split，但都没有形成足够强的主线结果。
 
@@ -26,8 +26,8 @@ Prototype-Calibrated Natural-View GCL (PCNV) 暂时保留为 active-but-risky ca
 - MPNV 将 positive construction 从单采样改为 dense multi-positive mask，但 seed1/seed2 复核失败，当前只保留为机制/消融资产；
 - AOMPNV 将 MPNV 的固定 dense objectives 改成 label-free objective activation / node-level fallback，但 10 split 多 seed normal-vs-shuffled 硬门控未过，当前只保留为 regularization/negative-result ablation；
 - SRGNV 尝试蒸馏 graph view 的 structure residual，但 split0 early gate 已失败，当前只保留为 negative result；
-- PCNV 尝试用 prototype-level natural-view assignment consistency 缓解 instance-level positive/negative 噪声，当前性能信号强于 SRGNV，但 shuffled control 与 prototype collapse 仍未过；
-- 当前仍没有可直接包装为 2026 顶会/顶刊主方法的成功 idea；下一代 candidate 必须解决 PCNV 的 entropy/collapse 与 shuffled-control 问题，或者彻底换机制。
+- PCNV 尝试用 prototype-level natural-view assignment consistency 缓解 instance-level positive/negative 噪声，但 shuffled control、Squirrel 失败与 prototype collapse 仍未过，当前只保留为条件性/诊断资产；
+- 当前仍没有可直接包装为 2026 顶会/顶刊主方法的成功 idea；下一代 candidate 必须换机制，优先考虑节点级局部结构条件下的 objective selection，而不是继续调 PCNV。
 
 最小 smoke：
 

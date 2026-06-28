@@ -121,6 +121,13 @@ def parse_args():
     parser.add_argument("--pcnv-balance-weight", type=float, default=None)
     parser.add_argument("--pcnv-assignment-temperature", type=float, default=None)
     parser.add_argument("--pcnv-target-temperature", type=float, default=None)
+    parser.add_argument("--pcnv-min-target-confidence", type=float, default=None)
+    parser.add_argument("--pcnv-confidence-power", type=float, default=None)
+    parser.add_argument("--pcnv-min-view-agreement", type=float, default=None)
+    parser.add_argument("--pcnv-view-agreement-power", type=float, default=None)
+    parser.add_argument("--pcnv-entropy-guard", action="store_true")
+    parser.add_argument("--pcnv-min-usage-entropy-frac", type=float, default=None)
+    parser.add_argument("--pcnv-entropy-guard-temperature", type=float, default=None)
     parser.add_argument("--pcnv-shuffle-assignments", action="store_true")
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
@@ -244,6 +251,20 @@ def override_config(config, args):
         merged["pcnv_assignment_temperature"] = args.pcnv_assignment_temperature
     if args.pcnv_target_temperature is not None:
         merged["pcnv_target_temperature"] = args.pcnv_target_temperature
+    if args.pcnv_min_target_confidence is not None:
+        merged["pcnv_min_target_confidence"] = args.pcnv_min_target_confidence
+    if args.pcnv_confidence_power is not None:
+        merged["pcnv_confidence_power"] = args.pcnv_confidence_power
+    if args.pcnv_min_view_agreement is not None:
+        merged["pcnv_min_view_agreement"] = args.pcnv_min_view_agreement
+    if args.pcnv_view_agreement_power is not None:
+        merged["pcnv_view_agreement_power"] = args.pcnv_view_agreement_power
+    if args.pcnv_entropy_guard:
+        merged["pcnv_entropy_guard"] = True
+    if args.pcnv_min_usage_entropy_frac is not None:
+        merged["pcnv_min_usage_entropy_frac"] = args.pcnv_min_usage_entropy_frac
+    if args.pcnv_entropy_guard_temperature is not None:
+        merged["pcnv_entropy_guard_temperature"] = args.pcnv_entropy_guard_temperature
     if args.pcnv_shuffle_assignments:
         merged["pcnv_shuffle_assignments"] = True
     return merged
@@ -414,7 +435,7 @@ def _srgnv_residual_target(data, parts, config):
     return residual, residual_score, gate
 
 
-def _pcnv_assignment_terms(anchor, target, prototypes, config):
+def _pcnv_assignment_terms(anchor, target, prototypes, config, view_weight=None):
     assignment_temperature = max(float(config["pcnv_assignment_temperature"]), 1e-12)
     target_temperature = max(float(config["pcnv_target_temperature"]), 1e-12)
     proto = F.normalize(prototypes, dim=1)
@@ -424,35 +445,81 @@ def _pcnv_assignment_terms(anchor, target, prototypes, config):
         target_prob = torch.softmax(target_logits, dim=1)
         if bool(config.get("pcnv_shuffle_assignments", False)):
             target_prob = target_prob[torch.randperm(target_prob.size(0), device=target_prob.device)]
-    consistency = -(target_prob * F.log_softmax(anchor_logits, dim=1)).sum(dim=1).mean()
+        target_confidence = target_prob.max(dim=1).values
+        min_confidence = float(config.get("pcnv_min_target_confidence", 0.0))
+        confidence_power = float(config.get("pcnv_confidence_power", 0.0))
+        if confidence_power > 0.0:
+            denom = max(1.0 - min_confidence, 1e-12)
+            sample_weight = ((target_confidence - min_confidence) / denom).clamp(0.0, 1.0)
+            sample_weight = sample_weight.pow(confidence_power)
+        else:
+            sample_weight = torch.ones_like(target_confidence)
+        if view_weight is None:
+            view_weight = torch.ones_like(sample_weight)
+        else:
+            view_weight = view_weight.to(device=sample_weight.device, dtype=sample_weight.dtype)
+        sample_weight = sample_weight * view_weight
+    per_node_consistency = -(target_prob * F.log_softmax(anchor_logits, dim=1)).sum(dim=1)
+    consistency = (per_node_consistency * sample_weight).sum() / sample_weight.sum().clamp_min(1e-12)
     anchor_prob = torch.softmax(anchor_logits, dim=1)
     mean_prob = anchor_prob.mean(dim=0)
     balance = (mean_prob * (mean_prob.clamp_min(1e-12).log() + math.log(mean_prob.numel()))).sum()
     entropy = -(anchor_prob * anchor_prob.clamp_min(1e-12).log()).sum(dim=1)
+    usage_entropy = -(mean_prob * mean_prob.clamp_min(1e-12).log()).sum()
+    max_usage_entropy = math.log(mean_prob.numel())
+    min_usage_entropy = float(config.get("pcnv_min_usage_entropy_frac", 0.0)) * max_usage_entropy
+    guard_temperature = max(float(config.get("pcnv_entropy_guard_temperature", 0.1)), 1e-12)
+    if bool(config.get("pcnv_entropy_guard", False)):
+        entropy_guard = torch.sigmoid((usage_entropy.detach() - min_usage_entropy) / guard_temperature)
+    else:
+        entropy_guard = usage_entropy.new_tensor(1.0)
     return consistency, balance, {
         "assignment_entropy": entropy.mean(),
         "assignment_max_prob": anchor_prob.max(dim=1).values.mean(),
-        "prototype_usage_entropy": -(mean_prob * mean_prob.clamp_min(1e-12).log()).sum(),
+        "target_confidence": target_confidence.mean(),
+        "view_weight": view_weight.mean(),
+        "target_weight": sample_weight.mean(),
+        "entropy_guard": entropy_guard,
+        "prototype_usage_entropy": usage_entropy,
     }
 
 
 def _pcnv_loss(ego, graph, prototypes, config):
+    with torch.no_grad():
+        proto = F.normalize(prototypes, dim=1)
+        target_temperature = max(float(config["pcnv_target_temperature"]), 1e-12)
+        ego_prob = torch.softmax(F.normalize(ego.detach(), dim=1) @ proto.t() / target_temperature, dim=1)
+        graph_prob = torch.softmax(F.normalize(graph.detach(), dim=1) @ proto.t() / target_temperature, dim=1)
+        view_agreement = (ego_prob * graph_prob).sum(dim=1)
+        view_power = float(config.get("pcnv_view_agreement_power", 0.0))
+        if view_power > 0.0:
+            min_agreement = float(config.get("pcnv_min_view_agreement", 0.0))
+            denom = max(1.0 - min_agreement, 1e-12)
+            view_weight = ((view_agreement - min_agreement) / denom).clamp(0.0, 1.0)
+            view_weight = view_weight.pow(view_power)
+        else:
+            view_weight = torch.ones_like(view_agreement)
     ego_to_graph, ego_balance, ego_stats = _pcnv_assignment_terms(
         ego,
         graph,
         prototypes,
         config,
+        view_weight,
     )
     graph_to_ego, graph_balance, graph_stats = _pcnv_assignment_terms(
         graph,
         ego,
         prototypes,
         config,
+        view_weight,
     )
     consistency = 0.5 * (ego_to_graph + graph_to_ego)
+    entropy_guard = 0.5 * (ego_stats["entropy_guard"] + graph_stats["entropy_guard"])
+    guarded_consistency = consistency * entropy_guard
     balance = 0.5 * (ego_balance + graph_balance)
     stats = {
         "pcnv_consistency_loss": consistency.detach(),
+        "pcnv_guarded_consistency_loss": guarded_consistency.detach(),
         "pcnv_balance_loss": balance.detach(),
         "pcnv_assignment_entropy_mean": 0.5 * (
             ego_stats["assignment_entropy"].detach()
@@ -466,8 +533,36 @@ def _pcnv_loss(ego, graph, prototypes, config):
             ego_stats["prototype_usage_entropy"].detach()
             + graph_stats["prototype_usage_entropy"].detach()
         ),
+        "pcnv_target_confidence_mean": 0.5 * (
+            ego_stats["target_confidence"].detach()
+            + graph_stats["target_confidence"].detach()
+        ),
+        "pcnv_view_agreement_mean": view_agreement.detach().mean(),
+        "pcnv_view_weight_mean": 0.5 * (
+            ego_stats["view_weight"].detach()
+            + graph_stats["view_weight"].detach()
+        ),
+        "pcnv_target_weight_mean": 0.5 * (
+            ego_stats["target_weight"].detach()
+            + graph_stats["target_weight"].detach()
+        ),
+        "pcnv_entropy_guard_mean": entropy_guard.detach(),
     }
-    return consistency, balance, stats
+    return guarded_consistency, balance, stats
+
+
+def _pcnv_control_name(config):
+    guarded = (
+        bool(config.get("pcnv_entropy_guard", False))
+        or float(config.get("pcnv_confidence_power", 0.0)) > 0.0
+        or float(config.get("pcnv_min_target_confidence", 0.0)) > 0.0
+        or float(config.get("pcnv_view_agreement_power", 0.0)) > 0.0
+        or float(config.get("pcnv_min_view_agreement", 0.0)) > 0.0
+    )
+    name = "pcnv_guarded" if guarded else "pcnv"
+    if bool(config.get("pcnv_shuffle_assignments", False)):
+        name += "_shuffled"
+    return name
 
 
 @torch.no_grad()
@@ -1236,6 +1331,9 @@ def train_er_cache_gcl(model, data, config, args):
             proto_sim = proto @ proto.t()
             off_diag = proto_sim[~torch.eye(proto_sim.size(0), dtype=torch.bool, device=proto_sim.device)]
             diagnostics["pcnv_consistency_loss"] = float(proto_stats["pcnv_consistency_loss"].item())
+            diagnostics["pcnv_guarded_consistency_loss"] = float(
+                proto_stats["pcnv_guarded_consistency_loss"].item()
+            )
             diagnostics["pcnv_balance_loss"] = float(proto_stats["pcnv_balance_loss"].item())
             diagnostics["pcnv_assignment_entropy_mean"] = float(
                 proto_stats["pcnv_assignment_entropy_mean"].item()
@@ -1244,7 +1342,23 @@ def train_er_cache_gcl(model, data, config, args):
                 proto_stats["pcnv_assignment_max_prob_mean"].item()
             )
             diagnostics["pcnv_usage_entropy_mean"] = float(proto_stats["pcnv_usage_entropy_mean"].item())
+            diagnostics["pcnv_target_confidence_mean"] = float(
+                proto_stats["pcnv_target_confidence_mean"].item()
+            )
+            diagnostics["pcnv_view_agreement_mean"] = float(
+                proto_stats["pcnv_view_agreement_mean"].item()
+            )
+            diagnostics["pcnv_view_weight_mean"] = float(
+                proto_stats["pcnv_view_weight_mean"].item()
+            )
+            diagnostics["pcnv_target_weight_mean"] = float(
+                proto_stats["pcnv_target_weight_mean"].item()
+            )
+            diagnostics["pcnv_entropy_guard_mean"] = float(
+                proto_stats["pcnv_entropy_guard_mean"].item()
+            )
             diagnostics["pcnv_num_prototypes"] = int(config["pcnv_num_prototypes"])
+            diagnostics["pcnv_entropy_guard"] = bool(config.get("pcnv_entropy_guard", False))
             diagnostics["pcnv_shuffle_assignments"] = bool(config.get("pcnv_shuffle_assignments", False))
             diagnostics["pcnv_prototype_cosine_offdiag_mean"] = float(off_diag.mean().item())
         if mpnv_gcl:
@@ -1258,7 +1372,7 @@ def train_er_cache_gcl(model, data, config, args):
         ("danv_degree" if danv_degree_gcl else "danv") if danv_gcl else
         "fdnv" if fdnv_gcl else
         ("srgnv_shuffled" if bool(config.get("srgnv_shuffle_residual", False)) else "srgnv") if srgnv_gcl else
-        ("pcnv_shuffled" if bool(config.get("pcnv_shuffle_assignments", False)) else "pcnv") if pcnv_gcl else
+        _pcnv_control_name(config) if pcnv_gcl else
         ("aompnv_shuffled" if bool(config.get("aompnv_shuffle_positives", False)) else "aompnv") if aompnv_gcl else
         ("mpnv_shuffled" if bool(config.get("mpnv_shuffle_positives", False)) else "mpnv") if mpnv_gcl else
         "bspnv" if bspnv_gcl else

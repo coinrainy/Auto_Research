@@ -532,3 +532,71 @@ Sharpened 结果：
 - sharpened PCNV 在 Texas 上给出强信号，但固定尖锐 assignment 导致 Chameleon/Squirrel 存在 prototype collapse 风险；
 - 不能声称 PCNV 已足以作为顶会/顶刊主方法；
 - 下一步只能实现 entropy-guarded / adaptive prototype calibration；如果 normal-vs-shuffled 与 usage entropy 问题不能同时改善，应放弃 prototype calibration 主线。
+
+## 2026-06-29 追加：Guarded PCNV 复核与降级
+
+已新增 PCNV guarded 参数：
+
+- `--pcnv-min-target-confidence`
+- `--pcnv-confidence-power`
+- `--pcnv-entropy-guard`
+- `--pcnv-min-usage-entropy-frac`
+- `--pcnv-entropy-guard-temperature`
+- `--pcnv-min-view-agreement`
+- `--pcnv-view-agreement-power`
+
+Sharp guarded PCNV：
+
+```bash
+RUNS_DIR="runs/pcnv_guarded_split0_s0_e50"
+EXTRA_ARGS="--pcnv-prototype-weight 0.5 --pcnv-balance-weight 0.1 --pcnv-assignment-temperature 0.1 --pcnv-target-temperature 0.03 --pcnv-min-target-confidence 0.2 --pcnv-confidence-power 1.0 --pcnv-entropy-guard --pcnv-min-usage-entropy-frac 0.5 --pcnv-entropy-guard-temperature 0.1"
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl pcnv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="normal" EXTRA_ARGS="$EXTRA_ARGS" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="pcnv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="shuffled" EXTRA_ARGS="$EXTRA_ARGS --pcnv-shuffle-assignments" OVERWRITE=1 bash scripts/run_split_study.sh
+```
+
+| Dataset | Normal ΔF1Mi/ΔF1Ma | Normal - shuffled ΔF1Mi/ΔF1Ma | Usage entropy | 裁决 |
+| --- | ---: | ---: | ---: | --- |
+| Texas | +0.054054 / +0.125000 | +0.081081 / +0.125427 | 1.259613 | 强正向 |
+| Actor | -0.007895 / +0.001567 | -0.006579 / -0.006120 | 0.707327 | 失败 |
+| Chameleon | +0.024123 / +0.020505 | +0.024123 / +0.024941 | 0.396174 | 性能正，但坍塌严重 |
+| Squirrel | -0.012488 / -0.010562 | +0.007685 / +0.015068 | 0.311565 | baseline 失败 |
+
+Soft guarded PCNV：
+
+```bash
+RUNS_DIR="runs/pcnv_soft_guarded_split0_s0_e50"
+EXTRA_ARGS="--pcnv-prototype-weight 0.2 --pcnv-balance-weight 0.1 --pcnv-assignment-temperature 0.2 --pcnv-target-temperature 0.1 --pcnv-min-target-confidence 0.12 --pcnv-confidence-power 1.0 --pcnv-entropy-guard --pcnv-min-usage-entropy-frac 0.65 --pcnv-entropy-guard-temperature 0.15"
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl pcnv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="normal" EXTRA_ARGS="$EXTRA_ARGS" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="pcnv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="shuffled" EXTRA_ARGS="$EXTRA_ARGS --pcnv-shuffle-assignments" OVERWRITE=1 bash scripts/run_split_study.sh
+```
+
+| Dataset | Normal ΔF1Mi/ΔF1Ma | Normal - shuffled ΔF1Mi/ΔF1Ma | Usage entropy | 裁决 |
+| --- | ---: | ---: | ---: | --- |
+| Texas | +0.000000 / +0.105497 | +0.054054 / +0.176984 | 2.520100 | macro 强正向 |
+| Actor | +0.006579 / +0.011453 | +0.007895 / +0.002728 | 2.200305 | 小幅正向 |
+| Chameleon | +0.004386 / +0.007861 | -0.013158 / -0.012230 | 1.083819 | shuffled 反超 |
+| Squirrel | -0.015370 / -0.023046 | -0.014409 / -0.012190 | 0.947448 | 失败 |
+
+View-agreement gated PCNV：
+
+```bash
+RUNS_DIR="runs/pcnv_view_guarded_split0_s0_e50"
+EXTRA_ARGS="--pcnv-prototype-weight 0.2 --pcnv-balance-weight 0.1 --pcnv-assignment-temperature 0.2 --pcnv-target-temperature 0.1 --pcnv-min-target-confidence 0.12 --pcnv-confidence-power 1.0 --pcnv-min-view-agreement 0.08 --pcnv-view-agreement-power 1.0 --pcnv-entropy-guard --pcnv-min-usage-entropy-frac 0.65 --pcnv-entropy-guard-temperature 0.15"
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl pcnv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="normal" EXTRA_ARGS="$EXTRA_ARGS" OVERWRITE=1 bash scripts/run_split_study.sh
+```
+
+| Dataset | Normal ΔF1Mi/ΔF1Ma | Usage entropy | 裁决 |
+| --- | ---: | ---: | --- |
+| Texas | +0.000000 / +0.007042 | 2.103996 | 弱于 soft/sharp |
+| Actor | -0.002632 / -0.004816 | 1.674498 | 失败 |
+| Chameleon | -0.010965 / -0.008340 | 0.551141 | 失败 |
+| Squirrel | -0.038425 / -0.033737 | 0.721000 | 明显失败 |
+
+裁决：
+
+- PCNV 不再作为 active main idea；
+- soft guarded PCNV 是当前最健康的 prototype 变体，但仍未过 Chameleon shuffled control 与 Squirrel baseline gate；
+- sharp guarded PCNV 的 Texas/Chameleon 正向依赖较低 usage entropy，不适合作为通用机制；
+- view-agreement gate 明确失败，不补 shuffled；
+- 后续不再继续调 PCNV temperature、confidence、entropy 或 view-agreement 参数；
+- 下一代方法必须换机制，优先考虑节点级局部结构条件下的 objective selection，或更直接的 downstream separability proxy。
