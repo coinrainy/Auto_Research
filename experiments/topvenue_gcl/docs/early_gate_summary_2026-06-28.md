@@ -600,3 +600,43 @@ DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl pcnv_gcl" SPLITS=
 - view-agreement gate 明确失败，不补 shuffled；
 - 后续不再继续调 PCNV temperature、confidence、entropy 或 view-agreement 参数；
 - 下一代方法必须换机制，优先考虑节点级局部结构条件下的 objective selection，或更直接的 downstream separability proxy。
+
+## 2026-06-29 追加：LCOS-GCL local-conflict objective selection 与放弃
+
+已实现 `--method lcos_gcl`：Local-Conflict Objective Selection GCL。该方法使用 raw feature local conflict gate，在完整 graph view alignment 与 high-pass view alignment 之间做节点级 objective selection，并让 final representation 使用 `[ego, (1-gate) graph + gate high]`。
+
+已新增参数：
+
+- `--lcos-route-temperature`
+- `--lcos-route-threshold`
+- `--lcos-min-branch-weight`
+- `--lcos-degree-weight`
+- `--lcos-shuffle-gate`
+
+已修复 raw residual 数值问题：从 `||x-Px|| / ||x||` 改为 `||x-Px|| / (||x|| + ||Px||)`，避免 Chameleon 等数据集中零特征/极小范数节点导致 residual 爆炸。
+
+执行：
+
+```bash
+RUNS_DIR="runs/lcos_split0_s0_e50"
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl lcos_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="normal" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="lcos_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="shuffled" EXTRA_ARGS="--lcos-shuffle-gate" OVERWRITE=1 bash scripts/run_split_study.sh
+python summarize_split_study.py --runs-dir "$RUNS_DIR" --baseline-method gcn_mlp_gcl --out "$RUNS_DIR/runs_vs_gcn_mlp.csv" --aggregate-out "$RUNS_DIR/aggregate_vs_gcn_mlp.csv"
+```
+
+结果：
+
+| Dataset | Normal ΔF1Mi | Normal ΔF1Ma | Normal - shuffled ΔF1Mi | Normal - shuffled ΔF1Ma | 裁决 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Texas | -0.054054 | +0.072502 | +0.000000 | +0.056593 | micro 失败 |
+| Actor | +0.009211 | +0.006041 | +0.001974 | +0.001804 | 弱正向 |
+| Chameleon | -0.004386 | -0.006271 | +0.015351 | +0.012920 | baseline 失败 |
+| Squirrel | +0.013449 | +0.006619 | +0.050913 | +0.041619 | 唯一清楚机制线索 |
+
+裁决：
+
+- LCOS 第一版不进入 splits 0-2 扩展；
+- Squirrel 显示局部冲突 gate 有机制线索，但 Texas/Chameleon baseline gate 失败；
+- 直接对齐 high-pass target 的 objective selection 不成立；
+- 后续不再继续调 LCOS threshold、temperature 或 degree weight；
+- 下一代若继承局部冲突线索，应转向 loss reliability、negative suppression 或 downstream separability proxy，而不是 graph/high alignment 切换。

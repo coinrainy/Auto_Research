@@ -185,3 +185,16 @@ PCNV 当前裁决：
 - 当前裁决：PCNV 已降级为 conditional / diagnostic asset，不再作为 active main idea；
 - 后续不再继续调 PCNV 的 temperature、confidence threshold、entropy guard 或 view-agreement gate；
 - 下一代方法必须换机制，优先考虑节点级局部结构条件下的 objective selection 或更直接的 downstream separability 代理。
+
+LCOS 当前裁决：
+
+- `lcos_gcl` 入口为 `--method lcos_gcl`；
+- 它使用 raw feature local conflict gate 在完整 graph view alignment 与 high-pass view alignment 之间做节点级 objective selection；
+- `--lcos-shuffle-gate` 是必须保留的机制 control；
+- 已修复 raw residual 数值问题：使用 `||x - P x|| / (||x|| + ||P x||)`，避免零特征节点导致 residual 爆炸；
+- Texas/Actor/Chameleon/Squirrel × split0 × seed0 × 50 epoch 中，相对 `gcn_mlp_gcl` 的 ΔF1Mi 分别为 -0.054054、+0.009211、-0.004386、+0.013449；
+- normal-vs-shuffled 的 ΔF1Mi 分别为 +0.000000、+0.001974、+0.015351、+0.050913；
+- 当前解释：Squirrel 给出最清楚的局部冲突 gate 机制线索，但 Texas micro 和 Chameleon baseline gate 失败；
+- LCOS 第一版已降级为失败/条件性诊断资产，不进入 splits 0-2 扩展；
+- 后续不再继续调 LCOS route threshold、temperature 或 degree weight；
+- 若继承 LCOS 线索，必须改变目标设计：局部冲突 gate 应用于 loss reliability、negative suppression 或 downstream separability proxy，而不是直接对齐 high-pass target。

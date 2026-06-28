@@ -75,6 +75,11 @@ pcnv_entropy_guard: false
 pcnv_min_usage_entropy_frac: 0.5
 pcnv_entropy_guard_temperature: 0.1
 pcnv_shuffle_assignments: false
+lcos_route_temperature: 1.0
+lcos_route_threshold: 0.0
+lcos_min_branch_weight: 0.05
+lcos_degree_weight: 0.25
+lcos_shuffle_gate: false
 variance_loss_weight: 1.0
 covariance_loss_weight: 0.01
 eval_mode: auto

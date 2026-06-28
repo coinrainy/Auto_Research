@@ -57,6 +57,7 @@ def parse_args():
                             "aompnv_gcl",
                             "srgnv_gcl",
                             "pcnv_gcl",
+                            "lcos_gcl",
                             "energy_spgcl",
                             "gcn_mlp_gcl",
                             "er_residual_gcl",
@@ -129,6 +130,11 @@ def parse_args():
     parser.add_argument("--pcnv-min-usage-entropy-frac", type=float, default=None)
     parser.add_argument("--pcnv-entropy-guard-temperature", type=float, default=None)
     parser.add_argument("--pcnv-shuffle-assignments", action="store_true")
+    parser.add_argument("--lcos-route-temperature", type=float, default=None)
+    parser.add_argument("--lcos-route-threshold", type=float, default=None)
+    parser.add_argument("--lcos-min-branch-weight", type=float, default=None)
+    parser.add_argument("--lcos-degree-weight", type=float, default=None)
+    parser.add_argument("--lcos-shuffle-gate", action="store_true")
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -267,6 +273,16 @@ def override_config(config, args):
         merged["pcnv_entropy_guard_temperature"] = args.pcnv_entropy_guard_temperature
     if args.pcnv_shuffle_assignments:
         merged["pcnv_shuffle_assignments"] = True
+    if args.lcos_route_temperature is not None:
+        merged["lcos_route_temperature"] = args.lcos_route_temperature
+    if args.lcos_route_threshold is not None:
+        merged["lcos_route_threshold"] = args.lcos_route_threshold
+    if args.lcos_min_branch_weight is not None:
+        merged["lcos_min_branch_weight"] = args.lcos_min_branch_weight
+    if args.lcos_degree_weight is not None:
+        merged["lcos_degree_weight"] = args.lcos_degree_weight
+    if args.lcos_shuffle_gate:
+        merged["lcos_shuffle_gate"] = True
     return merged
 
 
@@ -563,6 +579,56 @@ def _pcnv_control_name(config):
     if bool(config.get("pcnv_shuffle_assignments", False)):
         name += "_shuffled"
     return name
+
+
+@torch.no_grad()
+def _lcos_conflict_gate(data, config):
+    raw = data.x.detach().float()
+    raw_low = row_normalized_propagate(raw, data.edge_index, add_self=True).float()
+    raw_agreement = (
+        F.normalize(raw, dim=1)
+        * F.normalize(raw_low, dim=1)
+    ).sum(dim=1)
+    raw_residual = (raw - raw_low).norm(dim=1) / (
+        raw.norm(dim=1) + raw_low.norm(dim=1)
+    ).clamp_min(1e-12)
+
+    degree = torch.zeros(data.num_nodes, device=data.edge_index.device, dtype=torch.float32)
+    ones = torch.ones(data.edge_index.size(1), device=data.edge_index.device)
+    degree.scatter_add_(0, data.edge_index[0], ones)
+    degree.scatter_add_(0, data.edge_index[1], ones)
+    log_degree = torch.log1p(degree)
+
+    score = (
+        _standardize(raw_residual)
+        - _standardize(raw_agreement)
+        + float(config["lcos_degree_weight"]) * _standardize(log_degree)
+    )
+    temperature = max(float(config["lcos_route_temperature"]), 1e-12)
+    gate = torch.sigmoid((score - float(config["lcos_route_threshold"])) / temperature)
+    min_weight = float(config["lcos_min_branch_weight"])
+    gate = gate * (1.0 - 2.0 * min_weight) + min_weight
+    gate = gate.clamp(min_weight, 1.0 - min_weight)
+    if bool(config.get("lcos_shuffle_gate", False)):
+        gate = gate[torch.randperm(gate.size(0), device=gate.device)]
+    return gate, score, raw_agreement, raw_residual
+
+
+def _lcos_structural_mix(parts, high_gate):
+    low_weight = 1.0 - high_gate
+    graph = F.normalize(parts["graph"], dim=1)
+    high = F.normalize(parts["high"], dim=1)
+    return (
+        low_weight.view(-1, 1) * graph
+        + high_gate.view(-1, 1) * high
+    )
+
+
+def _lcos_final(model, parts, structural_mix):
+    return model.final_norm(torch.cat([
+        F.normalize(parts["ego"], dim=1),
+        F.normalize(structural_mix, dim=1),
+    ], dim=1))
 
 
 @torch.no_grad()
@@ -865,6 +931,7 @@ def train_er_cache_gcl(model, data, config, args):
     mpnv_gcl = args.method == "mpnv_gcl"
     aompnv_gcl = args.method == "aompnv_gcl"
     srgnv_gcl = args.method == "srgnv_gcl"
+    lcos_gcl = args.method == "lcos_gcl"
     residual_only = args.method in {
         "er_residual_gcl",
         "gcn_mlp_gcl",
@@ -878,6 +945,7 @@ def train_er_cache_gcl(model, data, config, args):
         "aompnv_gcl",
         "srgnv_gcl",
         "pcnv_gcl",
+        "lcos_gcl",
     }
     graph_target = args.method in {
         "gcn_mlp_gcl",
@@ -891,6 +959,7 @@ def train_er_cache_gcl(model, data, config, args):
         "aompnv_gcl",
         "srgnv_gcl",
         "pcnv_gcl",
+        "lcos_gcl",
     }
     topk = 0 if (args.disable_cache or residual_only) else int(config["cache_topk"])
     cache_update = max(1, int(config["cache_update_interval"]))
@@ -941,6 +1010,12 @@ def train_er_cache_gcl(model, data, config, args):
         model.train()
         parts = model(data.x, data.edge_index, final_mode=config["final_repr"])
         target = parts["graph"] if graph_target else parts["high"]
+        lcos_gate = None
+        lcos_mix = None
+        if lcos_gcl:
+            lcos_gate, _, _, _ = _lcos_conflict_gate(data, config)
+            lcos_mix = _lcos_structural_mix(parts, lcos_gate)
+            parts["final"] = _lcos_final(model, parts, lcos_mix)
         with torch.no_grad():
             if cache_idx is None or epoch == 1 or epoch % cache_update == 0:
                 if args.disable_cache or residual_only:
@@ -1074,6 +1149,22 @@ def train_er_cache_gcl(model, data, config, args):
                 + float(config["pcnv_prototype_weight"]) * loss_proto
                 + float(config["pcnv_balance_weight"]) * loss_balance
             )
+            loss_cache = parts["final"].new_tensor(0.0)
+        elif lcos_gcl:
+            high_pred = model.pred_high(parts["high"])
+            graph_nodes = 0.5 * (
+                negative_cosine_per_node(pred_ego, parts["graph"])
+                + negative_cosine_per_node(pred_high, parts["ego"])
+            )
+            high_nodes = 0.5 * (
+                negative_cosine_per_node(pred_ego, parts["high"])
+                + negative_cosine_per_node(high_pred, parts["ego"])
+            )
+            loss_nodes = (
+                (1.0 - lcos_gate) * graph_nodes
+                + lcos_gate * high_nodes
+            )
+            loss_self = loss_nodes.mean()
             loss_cache = parts["final"].new_tensor(0.0)
         elif aompnv_gcl:
             semantic_mask, spatial_mask = aompnv_masks
@@ -1209,6 +1300,10 @@ def train_er_cache_gcl(model, data, config, args):
     model.eval()
     with torch.no_grad():
         parts = model(data.x, data.edge_index, final_mode=config["final_repr"])
+        if lcos_gcl:
+            lcos_gate, _, _, _ = _lcos_conflict_gate(data, config)
+            lcos_mix = _lcos_structural_mix(parts, lcos_gate)
+            parts["final"] = _lcos_final(model, parts, lcos_mix)
         final = parts["final"].detach()
         confidence_result = _cache_confidence(cache_keys, cache_idx, config)
         cache_weight = None if confidence_result is None else confidence_result[1]
@@ -1361,6 +1456,15 @@ def train_er_cache_gcl(model, data, config, args):
             diagnostics["pcnv_entropy_guard"] = bool(config.get("pcnv_entropy_guard", False))
             diagnostics["pcnv_shuffle_assignments"] = bool(config.get("pcnv_shuffle_assignments", False))
             diagnostics["pcnv_prototype_cosine_offdiag_mean"] = float(off_diag.mean().item())
+        if lcos_gcl:
+            gate, score, raw_agreement, raw_residual = _lcos_conflict_gate(data, config)
+            diagnostics["lcos_high_gate_mean"] = float(gate.mean().item())
+            diagnostics["lcos_high_gate_std"] = float(gate.std(unbiased=False).item())
+            diagnostics["lcos_score_mean"] = float(score.mean().item())
+            diagnostics["lcos_score_std"] = float(score.std(unbiased=False).item())
+            diagnostics["lcos_raw_agreement_mean"] = float(raw_agreement.mean().item())
+            diagnostics["lcos_raw_residual_mean"] = float(raw_residual.mean().item())
+            diagnostics["lcos_shuffle_gate"] = bool(config.get("lcos_shuffle_gate", False))
         if mpnv_gcl:
             semantic_mask, spatial_mask = mpnv_masks
             diagnostics["mpnv_semantic_pos_mean"] = float(semantic_mask.float().sum(dim=1).mean().item())
@@ -1373,6 +1477,7 @@ def train_er_cache_gcl(model, data, config, args):
         "fdnv" if fdnv_gcl else
         ("srgnv_shuffled" if bool(config.get("srgnv_shuffle_residual", False)) else "srgnv") if srgnv_gcl else
         _pcnv_control_name(config) if pcnv_gcl else
+        ("lcos_shuffled" if bool(config.get("lcos_shuffle_gate", False)) else "lcos") if lcos_gcl else
         ("aompnv_shuffled" if bool(config.get("aompnv_shuffle_positives", False)) else "aompnv") if aompnv_gcl else
         ("mpnv_shuffled" if bool(config.get("mpnv_shuffle_positives", False)) else "mpnv") if mpnv_gcl else
         "bspnv" if bspnv_gcl else
@@ -1415,7 +1520,7 @@ def main():
     config = override_config(load_yaml(args.config), args)
     if args.method == "gcn_mlp_gcl" and args.final_repr is None:
         config["final_repr"] = "ego_graph"
-    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl", "srgnv_gcl", "pcnv_gcl"} and args.final_repr is None:
+    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl", "srgnv_gcl", "pcnv_gcl", "lcos_gcl"} and args.final_repr is None:
         config["final_repr"] = "ego_graph"
     if args.method == "energy_spgcl" and args.final_repr is None:
         config["final_repr"] = "ego_high"

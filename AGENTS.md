@@ -1110,3 +1110,18 @@
   - 后续不再继续调 PCNV temperature、confidence、entropy guard 或 view-agreement 参数；下一代 idea 必须换机制，优先考虑节点级局部结构条件下的 objective selection 或更直接的 downstream separability proxy。
   - 已更新文档：`experiments/topvenue_gcl/docs/prototype_calibrated_natural_view_candidate.md`、`experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/pcnv_soft_guarded_split0_s0_e50/runs_vs_gcn_mlp.csv` 查看最健康 PCNV 变体的逐数据集边界；随后应设计新机制，而不是继续扩大 PCNV。
+- 2026-06-29 LCOS-GCL local-conflict objective selection 实现、split0 early gate 与放弃：
+  - 已实现 `experiments/topvenue_gcl/train.py --method lcos_gcl`，暂名 Local-Conflict Objective Selection GCL。
+  - 方法使用 raw feature local conflict gate，在完整 graph view alignment 与 high-pass view alignment 之间做节点级 objective selection，并让 final representation 使用 `[ego, (1-gate) graph + gate high]`。
+  - 新增 `--lcos-shuffle-gate` 作为机制 control；新增配置/CLI：`lcos_route_temperature`、`lcos_route_threshold`、`lcos_min_branch_weight`、`lcos_degree_weight`、`lcos_shuffle_gate`。
+  - 新增诊断字段：`lcos_high_gate_mean`、`lcos_high_gate_std`、`lcos_score_mean`、`lcos_score_std`、`lcos_raw_agreement_mean`、`lcos_raw_residual_mean`、`lcos_shuffle_gate`。
+  - 已修复 raw residual 数值问题：从 `||x-Px|| / ||x||` 改为 `||x-Px|| / (||x|| + ||Px||)`，避免 Chameleon 等数据集中的零特征节点导致 residual 爆炸。
+  - 已完成 smoke：`python -m py_compile train.py summarize_split_study.py src/*.py`、Texas normal/shuffled 2 epoch、Chameleon 2 epoch。
+  - 已执行 split0 early gate：Texas/Actor/Chameleon/Squirrel × split0 × seed0 × 50 epoch 的 `gcn_mlp_gcl`、LCOS normal 与 LCOS shuffled，输出目录 `experiments/topvenue_gcl/runs/lcos_split0_s0_e50/`。
+  - LCOS normal vs `gcn_mlp_gcl`：Texas -0.054054/+0.072502，Actor +0.009211/+0.006041，Chameleon -0.004386/-0.006271，Squirrel +0.013449/+0.006619。
+  - LCOS normal-vs-shuffled：Texas +0.000000/+0.056593，Actor +0.001974/+0.001804，Chameleon +0.015351/+0.012920，Squirrel +0.050913/+0.041619。
+  - 裁决：LCOS 第一版不进入 splits 0-2 扩展；Squirrel 给出最清楚的局部冲突 gate 机制线索，但 Texas micro 与 Chameleon baseline gate 失败。
+  - 当前保留价值：作为 negative/conditional diagnostic asset，说明局部冲突 gate 可能有用，但直接切换 graph/high-pass alignment 的目标设计不成立。
+  - 后续不再继续调 LCOS route threshold、temperature 或 degree weight；下一代若继承局部冲突线索，应转向 loss reliability、negative suppression 或 downstream separability proxy。
+  - 已新增文档：`experiments/topvenue_gcl/docs/local_conflict_objective_selection_candidate.md`，并更新 `experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/lcos_split0_s0_e50/runs_vs_gcn_mlp.csv` 查看 LCOS 逐数据集边界；随后应设计 downstream separability proxy 或 loss reliability 新候选，而不是继续调 LCOS。
