@@ -263,6 +263,7 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - Cora seed1/2 的 representation selection 6 次随机划分均选择 saved/graph-context，F1Mi/F1Ma 为 0.815883/0.797750；说明验证集选择可以稳定避开 anchor，但不是最终无标签机制。
 - PubMed 全量 InfoNCE 会在 12GB GPU 上 OOM，当前需使用 `--batch-size 4096`；后续所有 PubMed raw-complement/GRACE 公平对照都应固定 batch 协议。
 - `raw_complement_weight` 小消融显示：`0.01` 在 Cora seed0 更差（0.7931/0.7565），`0.1` 能轻微缓解 Cora（0.8050/0.7725）且 Actor split0 不伤（0.3730/0.3379），但 Texas split0 明显低于默认（0.7838/0.5979 vs 0.8108/0.6200）。因此停止朴素全局权重搜索。
+- `--no-raw-complement-detach-anchor` 消融显示：Cora seed0 graph 仅 0.8020/0.7651，Texas split0 anchor 降到 0.7838/0.6147；detach/no-detach 不是核心修复方向。
 - 下一步优先实现 validation-based 或 unsupervised-reliable representation selection，决定何时输出 raw+complement、何时退回 graph context；如果不能修复 Cora，则该方法应定位为 heterophily-focused。
 - 完整 C 网格 split0-2：`ego_grace` concat - raw 在 Actor/Cornell/Texas 为正、Wisconsin 为负；`residual_grace` 仅 Actor 稳定正向，Cornell/Texas/Wisconsin 为负。
 - 固定 C=1 的 10 split 快速筛查：ego/residual concat - raw 在 Actor/Cornell/Texas/Wisconsin 均为正，但该证据只能说明存在互补信号，不足以支撑 SOTA claim。

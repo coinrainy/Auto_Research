@@ -598,3 +598,30 @@ python train.py --dataset Texas --method raw_complement_gcl --raw-complement-eva
 - 停止继续做朴素 `raw_complement_weight` 网格搜索。
 
 下一步必须转为结构性改法：安全输出 gate、graph-context preservation regularizer、或 dataset/region-adaptive complement usage，而不是继续调一个全局 loss 权重。
+
+## 2026-06-28 no-detach residual decomposition 消融
+
+目标：检查 `complement = graph_context - raw_anchor` 中的 `raw_anchor.detach()` 是否导致 graph-context 学习被扰动。如果 no-detach 能改善 Cora 且不伤 Texas，则可把 anchor/complement 的梯度耦合视为修复方向。
+
+新增命令：
+
+```bash
+python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode graph --raw-complement-weight 0.05 --no-raw-complement-detach-anchor --seed 0 --epochs 100 --save-dir /tmp/raw_complement_cora_graph_nodetach_seed0 --overwrite --log-every 100
+python train.py --dataset Texas --method raw_complement_gcl --raw-complement-eval-mode anchor --raw-complement-weight 0.05 --no-raw-complement-detach-anchor --seed 0 --split-index 0 --epochs 100 --save-dir /tmp/raw_complement_texas_nodetach_seed0_split0 --overwrite --log-every 100
+```
+
+结果：
+
+| Setting | Dataset/split | F1Mi/F1Ma | 对照 |
+| --- | --- | ---: | --- |
+| no-detach, graph | Cora seed0 | 0.8020 / 0.7651 | micro 略高于 default 0.7997，macro 基本不变，仍低于 GRACE 0.8224 / 0.8015 |
+| no-detach, anchor | Texas split0 | 0.7838 / 0.6147 | 低于 default 0.8108 / 0.6200 |
+
+判断：
+
+- no-detach 不能实质修复 Cora graph fallback；
+- no-detach 会损伤 Texas split0 micro；
+- `raw_anchor.detach()` 不是当前 safety 问题的主因；
+- 停止沿 detach/no-detach 小改继续推进。
+
+下一步应进入真正的结构设计：例如基于无标签图级/节点级信号的 output safety gate，或在训练中显式加入 graph-context preservation，使 homophily 图保持 GRACE-like graph 表示，而 heterophily/Actor 场景启用 raw+complement。
