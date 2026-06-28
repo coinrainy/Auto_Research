@@ -527,3 +527,43 @@ raw-complement 的 homophily safety 风险从“全面失败”收缩为“Cora 
 - 对 heterophily/Actor 类场景，保留 raw+complement 的增量；
 - 对 Cora 类同配小图，自动退回 graph-context 或更接近 GRACE 的表示；
 - 对 PubMed 必须固定使用 batched InfoNCE，保证单卡 12GB 可复现。
+
+## 2026-06-28 Cora graph fallback 多 seed 复核
+
+新增命令：
+
+```bash
+python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode graph --seed 1 --epochs 100 --save-dir /tmp/raw_complement_cora_graph_seed1 --overwrite --log-every 100
+python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode graph --seed 2 --epochs 100 --save-dir /tmp/raw_complement_cora_graph_seed2 --overwrite --log-every 100
+python train.py --dataset Cora --method grace --seed 1 --epochs 100 --save-dir /tmp/grace_cora_seed1 --overwrite --log-every 100
+python train.py --dataset Cora --method grace --seed 2 --epochs 100 --save-dir /tmp/grace_cora_seed2 --overwrite --log-every 100
+```
+
+### 同 seed 对照
+
+| Seed | GRACE F1Mi/F1Ma | raw-complement graph F1Mi/F1Ma | Delta F1Mi/F1Ma |
+| ---: | ---: | ---: | ---: |
+| 0 | 0.822395 / 0.801539 | 0.799699 / 0.765548 | -0.022696 / -0.035991 |
+| 1 | 0.806125 / 0.792402 | 0.809270 / 0.792088 | +0.003145 / -0.000314 |
+| 2 | 0.822259 / 0.803730 | 0.819114 / 0.797644 | -0.003145 / -0.006087 |
+| mean | 0.816926 / 0.799223 | 0.809361 / 0.785093 | -0.007565 / -0.014130 |
+
+判断更新：Cora graph fallback 不是稳定灾难，但仍平均低于 GRACE，尤其 macro 更明显。seed0 的退化偏大，seed1/2 接近 GRACE，说明当前问题可能来自训练随机性和 raw-complement regularizer 对图上下文的扰动，而不是 graph fallback 表示本身完全错误。
+
+### Cora representation selection seeds1-2
+
+命令：
+
+```bash
+python select_representation.py --run-dir /tmp/raw_complement_cora_graph_seed1/Cora_raw_complement_gcl_seed1 --run-dir /tmp/raw_complement_cora_graph_seed2/Cora_raw_complement_gcl_seed2 --selection-eval-mode random --random-repeats 3 --candidate-names raw saved anchor graph --c-min-power -8 --c-max-power 8 --max-iter 3000 --out runs/summaries/raw_complement_representation_selection_cora_random_seeds1-2_fullc.csv --aggregate-out runs/summaries/raw_complement_representation_selection_cora_random_seeds1-2_fullc_aggregate.csv
+```
+
+结果：6 次随机划分全部选择 `saved`/graph-context，F1Mi/F1Ma 为 `0.815883/0.797750`。这支持 validation-based selection 能稳定避开 `anchor`，但它仍不是无标签方法，也不足以作为最终方法机制。
+
+### 设计取舍
+
+当前不应放弃 raw-complement 主线，但必须停止把 `anchor` mode 作为默认最终输出。更合理的下一步是实现一个 self-supervised safety gate 或训练期 graph-context preservation：
+
+- `graph` 输出作为 homophily-safe fallback；
+- `anchor` / raw+complement 输出只在互补信号明确时启用；
+- Cora 的目标不是大幅超 GRACE，而是把平均退化压到 0.5 个百分点以内，同时保持 Actor/WebKB 异配收益。

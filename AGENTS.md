@@ -594,3 +594,10 @@
   - PubMed 对照 GRACE 为 0.844247/0.840378，因此 graph fallback 小幅退化 -0.004734/-0.004725；可接受性仍需多 seed 验证，但不再是 anchor mode 那种灾难性退化。
   - 当前判断：homophily risk 从“全面失败”收缩为“Cora 明显失败，CiteSeer/PubMed 基本可控”；下一步应优先攻 Cora 类小图安全输出策略，而不是继续跑更多 WebKB raw-dominated 结果。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode graph --seed 1 --epochs 100 --save-dir /tmp/raw_complement_cora_graph_seed1 --overwrite --log-every 100`。
+- 2026-06-28 Cora graph fallback 多 seed 复核：
+  - 已补跑 Cora raw-complement graph fallback seed1/seed2：seed1 F1Mi/F1Ma=0.809270/0.792088，seed2=0.819114/0.797644。
+  - 已补跑 Cora GRACE seed1/seed2 同 seed 对照：seed1=0.806125/0.792402，seed2=0.822259/0.803730；结合 seed0 后，GRACE mean=0.816926/0.799223，raw-complement graph mean=0.809361/0.785093，delta mean=-0.007565/-0.014130。
+  - 结论：Cora graph fallback 不是稳定灾难，但平均仍低于 GRACE，尤其 macro 退化更明显；当前问题更像训练随机性/regularizer 扰动导致的安全性不足，而不是 graph-context fallback 完全无效。
+  - 已执行 Cora seed1/2 表示选择诊断：`python select_representation.py --run-dir /tmp/raw_complement_cora_graph_seed1/Cora_raw_complement_gcl_seed1 --run-dir /tmp/raw_complement_cora_graph_seed2/Cora_raw_complement_gcl_seed2 --selection-eval-mode random --random-repeats 3 --candidate-names raw saved anchor graph --c-min-power -8 --c-max-power 8 --max-iter 3000 --out runs/summaries/raw_complement_representation_selection_cora_random_seeds1-2_fullc.csv --aggregate-out runs/summaries/raw_complement_representation_selection_cora_random_seeds1-2_fullc_aggregate.csv`，6/6 次选择 saved/graph-context，F1Mi/F1Ma=0.815883/0.797750。
+  - 当前研究判断：不应放弃 raw-complement 主线，但必须停止把 anchor mode 作为默认最终输出；下一步应实现 self-supervised safety gate 或 graph-context preservation，将 Cora 平均退化压到 0.5 个百分点以内，同时保留 Actor/WebKB 异配收益。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode graph --raw-complement-weight 0.01 --seed 0 --epochs 100 --save-dir /tmp/raw_complement_cora_graph_w001_seed0 --overwrite --log-every 100`。
