@@ -31,6 +31,10 @@ fdnv_route_weight: 0.5
 fdnv_bootstrap_weight: 1.0
 fdnv_filter_temperature: 1.0
 fdnv_min_filter_weight: 0.05
+sspnv_semantic_weight: 0.1
+sspnv_spatial_weight: 0.1
+sspnv_bootstrap_weight: 1.0
+sspnv_semantic_topk: 5
 variance_loss_weight: 1.0
 covariance_loss_weight: 0.01
 eval_mode: auto

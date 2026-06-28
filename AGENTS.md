@@ -975,3 +975,14 @@
   - 保守 `fdnv_route_weight=0.1` split0 vs GCN-MLP：Texas 0.000000/+0.045083，Actor +0.001316/+0.010971，Chameleon -0.008772/-0.011839，Squirrel +0.003842/+0.006560；仍因 Chameleon 失败，不进入 splits 0/1/2。
   - 当前裁决：FDNV 第一版有局部信号，但不作为 active main idea；下一步应重构 filter objective，而不是继续调 route weight。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && rg -n "pos_mask|dense_adj|infonce|semantic|structure" ../../third_party_baselines/reference_gcl/S3GCL ../../third_party_baselines/reference_gcl/GraphECL -g '*.py'`，转向 semantic/spatial positive split 的实现。
+- 2026-06-28 SSPNV-GCL 实现与 10 split early gate：
+  - 已实现当前 active candidate：Semantic-Spatial Positive Natural-View GCL，入口为 `experiments/topvenue_gcl/train.py --method sspnv_gcl`。
+  - 方法在 GCN-MLP Natural-View foundation 上，将 raw propagation signature KNN semantic positives 监督 high-pass target，将一跳 spatial positives 监督 low-pass target，并保留 Natural-View bootstrap。
+  - 新增配置：`sspnv_semantic_weight=0.1`、`sspnv_spatial_weight=0.1`、`sspnv_bootstrap_weight=1.0`、`sspnv_semantic_topk=5`。
+  - 已完成 2 epoch smoke：Texas 与 Squirrel 的 `sspnv_gcl` 均可训练，并输出 `sspnv_semantic_sim_mean/std` 与 `sspnv_spatial_self_fraction` 诊断。
+  - 已执行 10 split early gate：`DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl sspnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/split_study_sspnv_s0_splits0-2_e50" bash scripts/run_split_study.sh`。
+  - SSPNV vs GCN-MLP aggregate：Texas ΔF1Mi/ΔF1Ma=+0.032432/+0.069760，Actor +0.000658/+0.004324，Chameleon +0.031140/+0.032431，Squirrel +0.011720/+0.009843。
+  - split 稳定性：Chameleon 10/10 micro 正向，Squirrel 9/10 micro 正向，Texas 6/2 正/负且 2 个 split 持平，Actor 6/4 正/负。
+  - 当前裁决：SSPNV 升级为 active candidate，但还不是 SOTA 结论；Actor 是边界数据集，下一步必须做 semantic-only、spatial-only、random semantic/spatial positive control、homophily safety 与强基线同协议对齐。
+  - 已新增文档：`experiments/topvenue_gcl/docs/semantic_spatial_positive_natural_view_candidate.md`；并更新 `early_gate_summary_2026-06-28.md`、`implementation_principles.md` 与 `README.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Texas Chameleon Squirrel Actor" METHODS="gcn_mlp_gcl sspnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/split_study_sspnv_s1-2_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh`，随后实现 semantic-only/spatial-only/random-positive controls。

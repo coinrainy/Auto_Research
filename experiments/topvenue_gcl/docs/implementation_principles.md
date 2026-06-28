@@ -82,3 +82,12 @@ FDNV 第一版裁决：
 - FDNV 第一版不进入 splits 0/1/2，不作为 active main idea；
 - 后续若继续 filter 方向，必须改 objective，而不是继续调 route weight；
 - 下一步优先考虑 semantic/spatial positive split 或 high/low branch complementarity。
+
+SSPNV 当前裁决：
+
+- `sspnv_gcl` 是当前 active candidate，入口为 `--method sspnv_gcl`；
+- 方法使用 semantic positives 监督 high-pass target，spatial positives 监督 low-pass target，并保留 GCN-MLP Natural-View bootstrap；
+- 10 split / seed0 / 50 epoch 下相对 `gcn_mlp_gcl` 在 Texas、Actor、Chameleon、Squirrel 的 mean micro/macro 均为正；
+- Chameleon 10/10 split micro 正向，Squirrel 9/10 split micro 正向，是当前最强实验信号；
+- Actor 仅弱正且 4/10 split 为负，必须作为边界而非主成功证据；
+- 下一步必须做 component ablation 与 random-positive control，不能直接包装成 SOTA。

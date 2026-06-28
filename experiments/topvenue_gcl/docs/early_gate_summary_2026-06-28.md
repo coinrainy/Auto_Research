@@ -196,3 +196,46 @@ split0 early gate：
 | FDNV `route=0.1` | 0.000000/+0.045083 | +0.001316/+0.010971 | -0.008772/-0.011839 | +0.003842/+0.006560 | Chameleon 失败 |
 
 裁决：FDNV 第一版有局部信号，但不作为 active main idea，不进入 splits 0/1/2。下一步应重构 filter objective，而不是继续调 route weight。
+
+## 2026-06-28 追加：SSPNV-GCL 10 split early gate
+
+已实现 `--method sspnv_gcl`，将 semantic positives 与 spatial positives 分别路由到 high-pass / low-pass target，并保留 GCN-MLP Natural-View bootstrap。
+
+执行：
+
+```bash
+DATASETS="Texas Actor Chameleon Squirrel" \
+METHODS="gcn_mlp_gcl sspnv_gcl" \
+SPLITS="0 1 2 3 4 5 6 7 8 9" \
+SEEDS="0" \
+EPOCHS=50 \
+RUNS_DIR="runs/split_study_sspnv_s0_splits0-2_e50" \
+bash scripts/run_split_study.sh
+```
+
+并以 `gcn_mlp_gcl` 为 baseline 汇总：
+
+```bash
+python summarize_split_study.py \
+  --runs-dir runs/split_study_sspnv_s0_splits0-2_e50 \
+  --baseline-method gcn_mlp_gcl \
+  --out runs/split_study_sspnv_s0_splits0-2_e50/runs_vs_gcn_mlp.csv \
+  --aggregate-out runs/split_study_sspnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv
+```
+
+Aggregate：
+
+| Dataset | SSPNV F1Mi mean | SSPNV F1Ma mean | ΔF1Mi vs GCN-MLP | ΔF1Ma vs GCN-MLP | Positive/Negative F1Mi | 裁决 |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| Texas | 0.678378 | 0.420249 | +0.032432 | +0.069760 | 6/2 | 均值强正，macro 明显；仍有负 split |
+| Actor | 0.346250 | 0.313962 | +0.000658 | +0.004324 | 6/4 | 弱正且不稳定 |
+| Chameleon | 0.439912 | 0.431672 | +0.031140 | +0.032431 | 10/0 | 当前最强信号 |
+| Squirrel | 0.321422 | 0.306920 | +0.011720 | +0.009843 | 9/1 | 稳定正向但 macro 有波动 |
+
+裁决更新：
+
+- SSPNV-GCL 升级为当前 active candidate；
+- 这不是最终 SOTA 结论，只说明该 idea 通过了比 DANV/FDNV 更硬的 early gate；
+- Actor 只能作为边界数据集，不能作为主要成功叙事；
+- 下一步不再扩展复杂模块，优先做 semantic-only、spatial-only、random semantic/spatial positive、homophily safety 与强基线同协议对齐；
+- 若 random positive 或单分支消融接近完整方法，应立即收缩或放弃 SSPNV 主张。

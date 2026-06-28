@@ -34,6 +34,8 @@ def read_run_json(path):
         "best_c": metrics.get("best_c"),
         "energy_ratio_mean": diagnostics.get("energy_ratio_mean"),
         "cache_low_sim_mean": diagnostics.get("cache_low_sim_mean"),
+        "sspnv_semantic_sim_mean": diagnostics.get("sspnv_semantic_sim_mean"),
+        "sspnv_spatial_self_fraction": diagnostics.get("sspnv_spatial_self_fraction"),
     }
 
 
@@ -140,4 +142,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

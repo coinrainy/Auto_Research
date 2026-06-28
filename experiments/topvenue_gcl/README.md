@@ -2,18 +2,18 @@
 
 本目录用于从头实现新的图对比学习候选方法，避免继续依赖 patch 第三方官方代码或旧 `grace_idea/` 中累积的失败原型。
 
-当前 active foundation：**GCN-MLP Natural View GCL**。它在 Texas/Actor/Chameleon/Squirrel 的轻量 split sanity 中稳定超过 GRACE，但本身不够创新；后续 candidate 必须在它之上给出新机制和增益。`ER-Cache`、`ER-Residual`、`Energy-SPGCL` 均已降级为失败/条件性消融。
+当前 active foundation：**GCN-MLP Natural View GCL**。它在 Texas/Actor/Chameleon/Squirrel 的轻量 split sanity 中稳定超过 GRACE，但本身不够创新；后续 candidate 必须在它之上给出新机制和增益。`ER-Cache`、`ER-Residual`、`Energy-SPGCL`、`DANV` 与 `FDNV` 均已降级为失败/条件性消融。
 
-当前裁决：**Disagreement-Aware Natural-View GCL (DANV-GCL)** 家族已降级为失败/条件性消融。`gcn_mlp_gcl` 仍是 strong foundation；下一代 active idea 需要换机制，而不是继续调 DANV penalty。
+当前 active candidate：**Semantic-Spatial Positive Natural-View GCL (SSPNV-GCL)**，入口为 `--method sspnv_gcl`。它将 semantic positives 路由到 high-pass target，将 one-hop spatial positives 路由到 low-pass target，并保留 GCN-MLP Natural-View bootstrap。
 
-当前新候选：**Filter-Decoupled Natural-View GCL (FDNV-GCL)**，入口为 `--method fdnv_gcl`。它在 Natural-View foundation 上显式学习 low-pass / high-pass filtered targets，先以 split0 early gate 判断是否保留。
+10 split / seed0 / 50 epoch 的 early gate 显示 SSPNV 相对 `gcn_mlp_gcl` 在 Texas、Actor、Chameleon、Squirrel 的 mean micro/macro 均为正；其中 Chameleon 为 10/10 split micro 正向，Squirrel 为 9/10。Actor 仅弱正且不稳定，因此暂时只作为边界数据集。
 
 核心假设：
 
 - MLP/ego 分支与 GCN/graph 分支是异配图上更自然的双视图；
 - 不是所有节点都应该强制对齐 ego view 与 graph view；
-- DANV 使用 label-free gate 判断何时对齐、何时保留分歧；
-- high-energy residual 与 low-pass positive cache 已在 early gate 中降级为失败/条件性消融，不作为当前主线。
+- high-energy residual、low-pass positive cache、DANV penalty 与 FDNV routed filter target 均已在 early gate 中降级为失败/条件性消融，不作为当前主线；
+- SSPNV 的核心待证机制是 filter-specific positive construction，而不是简单增加正则项。
 
 最小 smoke：
 
@@ -41,6 +41,7 @@ python train.py --dataset Texas --method danv_gcl --epochs 5 --split-index 0 --s
 python train.py --dataset Texas --method danv_gcl --epochs 5 --split-index 0 --seed 0 --danv-disagreement-weight 0.0
 python train.py --dataset Texas --method danv_degree_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method fdnv_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method sspnv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method energy_spgcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_residual_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_cache_gcl --epochs 5 --split-index 0 --seed 0
