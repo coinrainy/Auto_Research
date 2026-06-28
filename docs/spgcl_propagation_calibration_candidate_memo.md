@@ -398,6 +398,76 @@ python summarize_sparc_selectors.py \
 
 当前正式 cross-seed selector 表以 `summarize_sparc_selectors.py` 输出为准；后续新增 seed 时应先生成各 seed C-grid aggregate，再用该脚本合并，避免重复训练探针。
 
+## Official seed0 最小复核
+
+为检查 `ssl_resid1` 路线是否只是 seed42/seed7 的偶然现象，已补跑 official SP-GCL seed0 embedding：
+
+```bash
+cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
+DATASETS="Chameleon Squirrel" \
+OUT_DIR="runs/spgcl_official_embeddings_seed0_e100" \
+RESET_EPOCHS=100 \
+LINEAR_EPOCHS=10 \
+RESET_HIDDEN=256 \
+RESET_SEED_NUM=32 \
+RESET_MAX_SIZE=512 \
+RESET_SUBG_NUM_HOPS=2 \
+SEED=0 \
+bash scripts/run_spgcl_embedding_export.sh
+```
+
+随后只评估最小硬门槛 `ssl` vs `ssl_resid1`：
+
+```bash
+python evaluate_propagation_calibration.py \
+  --runs-dir runs/spgcl_official_embeddings_seed0_e100/artifacts \
+  --include-methods spgcl_official \
+  --modes ssl ssl_resid1 \
+  --max-hop 1 \
+  --split-indices 0 1 2 3 4 5 6 7 8 9 \
+  --c-values 4 16 64 \
+  --max-iter 500 \
+  --out runs/summaries/sparc_seed0_resid1_cgrid.csv \
+  --aggregate-out runs/summaries/sparc_seed0_resid1_cgrid_aggregate.csv
+```
+
+结果：
+
+| Seed | Dataset | `ssl` F1Mi/F1Ma | `ssl_resid1` F1Mi/F1Ma | Delta F1Mi/F1Ma | Split sign |
+| --- | --- | ---: | ---: | ---: | --- |
+| seed0 | Chameleon | 0.632456 / 0.632515 | 0.636623 / 0.636698 | +0.004167 / +0.004183 | 5/10 正、5/10 负 |
+| seed0 | Squirrel | 0.446013 / 0.440950 | 0.479443 / 0.475803 | +0.033429 / +0.034853 | 10/10 正 |
+
+三 seed 合并后，完整可比的 selector 是 `ssl` 与固定 `ssl_resid1`：
+
+```bash
+python summarize_sparc_selectors.py \
+  --cgrid runs/summaries/sparc_seed42_cgrid_aggregate.csv \
+  --seed-label seed42 \
+  --cgrid runs/summaries/sparc_seed7_cgrid_aggregate.csv \
+  --seed-label seed7 \
+  --cgrid runs/summaries/sparc_seed0_resid1_cgrid_aggregate.csv \
+  --seed-label seed0 \
+  --out runs/summaries/sparc_selector_seed42_seed7_seed0.csv \
+  --aggregate-out runs/summaries/sparc_selector_seed42_seed7_seed0_aggregate.csv
+```
+
+完整三 seed 结果：
+
+| Selector | Rows | Mean F1Mi | Mean F1Ma | Mean delta F1Mi | Mean delta F1Ma |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `ssl` | 6 | 0.540239 | 0.537903 | 0.000000 | 0.000000 |
+| `resid1` | 6 | 0.562090 | 0.560283 | +0.021851 | +0.022380 |
+
+按数据集看：
+
+| Dataset | `ssl_resid1` mean F1Mi/F1Ma | Mean delta F1Mi/F1Ma | Seed-level micro deltas |
+| --- | ---: | ---: | --- |
+| Chameleon | 0.640351 / 0.640460 | +0.008480 / +0.008224 | +0.004167, +0.007456, +0.013816 |
+| Squirrel | 0.483830 / 0.480106 | +0.035223 / +0.036536 | +0.033429, +0.038136, +0.034102 |
+
+注意：seed0 本轮只跑了 `ssl` 与 `ssl_resid1`，因此三 seed selector aggregate 中的 `prop2` 与 `feature_adaptive_v1` 行不是完整可比证据；它们只能继续作为 seed42/seed7 的辅助观察。当前完整证据支持把固定 `ssl_resid1` / effective-rank route 作为 SPARC 的最稳默认路线。
+
 ## 研究假设
 
 SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embedding 仍混合了两类信息：
@@ -435,7 +505,8 @@ SPARC-GCL 是当前最值得继续的 active candidate。
 继续理由：
 
 - 直接建立在已验证强 baseline SP-GCL 上；
-- 在 Squirrel 10 split 上有稳定正向信号；
+- 在 Squirrel 的 three official seeds × 10 split 上有稳定正向信号；
+- 在 Chameleon 的 three official seeds 上均为正均值，但 split-level 稳定性弱于 Squirrel；
 - 创新点更清楚：不是再做 augmentation，也不是简单 high/low-pass filter，而是 strong GCL embedding 的 propagation residual calibration；
 - 算力友好，适合 RTX 3060。
 

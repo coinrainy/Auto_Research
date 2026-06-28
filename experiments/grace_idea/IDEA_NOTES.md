@@ -243,6 +243,9 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - 已完成 official SP-GCL seed7 复核：Chameleon `ssl` 为 0.631360/0.631923，`ssl_prop2` 为 0.641009/0.641697，`ssl_resid1` 为 0.645175/0.645380；Squirrel `ssl` 为 0.448991/0.443961，`ssl_prop2` 为 0.476753/0.473270，`ssl_resid1` 为 0.483093/0.479099。
 - 跨 seed42/seed7 汇总显示：固定 `ssl_resid1` / effective-rank route 的平均 F1Mi/F1Ma=0.564119/0.562299，略高于 feature-adaptive v1 的 0.563406/0.562017，也高于固定 `ssl_prop2` 的 0.559660/0.558323。
 - 已新增 `summarize_sparc_selectors.py` 并生成正式 cross-seed selector 表：`runs/summaries/sparc_selector_seed42_seed7.csv` 与 `runs/summaries/sparc_selector_seed42_seed7_aggregate.csv`。
+- 已完成 official SP-GCL seed0 最小复核：Chameleon `ssl_resid1` 相对 `ssl` F1Mi/F1Ma +0.004167/+0.004183，5/10 split micro 为正、5/10 为负；Squirrel `ssl_resid1` 相对 `ssl` +0.033429/+0.034853，10/10 split micro 为正。
+- 三 official seeds（seed42/seed7/seed0）中，完整可比的 `ssl_resid1` 相对 `ssl` 平均提升为 F1Mi/F1Ma +0.021851/+0.022380；按数据集看，Chameleon 为 +0.008480/+0.008224，Squirrel 为 +0.035223/+0.036536。
+- 由于 seed0 只跑了 `ssl` 与 `ssl_resid1`，三 seed selector 表中的 `prop2` 与 `feature_adaptive_v1` 不是完整可比证据；当前完整证据只支持固定 `ssl_resid1` / effective-rank route。
 - 当前裁决：SPARC-GCL 仍是 active candidate，但主线从 Feature-disassortativity Adaptive SPARC 收缩为 propagation-residual calibration，其中 `ssl_resid1` / effective-rank route 是当前最稳默认。feature contrast 保留为解释变量和未来 gate 信号，不作为当前主 selector claim。
 - 详细记录见 `docs/spgcl_propagation_calibration_candidate_memo.md`。
 
