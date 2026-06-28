@@ -1100,3 +1100,42 @@ python summarize_raw_complement_probe.py --datasets Chameleon Squirrel --splits 
 - 将主方法暂定为 `anchor_graph` 输出，但不要把 `raw_complement_weight=0.05` 包装成核心；
 - 扩展 `raw_graph` 与 `anchor_graph_weight0` 到 Chameleon/Squirrel splits0-9 或 seeds0-4，确认机制消融是否稳定；
 - 若 `weight=0` 在更大范围仍持平，应把默认方法简化为 no-penalty residual complement，并把 correlation penalty 放入附录负/弱消融。
+
+## 2026-06-28 Raw-Graph / No-Penalty 完整 10 split 消融
+
+目标：把上一步 splits0-2 × seeds0-2 的机制判断扩展到 Chameleon/Squirrel 完整 10 split，检验两个关键问题：
+
+1. 简单 `[raw, graph_context]` 是否足以解释收益；
+2. `raw_complement_weight=0.05` correlation penalty 是否需要保留为主方法组件。
+
+命令：
+
+```bash
+DATASETS="Chameleon Squirrel" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="raw_complement_gcl" EPOCHS=50 BATCH_SIZE=4096 SAVE_DIR="runs/wiki_ablation_raw_graph_splits0-9_seed0_e50" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode raw_graph" LOG_EVERY=50 scripts/run_split_study.sh
+DATASETS="Chameleon Squirrel" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="raw_complement_gcl" EPOCHS=50 BATCH_SIZE=4096 SAVE_DIR="runs/wiki_ablation_anchor_graph_w0_splits0-9_seed0_e50" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode anchor_graph --raw-complement-weight 0" LOG_EVERY=50 scripts/run_split_study.sh
+```
+
+完整 10 split 聚合结果：
+
+| Variant | Dataset | RC - raw F1Mi | pos/neg | RC - GRACE F1Mi | pos/neg | RC - raw F1Ma | RC - GRACE F1Ma |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| default_anchor_graph | Chameleon | +0.033772 | 10/0 | +0.066228 | 10/0 | +0.033688 | +0.068241 |
+| default_anchor_graph | Squirrel | +0.008742 | 10/0 | +0.065514 | 10/0 | +0.011555 | +0.076369 |
+| anchor_graph_weight0 | Chameleon | +0.034868 | 10/0 | +0.067325 | 10/0 | +0.035164 | +0.069717 |
+| anchor_graph_weight0 | Squirrel | +0.009702 | 8/1 | +0.066475 | 10/0 | +0.013379 | +0.078193 |
+| raw_graph | Chameleon | +0.014035 | 8/2 | +0.046491 | 9/0 | +0.015452 | +0.050005 |
+| raw_graph | Squirrel | -0.006340 | 0/9 | +0.050432 | 10/0 | -0.000734 | +0.064081 |
+
+判断：
+
+- `raw_graph` 在 Chameleon 上仍有部分收益，但明显弱于 residual-complement 输出；
+- `raw_graph` 在 Squirrel 上相对 raw 为负，且 0/9 个可比较 split 为正，说明简单 raw+graph 拼接无法解释 Raw-Complement 在 Squirrel 上超过 raw 的收益；
+- `anchor_graph_weight0` 与默认持平甚至略高，说明 correlation penalty 不应保留为主方法核心；
+- 当前方法应简化为 no-penalty raw-relative complement：用 `complement = norm(graph_context - stop_gradient(raw_anchor))` 构造 raw-relative graph residual，并输出 `[raw, complement, graph_context]` 或根据后续 safety gate 选择输出；
+- 下一阶段的默认训练配置应优先使用 `--raw-complement-weight 0`，再做 seeds0-2 / seeds0-4 多 seed 复核。
+
+下一步建议：
+
+- 跑 no-penalty `anchor_graph` 的 Chameleon/Squirrel splits0-9 × seeds1-2，对齐此前默认 seeds0-2；
+- 若 no-penalty 多 seed 仍稳定，正式把 correlation penalty 从方法主干移除；
+- 继续补强机制诊断：比较 `raw_graph`、`anchor_only`、`anchor_graph_weight0` 的 per-class F1 与 low-degree/high-degree 节点表现。
