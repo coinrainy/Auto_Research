@@ -115,6 +115,10 @@ rwirrnv_min_reliability: 0.1
 rwirrnv_weight_power: 1.0
 rwirrnv_shuffle_weight: false
 rwirrnv_constant_weight: false
+eairrnv_energy_threshold: 0.15
+eairrnv_strength: 0.6
+eairrnv_power: 1.0
+eairrnv_min_invariance_scale: 0.25
 variance_loss_weight: 1.0
 covariance_loss_weight: 0.01
 eval_mode: auto

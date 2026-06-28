@@ -1196,3 +1196,18 @@
   - splits 0-9 constant-weight vs `gcn_mlp_gcl`：Texas +0.072973、Chameleon +0.015132、Squirrel +0.018636、Actor -0.001184。
   - 三重 control 裁决：RWIRRNV 的 per-node reliability 排序主张失败；Texas normal/constant 都强，Chameleon constant 最强，Squirrel shuffled 最强，Actor 三种变体均低于 baseline。当前结果支持较弱的“invariance attenuation 有用”假设，但不支持当前 reliability score 的节点对应关系。
   - 当前 active candidate 空缺；RWIRRNV 降级为机制线索。下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/rwirrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv` 查看三重 control 边界；随后设计 graph-level / schedule-level invariance attenuation，并继续使用 normal/shuffled/constant control 作为硬门槛。
+- 2026-06-29 EAIRRNV graph-level energy attenuation 实现、扫描与降级：
+  - 已继续使用 `academic-research-suite` experiment-agent 路线，不向用户追问，按失败即放弃原则自主实现与裁决下一代 RRNV 候选。
+  - 已实现 `experiments/topvenue_gcl/train.py --method eairrnv_gcl`，Energy-Adaptive Invariance RRNV：不再使用 per-node reliability 排序，而是用 graph/high view energy ratio 估计图级 conflict，并据此衰减 RRNV true-pair invariance。
+  - 新增配置/CLI：`eairrnv_energy_threshold`、`eairrnv_strength`、`eairrnv_power`、`eairrnv_min_invariance_scale`；默认 `threshold=0.15`、`strength=0.6`、`power=1.0`、`min_scale=0.25`。
+  - 新增诊断字段并同步汇总脚本：`eairrnv_energy_ratio_mean`、`eairrnv_energy_ratio_std`、`eairrnv_conflict`、`eairrnv_invariance_scale`、`eairrnv_energy_threshold`、`eairrnv_strength`、`eairrnv_power`。
+  - 已完成 smoke：`python -m py_compile train.py summarize_split_study.py src/*.py`、`python train.py --help | rg "eairrnv|method|energy-threshold|invariance-scale"`、Texas/Squirrel 2 epoch smoke。
+  - 已执行 EAIRRNV 默认 strength=0.6 初筛：Texas/Chameleon/Squirrel/Actor × splits 0-2 × seed0 × 50 epoch，与 `gcn_mlp_gcl` 对齐；输出目录 `experiments/topvenue_gcl/runs/eairrnv_s0_splits0-2_e50/`。
+  - strength=0.6 vs `gcn_mlp_gcl`：Texas +0.126126、Chameleon +0.031433、Actor +0.001754、Squirrel -0.005123。
+  - 已执行 strength sweep：`--eairrnv-strength 0.3` 输出目录 `runs/eairrnv_strength03_s0_splits0-2_e50/`，`--eairrnv-strength 0.9` 输出目录 `runs/eairrnv_strength09_s0_splits0-2_e50/`。
+  - strength=0.3 vs `gcn_mlp_gcl`：Texas +0.099099、Chameleon +0.021930、Actor +0.003509、Squirrel -0.008005。
+  - strength=0.9 vs `gcn_mlp_gcl`：Texas +0.099099、Chameleon +0.013889、Actor +0.003509、Squirrel -0.008005。
+  - 已补跑 DARRNV 作为 bootstrap-preserving auxiliary RRNV control，输出目录 `runs/darrnv_s0_splits0-2_e50/`；vs `gcn_mlp_gcl`：Texas -0.027027、Chameleon +0.023392、Actor +0.003728、Squirrel -0.000640。
+  - 当前裁决：EAIRRNV 不作为 active main idea；单一 graph-level energy scale 在 Texas/Chameleon 有用，但不能提供 Squirrel safety，strength sweep 也不能修复。DARRNV 说明 density auxiliary gate 可保护 Squirrel 但会丢失 Texas 主信号。
+  - 已新增文档：`experiments/topvenue_gcl/docs/energy_adaptive_invariance_rrnv_candidate.md`，并更新 `experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md` 与本 `AGENTS.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/eairrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv && cat runs/darrnv_s0_splits0-2_e50/split_study_aggregate.csv`；随后实现 bootstrap-preserving 的 density/energy selective RR regularization，不再继续调单一 `eairrnv_strength`。

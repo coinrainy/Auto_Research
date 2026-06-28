@@ -4,7 +4,7 @@
 
 当前 active foundation：**GCN-MLP Natural View GCL**。它在 Texas/Actor/Chameleon/Squirrel 的轻量 split sanity 中稳定超过 GRACE，但本身不够创新；后续 candidate 必须在它之上给出新机制和增益。`ER-Cache`、`ER-Residual`、`Energy-SPGCL`、`DANV` 与 `FDNV` 均已降级为失败/条件性消融。
 
-当前 active candidate 空缺。**RWIRRNV / Reliability-Weighted Invariance RRNV** 入口为 `--method rwirrnv_gcl`，已降级为机制线索：10 split seed0 中 Texas/Squirrel/Chameleon 有正向性能信号，但 Chameleon 的 `--rwirrnv-constant-weight` 最好、Squirrel 的 `--rwirrnv-shuffle-weight` 最好，说明当前 per-node reliability 排序不能作为主贡献。下一代候选应转向 graph-level / schedule-level invariance attenuation，并保留 normal/shuffled/constant 三重 control。
+当前 active candidate 空缺。**RWIRRNV / Reliability-Weighted Invariance RRNV** 入口为 `--method rwirrnv_gcl`，已降级为机制线索：10 split seed0 中 Texas/Squirrel/Chameleon 有正向性能信号，但 Chameleon 的 `--rwirrnv-constant-weight` 最好、Squirrel 的 `--rwirrnv-shuffle-weight` 最好，说明当前 per-node reliability 排序不能作为主贡献。**EAIRRNV / Energy-Adaptive Invariance RRNV** 入口为 `--method eairrnv_gcl`，已实现 graph-level energy attenuation，但 split0-2 seed0 strength sweep 显示 Texas/Chameleon 正向、Squirrel 稳定负向，因此也不能作为最终主线。下一代候选应转向 bootstrap-preserving 的 density/energy selective RR regularization 或 objective selector，而不是继续调单一全图 invariance scale。
 
 Density-Perturbed RRNV (DPRRNV) 已作为高密度扰动配对诊断实现，入口为 `--method dprrnv_gcl`。它在 Squirrel split0 上修复明显，但 Actor/Chameleon 的 full-shuffled control 更强，因此只保留为机制线索，不升级为主方法。
 
@@ -43,6 +43,7 @@ Density-adaptive Invariance RRNV (DIRRNV) 已降级为失败 safety 变体，入
 - PCNV 尝试用 prototype-level natural-view assignment consistency 缓解 instance-level positive/negative 噪声，但 shuffled control、Squirrel 失败与 prototype collapse 仍未过，当前只保留为条件性/诊断资产；
 - LCOS/LCM 尝试节点级局部冲突 objective selection 与 final-only representation mix，但 Texas micro 失败且 shuffled control 不干净，当前只保留诊断线索；
 - 当前仍没有可直接包装为 2026 顶会/顶刊主方法的成功 idea；RWIRRNV 只保留为 invariance attenuation 机制线索。DPRRNV/NPRRNV 只保留为高密度图机制线索。下一代工作应设计 graph-level / schedule-level attenuation，并优先过 normal/shuffled/constant 三重 control，而不是继续调 DSP、PCNV、LCOS、LCM、DARRNV、DIRRNV、图级 DPRRNV、节点级 target perturbation 或当前 reliability score。
+- EAIRRNV 已验证单一 graph-level energy attenuation 不够：strength=0.6 在 Texas/Chameleon 最强，但 Squirrel 仍负；strength=0.3/0.9 不能修复 Squirrel。DARRNV 保护 Squirrel 但伤 Texas。下一代若继续 RRNV，必须显式学习或规则化“何时替代 bootstrap、何时只作为辅助正则”，而不是只调全局 scale。
 
 最小 smoke：
 
@@ -106,6 +107,8 @@ python train.py --dataset Texas --method nprrnv_gcl --epochs 5 --split-index 0 -
 python train.py --dataset Texas --method rwirrnv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method rwirrnv_gcl --epochs 5 --split-index 0 --seed 0 --rwirrnv-shuffle-weight
 python train.py --dataset Texas --method rwirrnv_gcl --epochs 5 --split-index 0 --seed 0 --rwirrnv-constant-weight
+python train.py --dataset Texas --method eairrnv_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method eairrnv_gcl --epochs 5 --split-index 0 --seed 0 --eairrnv-strength 0.3
 python train.py --dataset Texas --method energy_spgcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_residual_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_cache_gcl --epochs 5 --split-index 0 --seed 0
