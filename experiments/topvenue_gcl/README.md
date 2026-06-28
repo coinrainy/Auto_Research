@@ -8,6 +8,8 @@
 
 Density-Perturbed RRNV (DPRRNV) 已作为高密度扰动配对诊断实现，入口为 `--method dprrnv_gcl`。它在 Squirrel split0 上修复明显，但 Actor/Chameleon 的 full-shuffled control 更强，因此只保留为机制线索，不升级为主方法。
 
+Node-level Pair-Reliable RRNV (NPRRNV) 已作为节点级扰动配对诊断实现，入口为 `--method nprrnv_gcl`。默认和 strict gate 都能给 Squirrel 正信号，但 Chameleon 仍低于 `gcn_mlp_gcl`，因此不进入 splits 0-2，不继续调参。
+
 SSPNV / AFPNV / BSPNV 已降级为机制与消融资产，不再作为 active main idea。固定完整 SSPNV 的入口为 `--method sspnv_gcl`；AFPNV 的入口为 `--method afpnv_gcl`；BSPNV branch selection 的入口为 `--method bspnv_gcl`。BSPNV 强于 AFPNV，但没有同时超过 Chameleon semantic-only 与 Squirrel full SSPNV，因此触发停止条件。
 
 MPNV-GCL 已降级为失败/条件性消融资产，不再作为 active main idea。它用 dense semantic/spatial multi-positive mask 替代 SSPNV 的单采样 positive，并保留 Natural-View bootstrap；seed0 在 Chameleon/Squirrel 上曾出现正信号，但 seed1/seed2 扩展门控未复现稳定优势。Texas/Actor/Chameleon/Squirrel × splits0-9 × seeds1-2 × 50 epoch 下，MPNV 相对 `gcn_mlp_gcl` 的 mean F1Mi delta 分别为 +0.002703、-0.001776、+0.000219、-0.000288，均不足以支撑主方法。
@@ -40,7 +42,7 @@ Density-adaptive Invariance RRNV (DIRRNV) 已降级为失败 safety 变体，入
 - SRGNV 尝试蒸馏 graph view 的 structure residual，但 split0 early gate 已失败，当前只保留为 negative result；
 - PCNV 尝试用 prototype-level natural-view assignment consistency 缓解 instance-level positive/negative 噪声，但 shuffled control、Squirrel 失败与 prototype collapse 仍未过，当前只保留为条件性/诊断资产；
 - LCOS/LCM 尝试节点级局部冲突 objective selection 与 final-only representation mix，但 Texas micro 失败且 shuffled control 不干净，当前只保留诊断线索；
-- 当前仍没有可直接包装为 2026 顶会/顶刊主方法的成功 idea；DS-RRNV 是当前最值得保留的 active-but-risky candidate。DPRRNV 只保留为高密度图机制线索。下一代工作应围绕 DS-RRNV 的 Squirrel 机制反证与强基线同协议复现展开，而不是继续调 DSP、PCNV、LCOS、LCM、DARRNV、DIRRNV 或图级 DPRRNV。
+- 当前仍没有可直接包装为 2026 顶会/顶刊主方法的成功 idea；DS-RRNV 是当前最值得保留的 active-but-risky candidate。DPRRNV/NPRRNV 只保留为高密度图机制线索。下一代工作应围绕 DS-RRNV 的 Squirrel 机制反证与强基线同协议复现展开，而不是继续调 DSP、PCNV、LCOS、LCM、DARRNV、DIRRNV、图级 DPRRNV 或节点级 target perturbation。
 
 最小 smoke：
 
@@ -99,6 +101,8 @@ python train.py --dataset Texas --method dsrrnv_gcl --epochs 5 --split-index 0 -
 python train.py --dataset Texas --method dirrnv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method dprrnv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method dprrnv_gcl --epochs 5 --split-index 0 --seed 0 --rrnv-shuffle-pairs
+python train.py --dataset Texas --method nprrnv_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method nprrnv_gcl --epochs 5 --split-index 0 --seed 0 --nprrnv-shuffle-gate
 python train.py --dataset Texas --method energy_spgcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_residual_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_cache_gcl --epochs 5 --split-index 0 --seed 0

@@ -158,12 +158,42 @@ split0 seed0 结果：
 
 裁决：DPRRNV 不升级为主方法。它证明“高密度图上弱化真实配对、引入扰动配对”能修复 Squirrel split0，但同时显著削弱 Texas/Chameleon，且 Actor/Chameleon 的 full-shuffled control 更强。当前只保留为高密度图机制线索或 DS-RRNV 的可选诊断模块，不进入 splits 0-2 扩展。
 
+## NPRRNV 节点级配对可靠性尝试与放弃
+
+`nprrnv_gcl` 暂名 Node-level Pair-Reliable RRNV。它沿用 DS-RRNV final representation，但把 DPRRNV 的图级扰动概率改成节点级：
+
+```text
+node_gate = sigmoid(degree + raw_residual - raw_agreement - ego_graph_view_cosine)
+shuffle_prob_i = graph_high_gate * (min_local_scale + (1 - min_local_scale) node_gate_i)
+target_i = (1 - shuffle_prob_i) graph_i + shuffle_prob_i shuffled(graph)_i
+```
+
+默认 `min_local_scale=0.5`，另测 strict 版本 `min_local_scale=0.0`。
+
+默认 split0 seed0 结果：
+
+| Dataset | ΔF1Mi vs GCN-MLP | shuffle prob mean | 裁决 |
+| --- | ---: | ---: | --- |
+| Texas | +0.000000 | 0.000043 | 没有保住 DS-RRNV 主信号 |
+| Actor | -0.011184 | 0.000438 | 低于 baseline |
+| Chameleon | -0.039474 | 0.053132 | 明显失败 |
+| Squirrel | +0.014409 | 0.518364 | 正向但弱于 DPRRNV |
+
+strict 版本只跑 Chameleon/Squirrel：
+
+| Dataset | ΔF1Mi vs GCN-MLP | shuffle prob mean | 裁决 |
+| --- | ---: | ---: | --- |
+| Chameleon | -0.013158 | 0.033761 | 仍低于 baseline |
+| Squirrel | +0.028818 | 0.329999 | 正向但不能抵消 Chameleon 失败 |
+
+裁决：NPRRNV 不升级，不进入 splits 0-2，也不继续调 `min_local_scale`。它说明“节点级扰动目标”仍会伤害中密度图 Chameleon；后续若继承该线索，应从扰动 target 改为 reliability-weighted invariance 或 unreliable-pair filtering，而不是继续混入 shuffled graph target。
+
 ## 下一步
 
 保留 `dsrrnv_gcl` 为当前最有价值候选，但后续必须解决两个问题：
 
 - Squirrel mechanism：当前 Squirrel 均值已由负转正，但 shuffled 更强；后续需要解释或修复高密度图上 true-pair invariance 不可靠的问题；
-- 高密度扰动配对：DPRRNV 在 Squirrel 有修复信号，但 full-shuffled control 不够干净，不能作为主方法；若后续继承该线索，必须设计节点级而非图级的配对可靠性 gate；
+- 高密度扰动配对：DPRRNV 在 Squirrel 有修复信号，但 full-shuffled control 不够干净；NPRRNV 进一步说明节点级 target perturbation 仍会伤害 Chameleon；若后续继承该线索，必须转向 reliability-weighted invariance / filtering；
 - 强基线对齐：RRNV 仍只与内部 `gcn_mlp_gcl` 对齐，尚未和 PolyGCL / S3GCL / GraphECL 等强基线同协议比较。
 
 建议下一步命令：
@@ -172,6 +202,8 @@ split0 seed0 结果：
 cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl
 cat runs/dsrrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv
 cat runs/dprrnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv
+cat runs/nprrnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv
+cat runs/nprrnv_strict_split0_s0_e50/aggregate_vs_gcn_mlp.csv
 ```
 
-若继续方法实验，优先围绕 DS-RRNV 做高密度图机制诊断；停止 `darrnv_gcl` 和 `dirrnv_gcl`，DPRRNV 仅作为 Squirrel 机制线索，不作为下一轮默认扩展对象。
+若继续方法实验，优先围绕 DS-RRNV 做高密度图机制诊断；停止 `darrnv_gcl`、`dirrnv_gcl` 和 `nprrnv_gcl` 主线，DPRRNV/NPRRNV 仅作为 Squirrel 机制线索，不作为下一轮默认扩展对象。

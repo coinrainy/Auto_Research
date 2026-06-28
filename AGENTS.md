@@ -1172,3 +1172,12 @@
   - DPRRNV normal-vs-full-shuffled：Texas +0.027027，Actor -0.005263，Chameleon -0.015351，Squirrel +0.019212。
   - 当前裁决：DPRRNV 修复了 Squirrel split0，但削弱 Texas/Chameleon，且 Actor/Chameleon full-shuffled 更强；不升级为主方法，不进入 splits 0-2，仅保留为高密度图配对可靠性机制线索。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/dprrnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv` 查看 DPRRNV 边界；随后应回到 DS-RRNV 主线，设计节点级 pair reliability/density gate，而不是继续扩大图级 DPRRNV。
+- 2026-06-29 NPRRNV 节点级扰动配对诊断：
+  - 已实现 `experiments/topvenue_gcl/train.py --method nprrnv_gcl`，Node-level Pair-Reliable RRNV：沿用 DS-RRNV final representation，把 DPRRNV 的图级 target perturbation 改为节点级 gate。
+  - 节点级 gate 由 degree、raw residual、raw agreement 与 ego-graph view cosine 构造，并乘以 DS-RRNV 的图级 high gate；新增 `--nprrnv-shuffle-gate` 作为 gate control。
+  - 已新增配置/CLI：`nprrnv_route_temperature`、`nprrnv_route_threshold`、`nprrnv_min_local_scale`、`nprrnv_min_shuffle_prob`、`nprrnv_max_shuffle_prob`、`nprrnv_degree_weight`、`nprrnv_residual_weight`、`nprrnv_agreement_weight`、`nprrnv_view_weight`、`nprrnv_shuffle_gate`。
+  - 已完成 smoke：`python -m py_compile train.py summarize_split_study.py src/*.py`、`python train.py --help | rg "nprrnv|dprrnv|method"`、Texas/Squirrel NPRRNV 2 epoch smoke；Texas 平均 perturb prob 约 0.000043，Squirrel 约 0.520794。
+  - 已执行默认 NPRRNV split0 seed0 50 epoch，输出目录 `experiments/topvenue_gcl/runs/nprrnv_split0_s0_e50/`；normal vs `gcn_mlp_gcl`：Texas +0.000000、Actor -0.011184、Chameleon -0.039474、Squirrel +0.014409。
+  - 已执行 strict `--nprrnv-min-local-scale 0.0` 的 Chameleon/Squirrel gate，输出目录 `experiments/topvenue_gcl/runs/nprrnv_strict_split0_s0_e50/`；normal vs `gcn_mlp_gcl`：Chameleon -0.013158、Squirrel +0.028818。
+  - 当前裁决：NPRRNV 对 Squirrel 有正信号，但默认与 strict 都无法避免 Chameleon 退化；不升级为主方法，不进入 splits 0-2，不继续调 `nprrnv_min_local_scale`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/nprrnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv && cat runs/nprrnv_strict_split0_s0_e50/aggregate_vs_gcn_mlp.csv` 查看 NPRRNV 失败边界；随后应转向 reliability-weighted invariance / filtering，而不是继续扰动 graph target。

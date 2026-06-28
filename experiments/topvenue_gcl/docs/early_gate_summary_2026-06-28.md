@@ -772,3 +772,25 @@ split0 seed0：
 | Squirrel | +0.026897 | +0.019212 | 修复 Squirrel |
 
 裁决：DPRRNV 不升级为主方法，也不进入 splits 0-2。它提供了 Squirrel 高密度图的有价值线索，但 Actor/Chameleon full-shuffled 更强，说明图级扰动配对不是可投稿主机制。后续若继承该方向，应改为节点级 pair reliability / density gate，而不是继续扩大图级 DPRRNV。
+
+## 2026-06-29 追加：NPRRNV 节点级扰动配对失败
+
+已实现 `--method nprrnv_gcl`，暂名 Node-level Pair-Reliable RRNV。它将 DPRRNV 的图级扰动概率改成节点级，由 degree、raw residual、raw agreement 与 ego-graph view cosine 决定，再乘以 DS-RRNV 的图级 high gate。
+
+默认 `min_local_scale=0.5` split0 seed0：
+
+| Dataset | ΔF1Mi vs GCN-MLP | shuffle prob mean | 裁决 |
+| --- | ---: | ---: | --- |
+| Texas | +0.000000 | 0.000043 | 无 micro 增益 |
+| Actor | -0.011184 | 0.000438 | 失败 |
+| Chameleon | -0.039474 | 0.053132 | 明显失败 |
+| Squirrel | +0.014409 | 0.518364 | 正向但弱于 DPRRNV |
+
+strict `min_local_scale=0.0` 只跑 Chameleon/Squirrel：
+
+| Dataset | ΔF1Mi vs GCN-MLP | shuffle prob mean | 裁决 |
+| --- | ---: | ---: | --- |
+| Chameleon | -0.013158 | 0.033761 | 仍失败 |
+| Squirrel | +0.028818 | 0.329999 | 正向但不足以保留主线 |
+
+裁决：NPRRNV 不进入 splits 0-2，也不继续调参。节点级 target perturbation 能给 Squirrel 正信号，但仍会伤害 Chameleon；后续应改为 reliability-weighted invariance 或 filtering，而不是继续扰动 graph target。
