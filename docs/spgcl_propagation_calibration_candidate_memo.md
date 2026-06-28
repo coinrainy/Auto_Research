@@ -174,6 +174,72 @@ python evaluate_propagation_calibration.py \
 
 该结果将 SPARC-GCL 的证据从 `/tmp` 临时 artifacts 推进到项目内可复现 artifacts。当前最强模式仍是 Squirrel 上的 `ssl_resid1`，Chameleon 上更偏向 `ssl_prop2`。
 
+## 机制诊断：class / degree / local homophily bucket
+
+已新增诊断脚本：
+
+- `experiments/grace_idea/analyze_sparc_diagnostics.py`
+
+该脚本在同一 official SP-GCL embedding 上重训相同协议的 mask linear probe，并记录相对 `ssl` baseline 的逐节点正确性变化：
+
+- split 级整体 gain/loss；
+- degree low/mid/high bucket；
+- local label homophily low/mid/high bucket；
+- class 级 correct-rate delta。
+
+运行命令：
+
+```bash
+cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
+python analyze_sparc_diagnostics.py \
+  --runs-dir runs/spgcl_official_embeddings_seed42_e100/artifacts \
+  --include-methods spgcl_official \
+  --modes ssl_prop2 ssl_resid1 \
+  --split-indices 0 1 2 3 4 5 6 7 8 9 \
+  --c-values 4 16 64 \
+  --max-iter 500 \
+  --out-prefix runs/summaries/sparc_seed42_diagnostics
+```
+
+输出文件：
+
+- `runs/summaries/sparc_seed42_diagnostics_splits.csv`
+- `runs/summaries/sparc_seed42_diagnostics_splits_aggregate.csv`
+- `runs/summaries/sparc_seed42_diagnostics_buckets.csv`
+- `runs/summaries/sparc_seed42_diagnostics_buckets_aggregate.csv`
+- `runs/summaries/sparc_seed42_diagnostics_classes.csv`
+- `runs/summaries/sparc_seed42_diagnostics_classes_aggregate.csv`
+
+整体 split 级结果与 C-grid 复核一致：
+
+| Dataset | Mode | SSL correct | Mode correct | Delta | Gain/Loss | Positive/Negative splits |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Chameleon | `ssl_prop2` | 0.631798 | 0.640570 | +0.008772 | 167/127 | 8/2 |
+| Chameleon | `ssl_resid1` | 0.631798 | 0.639254 | +0.007456 | 267/233 | 6/4 |
+| Squirrel | `ssl_prop2` | 0.450817 | 0.480307 | +0.029491 | 843/536 | 10/0 |
+| Squirrel | `ssl_resid1` | 0.450817 | 0.488953 | +0.038136 | 1082/685 | 10/0 |
+
+bucket 级关键发现：
+
+- Squirrel 上 `ssl_resid1` 对 degree high/low/mid 三个桶均为正，delta 分别约 +0.0536、+0.0361、+0.0244。
+- Squirrel 上 `ssl_resid1` 对 local homophily high/low/mid 三个桶也均为正，delta 分别约 +0.0205、+0.0387、+0.0550。
+- Squirrel 上 `ssl_prop2` 同样在所有 bucket 上为正，说明收益不是单一 high-degree 或单一 local-homophily 区域造成的。
+- Chameleon 上 `ssl_prop2` 较稳，degree 三个桶均为非负，local homophily low/high 为正，但 mid 略负。
+- Chameleon 上 `ssl_resid1` 明显帮助 local-homophily low/mid 桶（约 +0.0349/+0.0250），但伤害 local-homophily high 桶（约 -0.0386，9/10 split 为负）。
+
+class 级关键发现：
+
+- Squirrel 上 `ssl_resid1` 在 5 个 class 上均为正，delta 约 +0.0331、+0.0378、+0.0368、+0.0462、+0.0373。
+- Squirrel 上 `ssl_prop2` 也在 5 个 class 上均为正，delta 约 +0.0186 到 +0.0402。
+- Chameleon 上 `ssl_prop2` 在 class 2/0/4 为正，class 3 略负，class 1 接近 0。
+- Chameleon 上 `ssl_resid1` 对 class 3/1/0/4 为正，但 class 2 为负；这进一步说明 Chameleon 需要 mode/gate，而不是固定 residual 模式。
+
+机制解释更新：
+
+- Squirrel 的提升具有跨 class、degree bucket 与 local-homophily bucket 的普遍性，支持继续把 SPARC 作为 active candidate。
+- Chameleon 的收益更像局部条件性收益：residual branch 能帮助低/中 local-homophily 区域，但会损害高 local-homophily 区域；propagation branch 更平滑、更稳。
+- 因此下一步不应简单固定 `ssl_resid1`，而应设计 label-free mode selection 或 node/dataset-level gate，在 `ssl`、`ssl_prop2` 与 `ssl_resid1` 之间自适应选择。
+
 ## 研究假设
 
 SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embedding 仍混合了两类信息：
@@ -191,12 +257,13 @@ SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embeddin
    - 使用完整 C 网格确认 fast gate 不是 C 选择假象。
 
 2. 机制诊断：
-   - 比较 `ssl_prop1/2/3`、`ssl_resid1/2/3`；
-   - 分析提升来自哪些 class、degree、local homophily bucket；
+   - 第一轮 class、degree、local homophily bucket 诊断已完成；
+   - 继续比较 `ssl_prop1/2/3`、`ssl_resid1/2/3` 的更大 mode 空间；
    - 证明 raw concat 不等价于 propagation residual calibration。
 
 3. 方法化：
    - 设计无标签 mode selection：何时用 `z`、`[z, P^kz]`、`[z, z-P^kz]`；
+   - 优先尝试 dataset-level 或 node-level gate，避免 Chameleon high-local-homophily 区域被 residual branch 伤害；
    - 或把 propagation-residual branch 写成训练时 regularizer / projector，而不是仅 post-hoc eval。
 
 4. 强基线：

@@ -233,7 +233,10 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - C-grid 复核（`C={4,16,64}`、10 splits）：Squirrel `ssl_resid1` 相对 `ssl` F1Mi/F1Ma +0.034294/+0.035169，10/10 split micro 为正；Chameleon `ssl_resid1` +0.008333/+0.007952，`ssl_prop2` +0.005263/+0.005584。
 - 项目内 artifacts 复核（`runs/spgcl_official_embeddings_seed42_e100/artifacts`）：Squirrel `ssl_resid1` 相对 `ssl` +0.038136/+0.039618，10/10 split micro 为正；Chameleon `ssl_prop2` +0.008772/+0.009588，8/10 split micro 为正。
 - 简单 raw concat 在 split0 上低于 SP-GCL embedding，说明新信号不是 raw-preserving concat，而是 propagation residual / calibrated propagation。
-- 当前裁决：SPARC-GCL 是下一轮最值得继续的 active candidate；Squirrel 信号已较稳，Chameleon 需要 mode selection 和更多 seed 验证。
+- 已新增 `analyze_sparc_diagnostics.py`，用于在相同 mask linear probe 协议下输出 split、class、degree bucket 与 local label homophily bucket 的逐节点 gain/loss 诊断。
+- SPARC 机制诊断（项目内 artifacts、C={4,16,64}、10 splits）显示：Squirrel `ssl_resid1` 在所有 class、degree bucket 与 local-homophily bucket 上均为正，整体 gain/loss=1082/685；`ssl_prop2` 也在所有 class/bucket 上为正，整体 gain/loss=843/536。
+- Chameleon 诊断显示：`ssl_prop2` 较稳，整体 gain/loss=167/127；`ssl_resid1` 对 local-homophily low/mid 桶有明显收益（约 +0.0349/+0.0250），但伤害 high local-homophily 桶（约 -0.0386，9/10 split 为负）。
+- 当前裁决：SPARC-GCL 仍是 active candidate，但不能固定单一 residual mode；下一步应优先设计 label-free mode selection 或 node/dataset-level gate，在 `ssl`、`ssl_prop2` 与 `ssl_resid1` 间自适应选择。
 - 详细记录见 `docs/spgcl_propagation_calibration_candidate_memo.md`。
 
 ## 当前实验入口能力
