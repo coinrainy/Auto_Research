@@ -720,3 +720,40 @@ RRNV splits 0-2 seed0 复核：
 | Actor | -0.005921 | 低于 baseline |
 
 裁决：DARRNV 降级为失败 safety 变体，不继续跑 Chameleon/Squirrel。后续若做 RRNV safety，应考虑 representation-level fallback 或 graph-view reliability，而不是简单把 RRNV 变成小权重辅助项。
+
+## 2026-06-29 追加：DS-RRNV 与 DIRRNV
+
+已实现 `--method dsrrnv_gcl`，暂名 Density-Safe RRNV。它保留纯 RRNV 训练目标，但在 final representation 中根据图平均度使用 graph/high residual mix。默认 gate：Texas 0.000061、Actor 0.000617、Chameleon 0.076343、Squirrel 0.744020。
+
+DS-RRNV split0 seed0：
+
+| Dataset | ΔF1Mi vs GCN-MLP | normal - shuffled | high gate | 裁决 |
+| --- | ---: | ---: | ---: | --- |
+| Texas | +0.054054 | +0.081081 | 0.000061 | 正向且 control 干净 |
+| Actor | +0.006579 | +0.003947 | 0.000617 | 小正 |
+| Chameleon | +0.043860 | +0.028509 | 0.076343 | 强正 |
+| Squirrel | -0.011527 | -0.013449 | 0.744020 | 仍失败 |
+
+DS-RRNV splits 0-2 seed0：
+
+| Dataset | mean ΔF1Mi vs GCN-MLP | mean normal - shuffled | 裁决 |
+| --- | ---: | ---: | --- |
+| Texas | +0.090090 | +0.072072 | 强正 |
+| Actor | +0.001974 | +0.005482 | 弱正 |
+| Chameleon | +0.013158 | +0.014620 | 小正且 control 较干净 |
+| Squirrel | +0.006724 | -0.012168 | 均值转正，但 shuffled 更强 |
+
+当前裁决：DS-RRNV 取代 RRNV 成为 active-but-risky candidate。它比 RRNV 更好地处理了 Squirrel 均值，但 Squirrel 的 shuffled 反证仍未解决，不能声称方法成功。
+
+已实现 `--method dirrnv_gcl`，暂名 Density-adaptive Invariance RRNV。它在 DS-RRNV 基础上对高密度图衰减 true-pair invariance：`invariance_scale=(1-high_gate)^2`。
+
+DIRRNV split0 seed0：
+
+| Dataset | ΔF1Mi vs GCN-MLP | normal - shuffled | 裁决 |
+| --- | ---: | ---: | --- |
+| Texas | +0.000000 | +0.027027 | 弱于 DS-RRNV |
+| Actor | +0.007237 | +0.003947 | 小正 |
+| Chameleon | +0.039474 | +0.030702 | 正向 |
+| Squirrel | -0.000961 | +0.000000 | 未救回 Squirrel |
+
+裁决：DIRRNV 不进入 splits 0-2。降低 invariance 没有解决 Squirrel，也削弱 Texas 主信号。

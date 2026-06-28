@@ -64,6 +64,8 @@ def parse_args():
                             "dsp_gcl",
                             "rrnv_gcl",
                             "darrnv_gcl",
+                            "dsrrnv_gcl",
+                            "dirrnv_gcl",
                             "energy_spgcl",
                             "gcn_mlp_gcl",
                             "er_residual_gcl",
@@ -153,6 +155,12 @@ def parse_args():
     parser.add_argument("--darrnv-rr-weight", type=float, default=None)
     parser.add_argument("--darrnv-degree-threshold", type=float, default=None)
     parser.add_argument("--darrnv-degree-temperature", type=float, default=None)
+    parser.add_argument("--dsrrnv-degree-threshold", type=float, default=None)
+    parser.add_argument("--dsrrnv-degree-temperature", type=float, default=None)
+    parser.add_argument("--dsrrnv-min-high-gate", type=float, default=None)
+    parser.add_argument("--dsrrnv-max-high-gate", type=float, default=None)
+    parser.add_argument("--dirrnv-invariance-power", type=float, default=None)
+    parser.add_argument("--dirrnv-min-invariance-scale", type=float, default=None)
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -325,6 +333,18 @@ def override_config(config, args):
         merged["darrnv_degree_threshold"] = args.darrnv_degree_threshold
     if args.darrnv_degree_temperature is not None:
         merged["darrnv_degree_temperature"] = args.darrnv_degree_temperature
+    if args.dsrrnv_degree_threshold is not None:
+        merged["dsrrnv_degree_threshold"] = args.dsrrnv_degree_threshold
+    if args.dsrrnv_degree_temperature is not None:
+        merged["dsrrnv_degree_temperature"] = args.dsrrnv_degree_temperature
+    if args.dsrrnv_min_high_gate is not None:
+        merged["dsrrnv_min_high_gate"] = args.dsrrnv_min_high_gate
+    if args.dsrrnv_max_high_gate is not None:
+        merged["dsrrnv_max_high_gate"] = args.dsrrnv_max_high_gate
+    if args.dirrnv_invariance_power is not None:
+        merged["dirrnv_invariance_power"] = args.dirrnv_invariance_power
+    if args.dirrnv_min_invariance_scale is not None:
+        merged["dirrnv_min_invariance_scale"] = args.dirrnv_min_invariance_scale
     return merged
 
 
@@ -702,14 +722,20 @@ def _dsp_separability_weight(parts, config):
     return weight, margin, view_consistency, score
 
 
-def _rrnv_loss(z_ego, z_graph, config):
+def _rrnv_loss(z_ego, z_graph, config, invariance_scale=1.0):
     if bool(config.get("rrnv_shuffle_pairs", False)):
         z_graph = z_graph[torch.randperm(z_graph.size(0), device=z_graph.device)]
+    if not torch.is_tensor(invariance_scale):
+        invariance_scale = torch.tensor(
+            float(invariance_scale),
+            device=z_ego.device,
+            dtype=z_ego.dtype,
+        )
     invariance = F.mse_loss(F.normalize(z_ego, dim=1), F.normalize(z_graph, dim=1))
     variance = 0.5 * (variance_loss(z_ego) + variance_loss(z_graph))
     covariance = 0.5 * (covariance_loss(z_ego) + covariance_loss(z_graph))
     loss = (
-        float(config["rrnv_invariance_weight"]) * invariance
+        invariance_scale * float(config["rrnv_invariance_weight"]) * invariance
         + float(config["rrnv_variance_weight"]) * variance
         + float(config["rrnv_covariance_weight"]) * covariance
     )
@@ -732,6 +758,40 @@ def _darrnv_density_gate(data, config):
         )
     )
     return gate, avg_degree
+
+
+def _dsrrnv_density_high_gate(data, config):
+    avg_degree = data.edge_index.size(1) / max(1, data.num_nodes)
+    threshold = max(float(config["dsrrnv_degree_threshold"]), 1e-12)
+    temperature = max(float(config["dsrrnv_degree_temperature"]), 1e-12)
+    raw_gate = torch.sigmoid(
+        torch.tensor(
+            (math.log1p(avg_degree) - math.log1p(threshold)) / temperature,
+            device=data.x.device,
+            dtype=data.x.dtype,
+        )
+    )
+    min_gate = float(config["dsrrnv_min_high_gate"])
+    max_gate = float(config["dsrrnv_max_high_gate"])
+    gate = min_gate + (max_gate - min_gate) * raw_gate
+    return gate.clamp(0.0, 1.0), avg_degree
+
+
+def _dirrnv_invariance_scale(high_gate, config):
+    scale = (1.0 - high_gate).pow(float(config["dirrnv_invariance_power"]))
+    min_scale = float(config["dirrnv_min_invariance_scale"])
+    return (min_scale + (1.0 - min_scale) * scale).clamp(0.0, 1.0)
+
+
+def _density_mixed_final(model, parts, high_gate):
+    structural_mix = (
+        (1.0 - high_gate) * F.normalize(parts["graph"], dim=1)
+        + high_gate * F.normalize(parts["high"], dim=1)
+    )
+    return model.final_norm(torch.cat([
+        F.normalize(parts["ego"], dim=1),
+        F.normalize(structural_mix, dim=1),
+    ], dim=1))
 
 
 @torch.no_grad()
@@ -1039,6 +1099,8 @@ def train_er_cache_gcl(model, data, config, args):
     dsp_gcl = args.method == "dsp_gcl"
     rrnv_gcl = args.method == "rrnv_gcl"
     darrnv_gcl = args.method == "darrnv_gcl"
+    dsrrnv_gcl = args.method == "dsrrnv_gcl"
+    dirrnv_gcl = args.method == "dirrnv_gcl"
     residual_only = args.method in {
         "er_residual_gcl",
         "gcn_mlp_gcl",
@@ -1057,6 +1119,8 @@ def train_er_cache_gcl(model, data, config, args):
         "dsp_gcl",
         "rrnv_gcl",
         "darrnv_gcl",
+        "dsrrnv_gcl",
+        "dirrnv_gcl",
     }
     graph_target = args.method in {
         "gcn_mlp_gcl",
@@ -1075,6 +1139,8 @@ def train_er_cache_gcl(model, data, config, args):
         "dsp_gcl",
         "rrnv_gcl",
         "darrnv_gcl",
+        "dsrrnv_gcl",
+        "dirrnv_gcl",
     }
     topk = 0 if (args.disable_cache or residual_only) else int(config["cache_topk"])
     cache_update = max(1, int(config["cache_update_interval"]))
@@ -1131,6 +1197,9 @@ def train_er_cache_gcl(model, data, config, args):
             lcos_gate, _, _, _ = _lcos_conflict_gate(data, config)
             lcos_mix = _lcos_structural_mix(parts, lcos_gate)
             parts["final"] = _lcos_final(model, parts, lcos_mix)
+        if dsrrnv_gcl or dirrnv_gcl:
+            high_gate, _ = _dsrrnv_density_high_gate(data, config)
+            parts["final"] = _density_mixed_final(model, parts, high_gate)
         with torch.no_grad():
             if cache_idx is None or epoch == 1 or epoch % cache_update == 0:
                 if args.disable_cache or residual_only:
@@ -1293,6 +1362,19 @@ def train_er_cache_gcl(model, data, config, args):
         elif rrnv_gcl:
             loss_self, rrnv_stats = _rrnv_loss(pred_ego, pred_high, config)
             loss_cache = parts["final"].new_tensor(0.0)
+        elif dsrrnv_gcl:
+            loss_self, rrnv_stats = _rrnv_loss(pred_ego, pred_high, config)
+            loss_cache = parts["final"].new_tensor(0.0)
+        elif dirrnv_gcl:
+            high_gate, _ = _dsrrnv_density_high_gate(data, config)
+            invariance_scale = _dirrnv_invariance_scale(high_gate, config)
+            loss_self, rrnv_stats = _rrnv_loss(
+                pred_ego,
+                pred_high,
+                config,
+                invariance_scale=invariance_scale,
+            )
+            loss_cache = parts["final"].new_tensor(0.0)
         elif darrnv_gcl:
             loss_base = 0.5 * (
                 negative_cosine(pred_ego, parts["graph"])
@@ -1440,6 +1522,9 @@ def train_er_cache_gcl(model, data, config, args):
             lcos_gate, _, _, _ = _lcos_conflict_gate(data, config)
             lcos_mix = _lcos_structural_mix(parts, lcos_gate)
             parts["final"] = _lcos_final(model, parts, lcos_mix)
+        if dsrrnv_gcl or dirrnv_gcl:
+            high_gate, _ = _dsrrnv_density_high_gate(data, config)
+            parts["final"] = _density_mixed_final(model, parts, high_gate)
         final = parts["final"].detach()
         confidence_result = _cache_confidence(cache_keys, cache_idx, config)
         cache_weight = None if confidence_result is None else confidence_result[1]
@@ -1628,6 +1713,47 @@ def train_er_cache_gcl(model, data, config, args):
             diagnostics["rrnv_pair_cosine_mean"] = float(cosine.mean().item())
             diagnostics["rrnv_pair_cosine_std"] = float(cosine.std(unbiased=False).item())
             diagnostics["rrnv_shuffle_pairs"] = bool(config.get("rrnv_shuffle_pairs", False))
+        if dsrrnv_gcl:
+            pred_ego = model.pred_ego(parts["ego"])
+            pred_high = model.pred_high(parts["graph"])
+            _, rrnv_stats = _rrnv_loss(pred_ego, pred_high, config)
+            high_gate, avg_degree = _dsrrnv_density_high_gate(data, config)
+            cosine = (
+                F.normalize(pred_ego, dim=1)
+                * F.normalize(pred_high, dim=1)
+            ).sum(dim=1)
+            diagnostics["rrnv_invariance_loss"] = float(rrnv_stats["rrnv_invariance_loss"].item())
+            diagnostics["rrnv_variance_loss"] = float(rrnv_stats["rrnv_variance_loss"].item())
+            diagnostics["rrnv_covariance_loss"] = float(rrnv_stats["rrnv_covariance_loss"].item())
+            diagnostics["rrnv_pair_cosine_mean"] = float(cosine.mean().item())
+            diagnostics["rrnv_pair_cosine_std"] = float(cosine.std(unbiased=False).item())
+            diagnostics["rrnv_shuffle_pairs"] = bool(config.get("rrnv_shuffle_pairs", False))
+            diagnostics["dsrrnv_high_gate"] = float(high_gate.item())
+            diagnostics["dsrrnv_avg_degree"] = float(avg_degree)
+        if dirrnv_gcl:
+            pred_ego = model.pred_ego(parts["ego"])
+            pred_high = model.pred_high(parts["graph"])
+            high_gate, avg_degree = _dsrrnv_density_high_gate(data, config)
+            invariance_scale = _dirrnv_invariance_scale(high_gate, config)
+            _, rrnv_stats = _rrnv_loss(
+                pred_ego,
+                pred_high,
+                config,
+                invariance_scale=invariance_scale,
+            )
+            cosine = (
+                F.normalize(pred_ego, dim=1)
+                * F.normalize(pred_high, dim=1)
+            ).sum(dim=1)
+            diagnostics["rrnv_invariance_loss"] = float(rrnv_stats["rrnv_invariance_loss"].item())
+            diagnostics["rrnv_variance_loss"] = float(rrnv_stats["rrnv_variance_loss"].item())
+            diagnostics["rrnv_covariance_loss"] = float(rrnv_stats["rrnv_covariance_loss"].item())
+            diagnostics["rrnv_pair_cosine_mean"] = float(cosine.mean().item())
+            diagnostics["rrnv_pair_cosine_std"] = float(cosine.std(unbiased=False).item())
+            diagnostics["rrnv_shuffle_pairs"] = bool(config.get("rrnv_shuffle_pairs", False))
+            diagnostics["dsrrnv_high_gate"] = float(high_gate.item())
+            diagnostics["dsrrnv_avg_degree"] = float(avg_degree)
+            diagnostics["dirrnv_invariance_scale"] = float(invariance_scale.item())
         if darrnv_gcl:
             pred_ego = model.pred_ego(parts["ego"])
             pred_high = model.pred_high(parts["graph"])
@@ -1663,6 +1789,8 @@ def train_er_cache_gcl(model, data, config, args):
         ("dsp_shuffled" if bool(config.get("dsp_shuffle_weight", False)) else "dsp") if dsp_gcl else
         ("rrnv_shuffled" if bool(config.get("rrnv_shuffle_pairs", False)) else "rrnv") if rrnv_gcl else
         ("darrnv_shuffled" if bool(config.get("rrnv_shuffle_pairs", False)) else "darrnv") if darrnv_gcl else
+        ("dsrrnv_shuffled" if bool(config.get("rrnv_shuffle_pairs", False)) else "dsrrnv") if dsrrnv_gcl else
+        ("dirrnv_shuffled" if bool(config.get("rrnv_shuffle_pairs", False)) else "dirrnv") if dirrnv_gcl else
         ("aompnv_shuffled" if bool(config.get("aompnv_shuffle_positives", False)) else "aompnv") if aompnv_gcl else
         ("mpnv_shuffled" if bool(config.get("mpnv_shuffle_positives", False)) else "mpnv") if mpnv_gcl else
         "bspnv" if bspnv_gcl else
@@ -1705,7 +1833,7 @@ def main():
     config = override_config(load_yaml(args.config), args)
     if args.method == "gcn_mlp_gcl" and args.final_repr is None:
         config["final_repr"] = "ego_graph"
-    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl", "srgnv_gcl", "pcnv_gcl", "lcos_gcl", "lcm_gcl", "dsp_gcl", "rrnv_gcl", "darrnv_gcl"} and args.final_repr is None:
+    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl", "srgnv_gcl", "pcnv_gcl", "lcos_gcl", "lcm_gcl", "dsp_gcl", "rrnv_gcl", "darrnv_gcl", "dsrrnv_gcl", "dirrnv_gcl"} and args.final_repr is None:
         config["final_repr"] = "ego_graph"
     if args.method == "energy_spgcl" and args.final_repr is None:
         config["final_repr"] = "ego_high"

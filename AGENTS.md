@@ -1151,3 +1151,14 @@
   - 已更新：`experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
   - 已验证：`python -m py_compile train.py summarize_split_study.py src/*.py`；`python train.py --help | rg "rrnv|darrnv|method"`；Texas RRNV normal/shuffled 2 epoch smoke；RRNV split0 与 splits 0-2 normal/shuffled gate。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/rrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv` 查看 RRNV 当前汇总；随后实现新的 RRNV safety / graph-view reliability 版本，不再继续调 DSP、DARRNV、PCNV、LCOS 或 LCM。
+- 2026-06-29 DS-RRNV / DIRRNV safety 变体：
+  - 已实现 `experiments/topvenue_gcl/train.py --method dsrrnv_gcl`，Density-Safe RRNV：保留 RRNV 训练目标，在 final representation 中根据图平均度 gate 混合 graph/high residual view。
+  - DS-RRNV 默认 high gate：Texas 0.000061、Actor 0.000617、Chameleon 0.076343、Squirrel 0.744020。
+  - DS-RRNV split0 seed0：Texas ΔF1Mi vs `gcn_mlp_gcl` +0.054054，normal-shuffled +0.081081；Actor +0.006579/+0.003947；Chameleon +0.043860/+0.028509；Squirrel -0.011527/-0.013449。
+  - DS-RRNV splits 0-2 seed0：Texas mean ΔF1Mi +0.090090，normal-shuffled +0.072072；Actor +0.001974/+0.005482；Chameleon +0.013158/+0.014620；Squirrel +0.006724/-0.012168。
+  - 当前裁决：DS-RRNV 取代 RRNV 成为 active-but-risky candidate。它保住 Texas、增强 Chameleon，并将 Squirrel 均值从 RRNV 的负向拉到小正；但 Squirrel shuffled 更强，机制仍未过关，不能声称成功。
+  - 已实现 `--method dirrnv_gcl`，Density-adaptive Invariance RRNV：在 DS-RRNV 基础上对高密度图衰减 true-pair invariance，`invariance_scale=(1-high_gate)^2`。
+  - DIRRNV split0 seed0：Texas +0.000000/+0.027027，Actor +0.007237/+0.003947，Chameleon +0.039474/+0.030702，Squirrel -0.000961/+0.000000。裁决：DIRRNV 未救回 Squirrel且削弱 Texas，不进入 splits 0-2。
+  - 已更新文档：`experiments/topvenue_gcl/docs/redundancy_reduced_natural_view_candidate.md`、`experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
+  - 已验证：`python -m py_compile train.py summarize_split_study.py src/*.py`；Texas/Squirrel DIRRNV 2 epoch smoke；DS-RRNV splits 0-2 normal/shuffled gate；DIRRNV split0 normal/shuffled gate。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/dsrrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv` 查看 DS-RRNV 汇总；随后针对 Squirrel shuffled 反证做高密度图机制诊断，不再继续 DARRNV/DIRRNV 路线。

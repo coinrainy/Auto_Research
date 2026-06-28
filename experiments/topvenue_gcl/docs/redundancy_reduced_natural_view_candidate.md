@@ -85,18 +85,68 @@ split0 运行到 Texas/Actor 后触发停止条件并中止：
 
 裁决：DARRNV 当前实现失败，不继续跑 Chameleon/Squirrel。简单把 RRNV 作为小辅助项太保守，无法保留 Texas/Actor 上的主信号。
 
+## DS-RRNV safety 变体
+
+`dsrrnv_gcl` 暂名 Density-Safe RRNV。它保留纯 RRNV 训练目标，但在 final representation 中根据图平均度使用 graph/high residual mix：
+
+```text
+final = [ego, (1 - gate) graph + gate high]
+gate = sigmoid((log(1 + avg_degree) - log(1 + threshold)) / temperature)
+```
+
+默认 `threshold=30`、`temperature=0.25`，使 Texas/Actor gate 近似 0，Chameleon gate 约 0.076，Squirrel gate 约 0.744。
+
+split0 seed0 结果：
+
+| Dataset | ΔF1Mi vs GCN-MLP | normal - shuffled | high gate | 裁决 |
+| --- | ---: | ---: | ---: | --- |
+| Texas | +0.054054 | +0.081081 | 0.000061 | 保住 RRNV 信号 |
+| Actor | +0.006579 | +0.003947 | 0.000617 | 小正 |
+| Chameleon | +0.043860 | +0.028509 | 0.076343 | 强正 |
+| Squirrel | -0.011527 | -0.013449 | 0.744020 | 仍失败，shuffled 更强 |
+
+splits 0-2 seed0 复核：
+
+| Dataset | mean ΔF1Mi vs GCN-MLP | mean normal - shuffled | 裁决 |
+| --- | ---: | ---: | --- |
+| Texas | +0.090090 | +0.072072 | 强正且 control 干净 |
+| Actor | +0.001974 | +0.005482 | 弱正 |
+| Chameleon | +0.013158 | +0.014620 | 小正且 control 较干净 |
+| Squirrel | +0.006724 | -0.012168 | 均值转正但 shuffled 更强 |
+
+裁决：DS-RRNV 是当前比 RRNV 更好的 active-but-risky candidate。它在 Texas/Chameleon 上保留或增强信号，并把 Squirrel 从 RRNV 的均值负向拉到均值小正；但 Squirrel normal-vs-shuffled 为负，说明高密度图上的机制仍未被证明。
+
+## DIRRNV 尝试与放弃
+
+`dirrnv_gcl` 暂名 Density-adaptive Invariance RRNV。它在 DS-RRNV 基础上对高密度图衰减 true-pair invariance：
+
+```text
+invariance_scale = (1 - high_gate)^2
+```
+
+split0 seed0 结果：
+
+| Dataset | ΔF1Mi vs GCN-MLP | normal - shuffled | 裁决 |
+| --- | ---: | ---: | --- |
+| Texas | +0.000000 | +0.027027 | 弱于 DS-RRNV |
+| Actor | +0.007237 | +0.003947 | 小正 |
+| Chameleon | +0.039474 | +0.030702 | 正向 |
+| Squirrel | -0.000961 | +0.000000 | 未救回 Squirrel |
+
+裁决：DIRRNV 不扩大到 splits 0-2。降低 invariance 没有解决 Squirrel，也削弱了 Texas 主信号。
+
 ## 下一步
 
-保留 `rrnv_gcl` 为当前最有价值候选，但后续必须解决两个问题：
+保留 `dsrrnv_gcl` 为当前最有价值候选，但后续必须解决两个问题：
 
-- Squirrel safety：不能用牺牲 Texas/Chameleon 的弱辅助项来解决，应考虑 representation-level fallback 或 graph-view reliability，而不是 loss-level 小权重；
+- Squirrel mechanism：当前 Squirrel 均值已由负转正，但 shuffled 更强；后续需要解释或修复高密度图上 true-pair invariance 不可靠的问题；
 - 强基线对齐：RRNV 仍只与内部 `gcn_mlp_gcl` 对齐，尚未和 PolyGCL / S3GCL / GraphECL 等强基线同协议比较。
 
 建议下一步命令：
 
 ```bash
 cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl
-cat runs/rrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv
+cat runs/dsrrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv
 ```
 
-若继续方法实验，优先实现 RRNV 的 safety 版本，但停止 `darrnv_gcl` 这条 density-gated auxiliary-loss 路线。
+若继续方法实验，优先围绕 DS-RRNV 做高密度图机制诊断；停止 `darrnv_gcl` 和 `dirrnv_gcl` 两条路线。
