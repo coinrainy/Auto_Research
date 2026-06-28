@@ -271,7 +271,9 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - CiteSeer/PubMed 补充同配 selection-control：CiteSeer selected 0.721868/0.639671 vs random 0.702766/0.634546，PubMed selected 0.847903/0.847778 vs random 0.825259/0.825074。Cora 偏 graph、CiteSeer 在 graph/anchor_graph 间摇摆、PubMed 偏 raw/anchor_graph，说明没有单一固定 fallback 能同时解决同配安全问题，必须方法化 output safety selection。
 - 文献边界更新：HLCL/HeterGCL/H3GNNs 已覆盖异配图高低频、结构语义和 homophily/heterophily self-supervised 调和；当前 Raw-Complement 若继续，创新点必须收缩到 raw-feature anchored complement learning + safety selection，而不是泛化地声称 heterophily GCL SOTA。
 - 已新增 `summarize_selection_controls.py`，用于把多个 `select_representation.py` aggregate 表统一成 selected-vs-random delta 表；当前 5 个 dataset 的 selected-random test micro delta 均为正，范围约 +0.019 到 +0.045。
-- 下一步优先实现 validation-based 或 unsupervised-reliable representation selection，决定何时输出 raw+complement、何时退回 graph context；如果不能修复 Cora，则该方法应定位为 heterophily-focused。
+- 已新增 `select_representation_proxy.py`，实现 label-free output safety proxy v1：effective-rank 过滤 collapsed candidate，按 `edge_random_contrast + 0.08 * raw_similarity_correlation - raw_penalty` 选择候选，小图上取消 raw penalty 作为 WebKB raw-baseline safety rule。完整 C 网格 sanity 中，proxy 在 Cora/PubMed/Actor/Texas 达到 validation selection 上界，CiteSeer micro 低约 0.010 但 macro 高约 0.013；5 个数据集均优于 random selection。
+- WebKB/Actor splits0-9 扩展显示：一旦 `raw` 纳入候选且使用完整 C 网格，Actor/Cornell/Texas/Wisconsin 的 validation selection 与 proxy selection 都 100% 选择 raw。这说明 Raw-Complement 的 WebKB/Actor 收益主要是 raw baseline safety，而不是 learned complement 稳定超过 raw。
+- 当前决策：Raw-Complement 降级为机制诊断与 output safety selection 资产，不再作为“足以冲 2026 顶会/顶刊 SOTA 方法”的 active candidate。下一步不要继续调 proxy 参数，应扩展 Chameleon/Squirrel loader 与 raw baseline 诊断，或重新设计能真正超过 raw 的训练目标。
 - 完整 C 网格 split0-2：`ego_grace` concat - raw 在 Actor/Cornell/Texas 为正、Wisconsin 为负；`residual_grace` 仅 Actor 稳定正向，Cornell/Texas/Wisconsin 为负。
 - 固定 C=1 的 10 split 快速筛查：ego/residual concat - raw 在 Actor/Cornell/Texas/Wisconsin 均为正，但该证据只能说明存在互补信号，不足以支撑 SOTA claim。
 - 下一步应实现显式 raw-anchored residual/complement objective 或 light-validation fusion，而不是继续把 `ego_grace` / `residual_grace` 单独包装为方法。

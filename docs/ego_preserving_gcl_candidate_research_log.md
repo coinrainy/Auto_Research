@@ -824,3 +824,100 @@ python select_representation.py --run-dir /tmp/raw_complement_pubmed_graph_b4096
 - 已新增 `summarize_selection_controls.py` 固化 selection-control 汇总协议；当前统一表输出到 `runs/summaries/raw_complement_output_selection_control_summary.csv`，5 个 dataset 的 selected-vs-random test micro delta 均为正：Actor +0.025822、CiteSeer +0.019101、Cora +0.044711、PubMed +0.022643、Texas +0.040541。
 
 下一步：实现 selection summary / protocol 固化，并设计一个 label-light 或 unsupervised proxy；候选信号包括候选表示的 validation stability、class-balance proxy、embedding anisotropy、graph-vs-raw neighborhood agreement，以及 random/shuffled selection control。
+
+## 2026-06-28 label-free output safety proxy v1
+
+目标：将 validation-based output selection 从“有标签上界”推进到可方法化的无标签候选选择机制。当前 proxy 不使用标签做选择，只在事后用 linear probe 评估其选择质量。
+
+新增脚本：
+
+- `experiments/grace_idea/select_representation_proxy.py`
+
+候选集合仍为 minimal candidates：
+
+- `raw`：原始节点特征；
+- `graph`：Raw-Complement encoder 的 graph context；
+- `anchor_graph`：`[raw, complement, graph_context]` block-normalized 拼接。
+
+proxy v1 规则：
+
+1. 计算候选表示的 effective rank，过滤 effective rank < 5 的明显过平滑/塌缩候选；
+2. 计算无标签 graph edge-vs-random contrast：边两端 cosine 均值减随机节点对 cosine 均值；
+3. 计算候选 pairwise similarity 与 raw feature pairwise similarity 的 sampled correlation；
+4. 选择分数：
+
+```text
+proxy_score = edge_random_contrast
+            + 0.08 * raw_similarity_correlation
+            - raw_candidate_penalty
+```
+
+其中普通图上 `raw_candidate_penalty=0.10`，小图（默认 `num_nodes <= 500`）上 raw penalty 降为 0，用作 WebKB-style raw baseline safety rule。
+
+正式 sanity 命令：
+
+```bash
+python select_representation_proxy.py --run-dir /tmp/raw_complement_cora_graph/Cora_raw_complement_gcl_seed0 --run-dir /tmp/raw_complement_cora_graph_seed1/Cora_raw_complement_gcl_seed1 --run-dir /tmp/raw_complement_cora_graph_seed2/Cora_raw_complement_gcl_seed2 --run-dir /tmp/raw_complement_citeseer_graph/CiteSeer_raw_complement_gcl_seed0 --run-dir /tmp/raw_complement_pubmed_graph_b4096/PubMed_raw_complement_gcl_seed0 --run-dir /tmp/raw_complement_actor_anchor_graph_seed0_split0/Actor_raw_complement_gcl_seed0_split0 --run-dir /tmp/raw_complement_texas_anchor_graph_seed0_split0/Texas_raw_complement_gcl_seed0_split0 --selection-eval-mode auto --random-repeats 3 --random-selection-repeats 5 --candidate-names raw graph anchor_graph --c-min-power -8 --c-max-power 8 --max-iter 3000 --out runs/summaries/raw_complement_proxy_selection_auto_fullc.csv --aggregate-out runs/summaries/raw_complement_proxy_selection_auto_fullc_aggregate.csv
+```
+
+结果：
+
+| Dataset | Validation selected F1Mi/F1Ma | Proxy selected F1Mi/F1Ma | Random selected F1Mi/F1Ma | Proxy choice |
+| --- | ---: | ---: | ---: | --- |
+| Cora | 0.810834 / 0.790843 | 0.810834 / 0.790843 | 0.766123 / 0.732582 | graph |
+| CiteSeer | 0.721868 / 0.639671 | 0.711729 / 0.652489 | 0.702766 / 0.634546 | anchor_graph |
+| PubMed | 0.850164 / 0.849892 | 0.850164 / 0.849892 | 0.841420 / 0.840106 | anchor_graph |
+| Actor | 0.364474 / 0.343554 | 0.364474 / 0.343554 | 0.346711 / 0.320862 | anchor_graph |
+| Texas | 0.810811 / 0.619968 | 0.810811 / 0.619968 | 0.783784 / 0.562045 | raw |
+
+判断：
+
+- proxy v1 在 Cora/PubMed/Actor/Texas 上达到 validation selection 上界；CiteSeer micro 低 1.0 个百分点，但 macro 高 1.3 个百分点；
+- proxy v1 在 5 个数据集上均优于 random candidate selection；
+- effective-rank 过滤可以避开 PubMed/Texas 的 collapsed graph candidate；
+- raw-similarity preservation 修复了单纯 edge contrast 会错误选择 Actor graph 的问题；
+- tiny-graph raw safety rule 让 Texas 回到 raw baseline，不再被 anchor_graph 过度覆盖。
+
+当前研究判断：
+
+- Raw-Complement 继续作为 active candidate，不放弃；
+- 但 proxy v1 仍是启发式，需要在更多 WebKB splits、Cora/CiteSeer/PubMed 多 seed 和 Actor 多 split 上验证；
+- 若 proxy 扩展后仍接近 validation selection，则可以形成论文方法核心：“raw-feature anchored complement learning + label-free output safety selection”；
+- 若 proxy 在 Cornell/Wisconsin 或 Cora 多 seed 上失败，则应把该方向收缩为机制诊断论文，而不是继续堆模块。
+
+下一步：把 proxy selection 扩展到已有 WebKB split0-9 raw_complement artifacts，并与 raw/GRACE baseline 做 paired summary。
+
+## 2026-06-28 WebKB/Actor splits0-9 proxy 扩展与 Raw-Complement 降级
+
+目标：检验 proxy v1 在最关键的异配 split0-9 上是否仍选择 learned complement，并能否支撑 Raw-Complement 作为 heterophily SOTA candidate。
+
+命令：
+
+```bash
+python select_representation_proxy.py --runs-dir runs/raw_complement_anchor_splits0-9_seed0_e100 --selection-eval-mode mask --random-selection-repeats 5 --candidate-names raw graph anchor_graph --c-min-power -8 --c-max-power 8 --max-iter 3000 --out runs/summaries/raw_complement_proxy_selection_webkb_splits0-9.csv --aggregate-out runs/summaries/raw_complement_proxy_selection_webkb_splits0-9_aggregate.csv
+```
+
+结果：
+
+| Dataset | Validation choice | Proxy choice | F1Mi/F1Ma |
+| --- | --- | --- | ---: |
+| Actor | raw:10 | raw:10 | 0.348158 / 0.322487 |
+| Cornell | raw:10 | raw:10 | 0.740541 / 0.528290 |
+| Texas | raw:10 | raw:10 | 0.816216 / 0.644526 |
+| Wisconsin | raw:10 | raw:10 | 0.835294 / 0.591655 |
+
+判断：
+
+- 一旦把 `raw` 纳入候选，并使用完整 C 网格，WebKB/Actor split0-9 的 validation selection 与 proxy selection 都 100% 选择 raw；
+- 这意味着 Raw-Complement 在 WebKB/Actor 主战场上没有稳定超过 raw feature baseline；
+- 之前“相对 GRACE 大幅提升”的结论仍成立，但它不是足够强的 SOTA 证据，因为 raw baseline 本身已经解释了大部分收益；
+- proxy v1 仍有工程价值：它能避免 graph/anchor_graph 损伤 raw baseline，但这更像 safety selector，而不是能带来新 SOTA 的核心方法。
+
+决策：
+
+- Raw-Complement 不再作为“足以冲 2026 顶会/顶刊 SOTA 方法”的 active candidate；
+- 保留 `raw_complement_gcl`、`select_representation.py`、`select_representation_proxy.py` 作为机制诊断与安全选择资产；
+- 当前路线的可写论文最多是 raw-baseline-aware graph SSL 机制/诊断论文，而不是用户目标要求的强 SOTA idea；
+- 下一步必须换研究主线：优先扩展当前 loader 到 Chameleon/Squirrel，并寻找 raw feature 不完全支配、graph SSL 确有互补空间的数据集/任务；或重新设计训练目标，使 complement 在 WebKB 上真正超过 raw，而不是只 fallback 到 raw。
+
+下一步建议：不要继续调 Raw-Complement proxy 参数；应进入新 idea 搜索/实现阶段，先补 Chameleon/Squirrel loader 与 raw baseline 诊断，再决定新方法是否值得实现。
