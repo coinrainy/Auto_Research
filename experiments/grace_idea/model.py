@@ -229,10 +229,14 @@ class RawComplementEncoder(torch.nn.Module):
 
 class Model(torch.nn.Module):
     def __init__(self, encoder: Encoder, num_hidden: int, num_proj_hidden: int,
-                 tau: float = 0.5, aux_num_hidden: int = None):
+                 tau: float = 0.5, aux_num_hidden: int = None,
+                 projection_activation=None):
         super(Model, self).__init__()
         self.encoder: Encoder = encoder
         self.tau: float = tau
+        self.projection_activation = (
+            projection_activation if projection_activation is not None else F.elu
+        )
 
         self.fc1 = torch.nn.Linear(num_hidden, num_proj_hidden)
         self.fc2 = torch.nn.Linear(num_proj_hidden, num_hidden)
@@ -247,13 +251,13 @@ class Model(torch.nn.Module):
         return self.encoder(x, edge_index)
 
     def projection(self, z: torch.Tensor) -> torch.Tensor:
-        z = F.elu(self.fc1(z))
+        z = self.projection_activation(self.fc1(z))
         return self.fc2(z)
 
     def auxiliary_projection(self, z: torch.Tensor) -> torch.Tensor:
         if self.aux_fc1 is None or self.aux_fc2 is None:
             return z
-        z = F.elu(self.aux_fc1(z))
+        z = self.projection_activation(self.aux_fc1(z))
         return self.aux_fc2(z)
 
     def sim(self, z1: torch.Tensor, z2: torch.Tensor):

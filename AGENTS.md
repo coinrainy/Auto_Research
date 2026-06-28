@@ -773,3 +773,16 @@
   - 当前裁决：PGSP-GCL v1 明显弱于 official SP-GCL，降级为失败原型/后续 scaffold，不作为 active top-venue candidate 继续推进。
   - 已新增备忘录：`docs/pgsp_candidate_status_memo.md`。
   - 下一步建议：停止调 `pgsp-target-blend/topk/hidden` 小参数；下一轮应转向 learnable propagation-depth selection、official SP-GCL 质量复现后的增益模块，或重新搜索非 single-pass pseudo-positive 的机制。
+- 2026-06-28 PGSP faithful 复现差距与 SPARC-GCL 新候选：
+  - 已进一步补齐 PGSP faithful 参数：`--optimizer adamw`、`--learning-rate-override`、`--weight-decay-override`、`--pgsp-activation`、`--pgsp-proj-activation`、`--pgsp-pre-proj-relu`，并新增 `--pgsp-anchor-sampling spgcl_tree` 支持 SP-GCL-style duplicated k-hop sampling。
+  - faithful params 仍失败：Chameleon split0 seed42 50 epoch 为 0.4474/0.4421，Squirrel 为 0.2815/0.2636。
+  - faithful params + SP-GCL-style duplicated k-hop sampling + pre-proj ReLU 仍失败：Chameleon 0.3991/0.3816，Squirrel 0.2767/0.2597。
+  - 因此确认 PGSP 当前实现不应继续小修小补；差距不是普通超参导致。
+  - 新增 `experiments/grace_idea/evaluate_propagation_calibration.py`，用于评估 strong SSL embedding 的 `ssl`、`propK`、`ssl_propK`、`ssl_residK` 表示。
+  - 使用 official SP-GCL embedding 做 10 split fast gate（fixed `C=16`、`max_iter=300`）：
+    - Chameleon `ssl` 为 0.623246/0.623299，`ssl_prop2` 为 0.625439/0.626038（+0.002193/+0.002739，6/10 micro 正），`ssl_resid1` 为 0.632237/0.631764（+0.008991/+0.008465，7/10 micro 正、2/10 负、1/10 持平）。
+    - Squirrel `ssl` 为 0.440154/0.434061，`ssl_prop2` 为 0.459270/0.454152（+0.019116/+0.020091，10/10 micro 正），`ssl_resid1` 为 0.468588/0.463756（+0.028434/+0.029695，10/10 micro 正）。
+  - split0 诊断显示 official SP-GCL + raw concat 低于 SP-GCL embedding 本身，说明新信号不是简单 raw feature concat。
+  - 当前 active candidate 切换为 SPARC-GCL：Strong Propagation-residual Adaptive Representation Calibration for Graph Contrastive Learning。
+  - 已新增备忘录：`docs/spgcl_propagation_calibration_candidate_memo.md`。
+  - 下一步建议：固化 official SP-GCL embedding 导出/转换流程，跑完整 C grid 与多 seed；随后做 mode selection 与 class/degree/local homophily 机制诊断。

@@ -25,6 +25,7 @@ from torch_geometric.datasets import (
     WikipediaNetwork,
 )
 from torch_geometric.nn import GCNConv
+from torch_geometric.utils import k_hop_subgraph
 from yaml import SafeLoader
 
 from eval import label_classification, label_classification_with_masks
@@ -55,6 +56,15 @@ HETEROPHILY_DATASETS = [
 ]
 
 
+def activation_by_name(name):
+    return ({
+        'relu': F.relu,
+        'prelu': nn.PReLU(),
+        'elu': F.elu,
+        'rrelu': nn.RReLU(),
+    })[name]
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='DBLP')
@@ -82,6 +92,10 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--batch-size', type=int, default=0)
+    parser.add_argument('--optimizer', type=str, default='adam',
+                        choices=['adam', 'adamw'])
+    parser.add_argument('--learning-rate-override', type=float, default=None)
+    parser.add_argument('--weight-decay-override', type=float, default=None)
     parser.add_argument('--warmup-epochs', type=int, default=20)
     parser.add_argument('--ego-gate-init', type=float, default=0.5)
     parser.add_argument('--graph-gate-temperature', type=float, default=0.5)
@@ -161,7 +175,7 @@ def parse_args():
     parser.add_argument('--pgsp-neg-selection', type=str, default='random',
                         choices=['random', 'low_target', 'low_embedding'])
     parser.add_argument('--pgsp-anchor-sampling', type=str, default='tree',
-                        choices=['random', 'tree'])
+                        choices=['random', 'tree', 'spgcl_tree'])
     parser.add_argument('--pgsp-seed-num', type=int, default=32)
     parser.add_argument('--pgsp-anchor-hops', type=int, default=2)
     parser.add_argument('--pgsp-square-sample',
@@ -178,6 +192,13 @@ def parse_args():
     parser.add_argument('--pgsp-use-bn',
                         action=argparse.BooleanOptionalAction,
                         default=True)
+    parser.add_argument('--pgsp-activation', type=str, default='config',
+                        choices=['config', 'relu', 'prelu', 'elu', 'rrelu'])
+    parser.add_argument('--pgsp-proj-activation', type=str, default='elu',
+                        choices=['relu', 'prelu', 'elu', 'rrelu'])
+    parser.add_argument('--pgsp-pre-proj-relu',
+                        action=argparse.BooleanOptionalAction,
+                        default=False)
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -287,7 +308,7 @@ def should_use_mask_eval(args, data):
 
 
 def build_model(config, dataset, device, args):
-    activation = ({'relu': F.relu, 'prelu': nn.PReLU()})[config['activation']]
+    activation = activation_by_name(config['activation'])
     base_model = ({'GCNConv': GCNConv})[config['base_model']]
     if args.method == 'ego_grace':
         encoder = EgoEncoder(
@@ -328,10 +349,15 @@ def build_model(config, dataset, device, args):
         ).to(device)
     elif args.method == 'pgsp_gcl':
         pgsp_hidden = args.pgsp_hidden if args.pgsp_hidden > 0 else config['num_hidden']
+        pgsp_activation = (
+            activation
+            if args.pgsp_activation == 'config'
+            else activation_by_name(args.pgsp_activation)
+        )
         encoder = SinglePassEncoder(
             dataset.num_features,
             pgsp_hidden,
-            activation,
+            pgsp_activation,
             base_model=base_model,
             k=config['num_layers'],
             dropout=args.pgsp_dropout,
@@ -358,6 +384,11 @@ def build_model(config, dataset, device, args):
         config['tau'],
         aux_num_hidden=(
             config['num_hidden'] if args.method == 'raw_complement_gcl' else None
+        ),
+        projection_activation=(
+            activation_by_name(args.pgsp_proj_activation)
+            if args.method == 'pgsp_gcl'
+            else None
         ),
     ).to(device)
 
@@ -406,6 +437,27 @@ def pgsp_sample_anchor_index(data, args):
     max_size = min(max(1, args.pgsp_max_size), num_nodes)
     if args.pgsp_anchor_sampling == 'random':
         return torch.randperm(num_nodes, device=data.x.device)[:max_size]
+
+    if args.pgsp_anchor_sampling == 'spgcl_tree':
+        seed_count = min(max(1, args.pgsp_seed_num), num_nodes)
+        seeds = torch.randperm(num_nodes, device=data.x.device)[:seed_count]
+        pools = []
+        for seed in seeds.tolist():
+            nodes = k_hop_subgraph(
+                node_idx=int(seed),
+                num_hops=max(0, args.pgsp_anchor_hops),
+                edge_index=data.edge_index,
+                relabel_nodes=False,
+            )[0]
+            if nodes.numel() > 0:
+                pools.append(nodes)
+        if not pools:
+            return seeds[:max_size]
+        pool = torch.cat(pools)
+        if pool.numel() > max_size:
+            positions = torch.randperm(pool.numel(), device=data.x.device)[:max_size]
+            pool = pool[positions]
+        return pool
 
     seed_count = min(max(1, args.pgsp_seed_num), num_nodes)
     seeds = torch.randperm(num_nodes, device=data.x.device)[:seed_count]
@@ -1038,7 +1090,8 @@ def raw_complement_graph_context_objective(model, graph1, graph2, batch_size):
 
 
 def propagation_guided_single_pass_objective(model, z, data, args):
-    embeddings = F.normalize(model.projection(z), dim=1)
+    projection_input = F.relu(z) if args.pgsp_pre_proj_relu else z
+    embeddings = F.normalize(model.projection(projection_input), dim=1)
     num_nodes = embeddings.size(0)
     anchor_index = pgsp_sample_anchor_index(data, args).to(embeddings.device)
     sample_size = anchor_index.numel()
@@ -1658,6 +1711,12 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'pgsp_hidden': args.pgsp_hidden,
         'pgsp_dropout': args.pgsp_dropout,
         'pgsp_use_bn': args.pgsp_use_bn,
+        'pgsp_activation': args.pgsp_activation,
+        'pgsp_proj_activation': args.pgsp_proj_activation,
+        'pgsp_pre_proj_relu': args.pgsp_pre_proj_relu,
+        'optimizer': args.optimizer,
+        'learning_rate_override': args.learning_rate_override,
+        'weight_decay_override': args.weight_decay_override,
         'pair_shuffle_mode': args.pair_shuffle_mode,
         'pair_normalization': args.pair_normalization,
         'pair_reallocation_alpha': args.pair_reallocation_alpha,
@@ -1739,16 +1798,28 @@ def main():
         else dataset.num_classes
     )
     teacher = build_teacher(model) if args.method in ['es_weighted', 'sgfn'] else None
-    optimizer = torch.optim.Adam(
+    learning_rate = (
+        config['learning_rate']
+        if args.learning_rate_override is None
+        else args.learning_rate_override
+    )
+    weight_decay = (
+        config['weight_decay']
+        if args.weight_decay_override is None
+        else args.weight_decay_override
+    )
+    optimizer_cls = torch.optim.AdamW if args.optimizer == 'adamw' else torch.optim.Adam
+    optimizer = optimizer_cls(
         model.parameters(),
-        lr=config['learning_rate'],
-        weight_decay=config['weight_decay'],
+        lr=learning_rate,
+        weight_decay=weight_decay,
     )
     run_dir = prepare_save_dir(args, seed)
 
     print(
         f'(I) | dataset={args.dataset}, method={args.method}, seed={seed}, '
-        f'split_index={args.split_index}, device={device}'
+        f'split_index={args.split_index}, device={device}, '
+        f'optimizer={args.optimizer}, lr={learning_rate}, wd={weight_decay}'
     )
     if args.method in ['es_weighted', 'sgfn', 'pbcl', 'pccl']:
         print(
@@ -1850,7 +1921,10 @@ def main():
             f'pgsp_include_residuals={args.pgsp_include_residuals}, '
             f'pgsp_hidden={args.pgsp_hidden}, '
             f'pgsp_dropout={args.pgsp_dropout}, '
-            f'pgsp_use_bn={args.pgsp_use_bn}'
+            f'pgsp_use_bn={args.pgsp_use_bn}, '
+            f'pgsp_activation={args.pgsp_activation}, '
+            f'pgsp_proj_activation={args.pgsp_proj_activation}, '
+            f'pgsp_pre_proj_relu={args.pgsp_pre_proj_relu}'
         )
 
     start = t()

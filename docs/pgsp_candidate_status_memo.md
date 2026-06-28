@@ -60,6 +60,8 @@ Raw-Complement 被 SP-GCL 强基线压住后，下一候选尝试转向 single-p
 | SP-like + BN/dropout/hidden256, full candidates | 0.3728 / 0.3709 | 0.3007 / 0.2899 | 失败 |
 | SP-like + BN/dropout/hidden256 + tree/square sample | 0.4430 / 0.4409 | 0.2882 / 0.2531 | Chameleon 接近 raw，Squirrel 失败 |
 | tree/square sample + propagation blend=0.3 | 0.4276 / 0.4252 | 0.2959 / 0.2790 | 失败 |
+| faithful params: PReLU/AdamW/dataset lr/dropout | 0.4474 / 0.4421 | 0.2815 / 0.2636 | 失败 |
+| faithful params + SP-GCL-style duplicated k-hop sampling + pre-proj ReLU | 0.3991 / 0.3816 | 0.2767 / 0.2597 | 失败 |
 
 对照线索：
 
@@ -83,6 +85,7 @@ Raw-Complement 被 SP-GCL 强基线压住后，下一候选尝试转向 single-p
 - 当前代码提供了一个可复用的 single-pass objective scaffold；
 - tree/square sampling、传播签名、raw/ssl fusion 诊断可作为后续实验工具；
 - 负结果提示：若要超过 SP-GCL，不能只把传播签名当作 pseudo-positive 排序；需要更强的机制，例如可学习 propagation operator、class/cluster-aware propagation depth、或结构化 output selection，而不是静态多跳特征相似度。
+- 进一步复现提示：即使补齐 PReLU、AdamW、projection activation、pre-projection ReLU 与 SP-GCL-style k-hop duplicate sampling，当前 PGSP 仍无法接近 official SP-GCL embedding quality；后续不应继续在该复刻框架里小修小补。
 
 ## 下一步建议
 

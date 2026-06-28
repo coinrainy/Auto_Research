@@ -32,6 +32,7 @@
 - `--method gated_ego_graph_grace`：基于 local feature-neighborhood agreement 的节点级 graph usage gate；异配强，但当前 v1 与 `--graph-gate-min 0.5` 同配退化严重，不能作为最终主方法。
 - `--method raw_complement_gcl`：Raw-Anchored Complement GCL 原型，训练 hidden `[raw_anchor, complement]`，final representation 默认使用 `[normalized raw features, normalized learned complement]`；当前异配 10 split 相对 GRACE 全正向，但 homophily safety 尚未解决。当前最新机制消融显示，收益更准确地来自 raw-relative graph complement，而不是普通 graph context 或简单 raw+graph 拼接。
 - `--method pgsp_gcl`：Propagation-Guided Single-Pass GCL 原型。该方法已实现 single-pass encoder、tree/square anchor sampling、多跳传播签名 pseudo-positive 排序与 SP-like objective；当前早筛结果明显弱于 official SP-GCL，已降级为失败原型/后续 scaffold。
+- `evaluate_propagation_calibration.py`：SPARC-GCL 候选的传播/残差校准评估脚本，可对任意 `artifacts.pt` 的 SSL embedding 评估 `ssl`、`propK`、`ssl_propK`、`ssl_residK` 等表示。
 - `select_representation.py`：raw-complement 的表示选择诊断工具，可从 `artifacts.pt` 中比较 `raw/saved/anchor/graph/complement/hidden`，用验证集选择候选表示；当前发现 Cora 可通过 graph/saved fallback 避免 anchor 崩溃，但仍低于 GRACE，Actor 上 saved 表示有清楚增量，WebKB 三小图多数 split 仍由 raw feature 主导。
 
 `es_weighted` 的设计边界：
@@ -223,6 +224,16 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - 当前裁决：PGSP v1 不继续作为 active candidate；保留为 single-pass scaffold 与负结果。后续若继续 single-pass 路线，必须先复现 official SP-GCL embedding quality，再引入真正增益模块。
 - 详细记录见 `docs/pgsp_candidate_status_memo.md`。
 
+`SPARC-GCL` 当前研究判断：
+
+- 当前 active candidate 转为 SP-GCL Propagation-Residual Calibration，而不是继续复刻/微调 PGSP。
+- 核心表示是 `[normalize(z), normalize(z - Pz)]` 或 `[normalize(z), normalize(P^k z)]`，其中 `z` 为 strong GCL embedding，`P` 为带 self-loop 的 row-normalized propagation。
+- official SP-GCL embedding 的 10 split fast gate：Squirrel `ssl_resid1` 相对 `ssl` F1Mi/F1Ma +0.028434/+0.029695，10/10 split micro 为正；Chameleon `ssl_resid1` +0.008991/+0.008465，7/10 正、2/10 负、1/10 持平。
+- `ssl_prop2` 也有正向：Squirrel +0.019116/+0.020091，Chameleon +0.002193/+0.002739。
+- 简单 raw concat 在 split0 上低于 SP-GCL embedding，说明新信号不是 raw-preserving concat，而是 propagation residual / calibrated propagation。
+- 当前裁决：SPARC-GCL 是下一轮最值得继续的 active candidate，但仍需多 seed、完整 C grid、mode selection 与机制诊断后才可能进入论文主线。
+- 详细记录见 `docs/spgcl_propagation_calibration_candidate_memo.md`。
+
 ## 当前实验入口能力
 
 - 支持 Planetoid/CitationFull：`Cora`、`CiteSeer`、`PubMed`、`DBLP`。
@@ -249,6 +260,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `gated_ego_graph_grace` 支持 `--graph-gate-temperature`、`--graph-gate-threshold`、`--graph-gate-min`、`--graph-gate-max`，并记录 `graph_gate_*`。
 - `raw_complement_gcl` 支持 `--raw-complement-weight`、`--raw-complement-detach-anchor/--no-raw-complement-detach-anchor`、`--raw-complement-eval-mode anchor|hidden|graph|anchor_graph|raw_graph`，并记录 raw/complement correlation diagnostics；当前 `--raw-complement-weight` 默认值已改为 `0.0`，`0.05` 仅作为附录消融/robustness check。
 - `pgsp_gcl` 支持 `--pgsp-hops`、`--pgsp-topk`、`--pgsp-neg-topk`、`--pgsp-max-size`、`--pgsp-target-blend`、`--pgsp-neg-selection`、`--pgsp-anchor-sampling`、`--pgsp-seed-num`、`--pgsp-anchor-hops`、`--pgsp-square-sample`、`--pgsp-hidden`、`--pgsp-dropout`、`--pgsp-use-bn`。
+- `evaluate_propagation_calibration.py` 支持 `--max-hop`、`--modes`、`--split-indices`、`--c-values` 与 `--max-iter`，用于 SPARC-GCL 的 post-hoc propagation calibration gate。
 - `evaluate_raw_features.py` 支持对原始 `data.x` 使用当前同一套 mask/random linear evaluation 协议，作为 ego/residual/GRACE 的 feature-only 硬 baseline。
 - `evaluate_feature_fusion.py` 支持递归读取 `artifacts.pt`，在同一 split 下评估 `raw`、`ssl`、`raw+ssl concat`，并输出 concat 相对 raw/ssl 的 paired delta 与 aggregate summary。
 - `select_representation.py` 支持读取 `artifacts.pt` 并用验证集选择 raw/saved/anchor/graph/complement/hidden 候选表示；当前定位为单 run / 小批量诊断工具，全候选完整 C 网格在 Actor 上过慢，不作为正式大规模评估主入口。
