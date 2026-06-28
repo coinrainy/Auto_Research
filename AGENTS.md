@@ -601,3 +601,10 @@
   - 已执行 Cora seed1/2 表示选择诊断：`python select_representation.py --run-dir /tmp/raw_complement_cora_graph_seed1/Cora_raw_complement_gcl_seed1 --run-dir /tmp/raw_complement_cora_graph_seed2/Cora_raw_complement_gcl_seed2 --selection-eval-mode random --random-repeats 3 --candidate-names raw saved anchor graph --c-min-power -8 --c-max-power 8 --max-iter 3000 --out runs/summaries/raw_complement_representation_selection_cora_random_seeds1-2_fullc.csv --aggregate-out runs/summaries/raw_complement_representation_selection_cora_random_seeds1-2_fullc_aggregate.csv`，6/6 次选择 saved/graph-context，F1Mi/F1Ma=0.815883/0.797750。
   - 当前研究判断：不应放弃 raw-complement 主线，但必须停止把 anchor mode 作为默认最终输出；下一步应实现 self-supervised safety gate 或 graph-context preservation，将 Cora 平均退化压到 0.5 个百分点以内，同时保留 Actor/WebKB 异配收益。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode graph --raw-complement-weight 0.01 --seed 0 --epochs 100 --save-dir /tmp/raw_complement_cora_graph_w001_seed0 --overwrite --log-every 100`。
+- 2026-06-28 raw-complement weight 小消融：
+  - 已执行 Cora seed0 `raw_complement_weight=0.01` graph fallback，结果 F1Mi/F1Ma=0.7931/0.7565，低于默认 `0.05` 的 0.7997/0.7655。
+  - 已执行 Cora seed0 `raw_complement_weight=0.1` graph fallback，结果 F1Mi/F1Ma=0.8050/0.7725，较默认略好但仍低于 GRACE 0.8224/0.8015。
+  - 已执行 Actor split0 `weight=0.1` anchor sanity，结果 0.3730/0.3379，略高于默认 0.3704/0.3281，说明更强正则不一定伤害 Actor 增量。
+  - 已执行 Texas split0 `weight=0.1` anchor sanity，结果 0.7838/0.5979，低于默认 0.8108/0.6200，说明全局调大权重会损伤 WebKB 收益。
+  - 当前判断：停止朴素 `raw_complement_weight` 网格搜索；Cora safety 与 Texas/Actor 异配收益不能靠单一全局权重同时解决。下一步应实现结构性机制：self-supervised safety gate、graph-context preservation regularizer，或 region-adaptive complement usage。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode graph --raw-complement-weight 0.05 --no-raw-complement-detach-anchor --seed 0 --epochs 100 --save-dir /tmp/raw_complement_cora_graph_nodetach_seed0 --overwrite --log-every 100`。

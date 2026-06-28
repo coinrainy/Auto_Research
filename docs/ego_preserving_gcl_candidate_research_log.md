@@ -567,3 +567,34 @@ python select_representation.py --run-dir /tmp/raw_complement_cora_graph_seed1/C
 - `graph` 输出作为 homophily-safe fallback；
 - `anchor` / raw+complement 输出只在互补信号明确时启用；
 - Cora 的目标不是大幅超 GRACE，而是把平均退化压到 0.5 个百分点以内，同时保持 Actor/WebKB 异配收益。
+
+## 2026-06-28 raw-complement weight 小消融
+
+目标：检查 Cora graph fallback 的退化是否能通过简单调节 `raw_complement_weight` 修复。如果可以，后续可走轻量超参/默认值路线；如果不行，应停止把问题归因于单一 loss 权重。
+
+新增命令：
+
+```bash
+python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode graph --raw-complement-weight 0.01 --seed 0 --epochs 100 --save-dir /tmp/raw_complement_cora_graph_w001_seed0 --overwrite --log-every 100
+python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode graph --raw-complement-weight 0.1 --seed 0 --epochs 100 --save-dir /tmp/raw_complement_cora_graph_w01_seed0 --overwrite --log-every 100
+python train.py --dataset Actor --method raw_complement_gcl --raw-complement-eval-mode anchor --raw-complement-weight 0.1 --seed 0 --split-index 0 --epochs 100 --save-dir /tmp/raw_complement_actor_w01_seed0_split0 --overwrite --log-every 100
+python train.py --dataset Texas --method raw_complement_gcl --raw-complement-eval-mode anchor --raw-complement-weight 0.1 --seed 0 --split-index 0 --epochs 100 --save-dir /tmp/raw_complement_texas_w01_seed0_split0 --overwrite --log-every 100
+```
+
+结果：
+
+| Setting | Dataset/split | F1Mi/F1Ma | 对照 |
+| --- | --- | ---: | --- |
+| `weight=0.01`, graph | Cora seed0 | 0.7931 / 0.7565 | 低于 default `0.05` 的 0.7997 / 0.7655 |
+| `weight=0.1`, graph | Cora seed0 | 0.8050 / 0.7725 | 高于 default，但仍低于 GRACE 0.8224 / 0.8015 |
+| `weight=0.1`, anchor | Actor split0 | 0.3730 / 0.3379 | 略高于 default 0.3704 / 0.3281 |
+| `weight=0.1`, anchor | Texas split0 | 0.7838 / 0.5979 | 低于 default 0.8108 / 0.6200 |
+
+判断：
+
+- 降低 `raw_complement_weight` 到 `0.01` 不能修复 Cora，反而更差；
+- 提高到 `0.1` 对 Cora seed0 有轻微缓解，对 Actor split0 不伤甚至略好；
+- 但 `0.1` 明显损伤 Texas split0，说明单一全局权重无法同时满足 homophily safety 与 WebKB 异配收益；
+- 停止继续做朴素 `raw_complement_weight` 网格搜索。
+
+下一步必须转为结构性改法：安全输出 gate、graph-context preservation regularizer、或 dataset/region-adaptive complement usage，而不是继续调一个全局 loss 权重。
