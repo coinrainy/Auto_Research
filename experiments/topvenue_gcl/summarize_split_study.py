@@ -109,6 +109,7 @@ def read_run_json(path):
         "dsrrnv_high_gate": diagnostics.get("dsrrnv_high_gate"),
         "dsrrnv_avg_degree": diagnostics.get("dsrrnv_avg_degree"),
         "dirrnv_invariance_scale": diagnostics.get("dirrnv_invariance_scale"),
+        "dprrnv_shuffle_prob": diagnostics.get("dprrnv_shuffle_prob"),
         "mpnv_semantic_pos_mean": diagnostics.get("mpnv_semantic_pos_mean"),
         "mpnv_spatial_pos_mean": diagnostics.get("mpnv_spatial_pos_mean"),
         "mpnv_semantic_density": diagnostics.get("mpnv_semantic_density"),

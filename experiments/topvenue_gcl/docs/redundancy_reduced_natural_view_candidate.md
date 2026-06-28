@@ -135,11 +135,35 @@ split0 seed0 结果：
 
 裁决：DIRRNV 不扩大到 splits 0-2。降低 invariance 没有解决 Squirrel，也削弱了 Texas 主信号。
 
+## DPRRNV 高密度扰动配对尝试
+
+`dprrnv_gcl` 暂名 Density-Perturbed RRNV。它不是替代 DS-RRNV 的主线，而是针对 DS-RRNV 的 Squirrel 反证做一次机制验证：如果高密度图上的真实 ego/graph 节点配对不可靠，则在 RRNV invariance target 中按密度混入随机配对目标。
+
+```text
+shuffle_prob = high_gate
+target = (1 - shuffle_prob) graph + shuffle_prob shuffled(graph)
+final = DS-RRNV 的 density-mixed final
+```
+
+默认下 Texas/Actor 的 `shuffle_prob` 近似 0，Chameleon 约 0.073，Squirrel 约 0.707。`--rrnv-shuffle-pairs` 仍作为 full-shuffled control，此时 `shuffle_prob=1.0`。
+
+split0 seed0 结果：
+
+| Dataset | ΔF1Mi vs GCN-MLP | normal - full-shuffled | shuffle prob | 裁决 |
+| --- | ---: | ---: | ---: | --- |
+| Texas | +0.027027 | +0.027027 | 0.000058 | 正向但弱于 DS-RRNV |
+| Actor | +0.003289 | -0.005263 | 0.000586 | full-shuffled 更强 |
+| Chameleon | +0.002193 | -0.015351 | 0.072526 | full-shuffled 更强 |
+| Squirrel | +0.026897 | +0.019212 | 0.706819 | 修复 Squirrel |
+
+裁决：DPRRNV 不升级为主方法。它证明“高密度图上弱化真实配对、引入扰动配对”能修复 Squirrel split0，但同时显著削弱 Texas/Chameleon，且 Actor/Chameleon 的 full-shuffled control 更强。当前只保留为高密度图机制线索或 DS-RRNV 的可选诊断模块，不进入 splits 0-2 扩展。
+
 ## 下一步
 
 保留 `dsrrnv_gcl` 为当前最有价值候选，但后续必须解决两个问题：
 
 - Squirrel mechanism：当前 Squirrel 均值已由负转正，但 shuffled 更强；后续需要解释或修复高密度图上 true-pair invariance 不可靠的问题；
+- 高密度扰动配对：DPRRNV 在 Squirrel 有修复信号，但 full-shuffled control 不够干净，不能作为主方法；若后续继承该线索，必须设计节点级而非图级的配对可靠性 gate；
 - 强基线对齐：RRNV 仍只与内部 `gcn_mlp_gcl` 对齐，尚未和 PolyGCL / S3GCL / GraphECL 等强基线同协议比较。
 
 建议下一步命令：
@@ -147,6 +171,7 @@ split0 seed0 结果：
 ```bash
 cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl
 cat runs/dsrrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv
+cat runs/dprrnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv
 ```
 
-若继续方法实验，优先围绕 DS-RRNV 做高密度图机制诊断；停止 `darrnv_gcl` 和 `dirrnv_gcl` 两条路线。
+若继续方法实验，优先围绕 DS-RRNV 做高密度图机制诊断；停止 `darrnv_gcl` 和 `dirrnv_gcl`，DPRRNV 仅作为 Squirrel 机制线索，不作为下一轮默认扩展对象。

@@ -1162,3 +1162,13 @@
   - 已更新文档：`experiments/topvenue_gcl/docs/redundancy_reduced_natural_view_candidate.md`、`experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
   - 已验证：`python -m py_compile train.py summarize_split_study.py src/*.py`；Texas/Squirrel DIRRNV 2 epoch smoke；DS-RRNV splits 0-2 normal/shuffled gate；DIRRNV split0 normal/shuffled gate。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/dsrrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv` 查看 DS-RRNV 汇总；随后针对 Squirrel shuffled 反证做高密度图机制诊断，不再继续 DARRNV/DIRRNV 路线。
+- 2026-06-29 DPRRNV 高密度扰动配对诊断：
+  - 已实现 `experiments/topvenue_gcl/train.py --method dprrnv_gcl`，Density-Perturbed RRNV：沿用 DS-RRNV final representation，但在 RRNV invariance target 中根据图平均度 high gate 混入随机配对目标。
+  - 默认 `shuffle_prob`：Texas 0.000058、Actor 0.000586、Chameleon 0.072526、Squirrel 0.706819；`--rrnv-shuffle-pairs` 作为 full-shuffled control，此时 `shuffle_prob=1.0`。
+  - 已新增配置/CLI：`dprrnv_shuffle_power`、`dprrnv_min_shuffle_prob`、`dprrnv_max_shuffle_prob`，并在 `summarize_split_study.py` 中记录 `dprrnv_shuffle_prob`。
+  - 已完成 smoke：`python -m py_compile train.py summarize_split_study.py src/*.py`、`python train.py --help | rg "dprrnv|rrnv|method"`、Texas/Squirrel DPRRNV 2 epoch smoke。
+  - 已执行 DPRRNV split0 seed0 50 epoch normal 与 full-shuffled control，输出目录 `experiments/topvenue_gcl/runs/dprrnv_split0_s0_e50/`，并生成 `aggregate_vs_gcn_mlp.csv`。
+  - DPRRNV normal vs `gcn_mlp_gcl`：Texas +0.027027，Actor +0.003289，Chameleon +0.002193，Squirrel +0.026897。
+  - DPRRNV normal-vs-full-shuffled：Texas +0.027027，Actor -0.005263，Chameleon -0.015351，Squirrel +0.019212。
+  - 当前裁决：DPRRNV 修复了 Squirrel split0，但削弱 Texas/Chameleon，且 Actor/Chameleon full-shuffled 更强；不升级为主方法，不进入 splits 0-2，仅保留为高密度图配对可靠性机制线索。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/dprrnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv` 查看 DPRRNV 边界；随后应回到 DS-RRNV 主线，设计节点级 pair reliability/density gate，而不是继续扩大图级 DPRRNV。

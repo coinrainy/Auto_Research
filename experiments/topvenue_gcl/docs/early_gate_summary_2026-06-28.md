@@ -757,3 +757,18 @@ DIRRNV split0 seed0：
 | Squirrel | -0.000961 | +0.000000 | 未救回 Squirrel |
 
 裁决：DIRRNV 不进入 splits 0-2。降低 invariance 没有解决 Squirrel，也削弱 Texas 主信号。
+
+## 2026-06-29 追加：DPRRNV 高密度扰动配对
+
+已实现 `--method dprrnv_gcl`，暂名 Density-Perturbed RRNV。它沿用 DS-RRNV final representation，但在 RRNV invariance target 中按密度混入随机配对目标：低密度图近似真实配对，高密度图部分扰动配对。默认 `shuffle_prob`：Texas 0.000058、Actor 0.000586、Chameleon 0.072526、Squirrel 0.706819。
+
+split0 seed0：
+
+| Dataset | ΔF1Mi vs GCN-MLP | normal - full-shuffled | 裁决 |
+| --- | ---: | ---: | --- |
+| Texas | +0.027027 | +0.027027 | 正向但弱于 DS-RRNV |
+| Actor | +0.003289 | -0.005263 | control 不干净 |
+| Chameleon | +0.002193 | -0.015351 | control 不干净且弱于 DS-RRNV |
+| Squirrel | +0.026897 | +0.019212 | 修复 Squirrel |
+
+裁决：DPRRNV 不升级为主方法，也不进入 splits 0-2。它提供了 Squirrel 高密度图的有价值线索，但 Actor/Chameleon full-shuffled 更强，说明图级扰动配对不是可投稿主机制。后续若继承该方向，应改为节点级 pair reliability / density gate，而不是继续扩大图级 DPRRNV。
