@@ -166,3 +166,17 @@ SRGNV 当前裁决：
 - SRGNV 已降级为 negative-result ablation，不进入 splits 0-2 扩展；
 - 后续不再继续调 residual weight、threshold 或 temperature；
 - 下一代方法必须直接约束或诊断 downstream separability / neighborhood conflict，而不是只蒸馏 representation residual。
+
+PCNV 当前裁决：
+
+- `pcnv_gcl` 入口为 `--method pcnv_gcl`；
+- 它保留 `gcn_mlp_gcl` 的 Natural-View bootstrap，并加入 trainable prototypes；
+- ego view 与 graph view 在 prototype assignment 空间做双向 consistency，target stop-gradient；
+- `--pcnv-shuffle-assignments` 是必须保留的机制 control；
+- default PCNV 在 Texas/Actor/Chameleon/Squirrel × split0 × seed0 × 50 epoch 中，相对 `gcn_mlp_gcl` 的 ΔF1Mi 分别为 +0.027027、+0.007895、+0.028509、-0.014409；
+- default shuffled 的 ΔF1Mi 分别为 +0.000000、+0.013158、+0.030702、-0.016330，说明 Actor/Chameleon 机制 control 不干净；
+- sharpened PCNV 使用 `--pcnv-prototype-weight 0.5 --pcnv-balance-weight 0.1 --pcnv-assignment-temperature 0.1 --pcnv-target-temperature 0.03`；
+- sharpened PCNV 在 Texas 达到 F1Mi/F1Ma=0.729730/0.459091，强于 default 与 shuffled，是当前最强 Texas 单点；
+- 但 sharpened PCNV 在 Squirrel 明显失败，且 Chameleon/Squirrel 的 prototype usage entropy 过低，提示原型坍塌；
+- 当前裁决是 active-but-risky：PCNV 有潜在新机制，但不能作为主方法定稿；
+- 下一步只能做 entropy-guarded / adaptive prototype calibration；如果 normal-vs-shuffled 与 usage entropy 问题不能同时改善，应放弃 prototype calibration 主线。

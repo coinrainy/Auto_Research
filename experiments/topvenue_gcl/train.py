@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import shutil
 import time
 from pathlib import Path
@@ -55,6 +56,7 @@ def parse_args():
                             "mpnv_gcl",
                             "aompnv_gcl",
                             "srgnv_gcl",
+                            "pcnv_gcl",
                             "energy_spgcl",
                             "gcn_mlp_gcl",
                             "er_residual_gcl",
@@ -113,6 +115,13 @@ def parse_args():
     parser.add_argument("--srgnv-residual-temperature", type=float, default=None)
     parser.add_argument("--srgnv-min-residual-weight", type=float, default=None)
     parser.add_argument("--srgnv-shuffle-residual", action="store_true")
+    parser.add_argument("--pcnv-num-prototypes", type=int, default=None)
+    parser.add_argument("--pcnv-base-weight", type=float, default=None)
+    parser.add_argument("--pcnv-prototype-weight", type=float, default=None)
+    parser.add_argument("--pcnv-balance-weight", type=float, default=None)
+    parser.add_argument("--pcnv-assignment-temperature", type=float, default=None)
+    parser.add_argument("--pcnv-target-temperature", type=float, default=None)
+    parser.add_argument("--pcnv-shuffle-assignments", action="store_true")
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -223,6 +232,20 @@ def override_config(config, args):
         merged["srgnv_min_residual_weight"] = args.srgnv_min_residual_weight
     if args.srgnv_shuffle_residual:
         merged["srgnv_shuffle_residual"] = True
+    if args.pcnv_num_prototypes is not None:
+        merged["pcnv_num_prototypes"] = args.pcnv_num_prototypes
+    if args.pcnv_base_weight is not None:
+        merged["pcnv_base_weight"] = args.pcnv_base_weight
+    if args.pcnv_prototype_weight is not None:
+        merged["pcnv_prototype_weight"] = args.pcnv_prototype_weight
+    if args.pcnv_balance_weight is not None:
+        merged["pcnv_balance_weight"] = args.pcnv_balance_weight
+    if args.pcnv_assignment_temperature is not None:
+        merged["pcnv_assignment_temperature"] = args.pcnv_assignment_temperature
+    if args.pcnv_target_temperature is not None:
+        merged["pcnv_target_temperature"] = args.pcnv_target_temperature
+    if args.pcnv_shuffle_assignments:
+        merged["pcnv_shuffle_assignments"] = True
     return merged
 
 
@@ -389,6 +412,62 @@ def _srgnv_residual_target(data, parts, config):
     min_weight = float(config["srgnv_min_residual_weight"])
     gate = gate * (1.0 - min_weight) + min_weight
     return residual, residual_score, gate
+
+
+def _pcnv_assignment_terms(anchor, target, prototypes, config):
+    assignment_temperature = max(float(config["pcnv_assignment_temperature"]), 1e-12)
+    target_temperature = max(float(config["pcnv_target_temperature"]), 1e-12)
+    proto = F.normalize(prototypes, dim=1)
+    anchor_logits = F.normalize(anchor, dim=1) @ proto.t() / assignment_temperature
+    with torch.no_grad():
+        target_logits = F.normalize(target.detach(), dim=1) @ proto.t() / target_temperature
+        target_prob = torch.softmax(target_logits, dim=1)
+        if bool(config.get("pcnv_shuffle_assignments", False)):
+            target_prob = target_prob[torch.randperm(target_prob.size(0), device=target_prob.device)]
+    consistency = -(target_prob * F.log_softmax(anchor_logits, dim=1)).sum(dim=1).mean()
+    anchor_prob = torch.softmax(anchor_logits, dim=1)
+    mean_prob = anchor_prob.mean(dim=0)
+    balance = (mean_prob * (mean_prob.clamp_min(1e-12).log() + math.log(mean_prob.numel()))).sum()
+    entropy = -(anchor_prob * anchor_prob.clamp_min(1e-12).log()).sum(dim=1)
+    return consistency, balance, {
+        "assignment_entropy": entropy.mean(),
+        "assignment_max_prob": anchor_prob.max(dim=1).values.mean(),
+        "prototype_usage_entropy": -(mean_prob * mean_prob.clamp_min(1e-12).log()).sum(),
+    }
+
+
+def _pcnv_loss(ego, graph, prototypes, config):
+    ego_to_graph, ego_balance, ego_stats = _pcnv_assignment_terms(
+        ego,
+        graph,
+        prototypes,
+        config,
+    )
+    graph_to_ego, graph_balance, graph_stats = _pcnv_assignment_terms(
+        graph,
+        ego,
+        prototypes,
+        config,
+    )
+    consistency = 0.5 * (ego_to_graph + graph_to_ego)
+    balance = 0.5 * (ego_balance + graph_balance)
+    stats = {
+        "pcnv_consistency_loss": consistency.detach(),
+        "pcnv_balance_loss": balance.detach(),
+        "pcnv_assignment_entropy_mean": 0.5 * (
+            ego_stats["assignment_entropy"].detach()
+            + graph_stats["assignment_entropy"].detach()
+        ),
+        "pcnv_assignment_max_prob_mean": 0.5 * (
+            ego_stats["assignment_max_prob"].detach()
+            + graph_stats["assignment_max_prob"].detach()
+        ),
+        "pcnv_usage_entropy_mean": 0.5 * (
+            ego_stats["prototype_usage_entropy"].detach()
+            + graph_stats["prototype_usage_entropy"].detach()
+        ),
+    }
+    return consistency, balance, stats
 
 
 @torch.no_grad()
@@ -664,8 +743,20 @@ def _cache_diagnostics(parts, cache_idx, cache_keys, cache_weight=None):
 
 
 def train_er_cache_gcl(model, data, config, args):
+    pcnv_gcl = args.method == "pcnv_gcl"
+    extra_parameters = []
+    pcnv_prototypes = None
+    if pcnv_gcl:
+        pcnv_prototypes = torch.empty(
+            int(config["pcnv_num_prototypes"]),
+            int(config["hidden_dim"]),
+            device=data.x.device,
+        )
+        pcnv_prototypes = torch.nn.Parameter(pcnv_prototypes)
+        torch.nn.init.xavier_uniform_(pcnv_prototypes)
+        extra_parameters.append(pcnv_prototypes)
     optimizer = torch.optim.Adam(
-        model.parameters(),
+        list(model.parameters()) + extra_parameters,
         lr=float(config["learning_rate"]),
         weight_decay=float(config["weight_decay"]),
     )
@@ -691,6 +782,7 @@ def train_er_cache_gcl(model, data, config, args):
         "mpnv_gcl",
         "aompnv_gcl",
         "srgnv_gcl",
+        "pcnv_gcl",
     }
     graph_target = args.method in {
         "gcn_mlp_gcl",
@@ -703,6 +795,7 @@ def train_er_cache_gcl(model, data, config, args):
         "mpnv_gcl",
         "aompnv_gcl",
         "srgnv_gcl",
+        "pcnv_gcl",
     }
     topk = 0 if (args.disable_cache or residual_only) else int(config["cache_topk"])
     cache_update = max(1, int(config["cache_update_interval"]))
@@ -868,6 +961,23 @@ def train_er_cache_gcl(model, data, config, args):
             loss_self = (
                 float(config["srgnv_base_weight"]) * loss_base
                 + float(config["srgnv_residual_weight"]) * loss_residual
+            )
+            loss_cache = parts["final"].new_tensor(0.0)
+        elif pcnv_gcl:
+            loss_base = 0.5 * (
+                negative_cosine(pred_ego, parts["graph"])
+                + negative_cosine(pred_high, parts["ego"])
+            )
+            loss_proto, loss_balance, _ = _pcnv_loss(
+                parts["ego"],
+                parts["graph"],
+                pcnv_prototypes,
+                config,
+            )
+            loss_self = (
+                float(config["pcnv_base_weight"]) * loss_base
+                + float(config["pcnv_prototype_weight"]) * loss_proto
+                + float(config["pcnv_balance_weight"]) * loss_balance
             )
             loss_cache = parts["final"].new_tensor(0.0)
         elif aompnv_gcl:
@@ -1115,6 +1225,28 @@ def train_er_cache_gcl(model, data, config, args):
             diagnostics["srgnv_residual_gate_std"] = float(residual_gate.std(unbiased=False).item())
             diagnostics["srgnv_residual_cos_mean"] = float(residual_cos.mean().item())
             diagnostics["srgnv_shuffle_residual"] = bool(config.get("srgnv_shuffle_residual", False))
+        if pcnv_gcl:
+            _, _, proto_stats = _pcnv_loss(
+                parts["ego"],
+                parts["graph"],
+                pcnv_prototypes,
+                config,
+            )
+            proto = F.normalize(pcnv_prototypes.detach(), dim=1)
+            proto_sim = proto @ proto.t()
+            off_diag = proto_sim[~torch.eye(proto_sim.size(0), dtype=torch.bool, device=proto_sim.device)]
+            diagnostics["pcnv_consistency_loss"] = float(proto_stats["pcnv_consistency_loss"].item())
+            diagnostics["pcnv_balance_loss"] = float(proto_stats["pcnv_balance_loss"].item())
+            diagnostics["pcnv_assignment_entropy_mean"] = float(
+                proto_stats["pcnv_assignment_entropy_mean"].item()
+            )
+            diagnostics["pcnv_assignment_max_prob_mean"] = float(
+                proto_stats["pcnv_assignment_max_prob_mean"].item()
+            )
+            diagnostics["pcnv_usage_entropy_mean"] = float(proto_stats["pcnv_usage_entropy_mean"].item())
+            diagnostics["pcnv_num_prototypes"] = int(config["pcnv_num_prototypes"])
+            diagnostics["pcnv_shuffle_assignments"] = bool(config.get("pcnv_shuffle_assignments", False))
+            diagnostics["pcnv_prototype_cosine_offdiag_mean"] = float(off_diag.mean().item())
         if mpnv_gcl:
             semantic_mask, spatial_mask = mpnv_masks
             diagnostics["mpnv_semantic_pos_mean"] = float(semantic_mask.float().sum(dim=1).mean().item())
@@ -1126,6 +1258,7 @@ def train_er_cache_gcl(model, data, config, args):
         ("danv_degree" if danv_degree_gcl else "danv") if danv_gcl else
         "fdnv" if fdnv_gcl else
         ("srgnv_shuffled" if bool(config.get("srgnv_shuffle_residual", False)) else "srgnv") if srgnv_gcl else
+        ("pcnv_shuffled" if bool(config.get("pcnv_shuffle_assignments", False)) else "pcnv") if pcnv_gcl else
         ("aompnv_shuffled" if bool(config.get("aompnv_shuffle_positives", False)) else "aompnv") if aompnv_gcl else
         ("mpnv_shuffled" if bool(config.get("mpnv_shuffle_positives", False)) else "mpnv") if mpnv_gcl else
         "bspnv" if bspnv_gcl else
@@ -1168,7 +1301,7 @@ def main():
     config = override_config(load_yaml(args.config), args)
     if args.method == "gcn_mlp_gcl" and args.final_repr is None:
         config["final_repr"] = "ego_graph"
-    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl", "srgnv_gcl"} and args.final_repr is None:
+    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl", "srgnv_gcl", "pcnv_gcl"} and args.final_repr is None:
         config["final_repr"] = "ego_graph"
     if args.method == "energy_spgcl" and args.final_repr is None:
         config["final_repr"] = "ego_high"

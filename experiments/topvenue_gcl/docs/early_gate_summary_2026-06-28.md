@@ -482,3 +482,53 @@ Aggregate vs `gcn_mlp_gcl`：
 - Actor 的唯一正向被 shuffled residual 超过，机制证据失败；
 - Chameleon 大幅退化，直接触发停止条件；
 - SRGNV 保留为 negative-result ablation，不继续调 residual weight、threshold 或 temperature。
+
+## 2026-06-29 追加：PCNV-GCL prototype calibration 实现与 early gate
+
+已实现 `--method pcnv_gcl`：Prototype-Calibrated Natural-View GCL。该方法保留 `gcn_mlp_gcl` 的 Natural-View bootstrap，并加入 trainable prototypes，让 ego view 与 graph view 在 prototype assignment 空间做双向 stop-gradient consistency。`--pcnv-shuffle-assignments` 用于打乱 assignment target 与节点对应关系，作为机制 control。
+
+执行：
+
+```bash
+RUNS_DIR="runs/pcnv_split0_s0_e50"
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl pcnv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="normal" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="pcnv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="shuffled" EXTRA_ARGS="--pcnv-shuffle-assignments" OVERWRITE=1 bash scripts/run_split_study.sh
+python summarize_split_study.py --runs-dir "$RUNS_DIR" --baseline-method gcn_mlp_gcl --out "$RUNS_DIR/split_study_runs_vs_gcn_mlp.csv" --aggregate-out "$RUNS_DIR/split_study_aggregate_vs_gcn_mlp.csv"
+```
+
+Default PCNV vs `gcn_mlp_gcl`：
+
+| Dataset | PCNV ΔF1Mi | PCNV ΔF1Ma | Shuffled ΔF1Mi | Shuffled ΔF1Ma | 裁决 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Texas | +0.027027 | +0.085552 | +0.000000 | -0.036472 | normal 明显更好 |
+| Actor | +0.007895 | +0.007423 | +0.013158 | +0.022509 | shuffled 更强 |
+| Chameleon | +0.028509 | +0.029835 | +0.030702 | +0.033567 | shuffled 更强 |
+| Squirrel | -0.014409 | -0.019669 | -0.016330 | -0.014506 | baseline 失败 |
+
+Sharpened PCNV 追加执行：
+
+```bash
+RUNS_DIR="runs/pcnv_sharp_split0_s0_e50"
+EXTRA_ARGS="--pcnv-prototype-weight 0.5 --pcnv-balance-weight 0.1 --pcnv-assignment-temperature 0.1 --pcnv-target-temperature 0.03"
+DATASETS="Texas Chameleon" METHODS="pcnv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="normal" EXTRA_ARGS="$EXTRA_ARGS" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Texas Chameleon" METHODS="pcnv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="shuffled" EXTRA_ARGS="$EXTRA_ARGS --pcnv-shuffle-assignments" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Actor Squirrel" METHODS="pcnv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="normal" EXTRA_ARGS="$EXTRA_ARGS" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Actor Squirrel" METHODS="pcnv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="shuffled" EXTRA_ARGS="$EXTRA_ARGS --pcnv-shuffle-assignments" OVERWRITE=1 bash scripts/run_split_study.sh
+```
+
+Sharpened 结果：
+
+| Dataset | Normal F1Mi/F1Ma | Shuffled F1Mi/F1Ma | 观察 |
+| --- | ---: | ---: | --- |
+| Texas | 0.729730 / 0.459091 | 0.702703 / 0.414448 | 当前最强 Texas 单点，normal > shuffled |
+| Actor | 0.351316 / 0.306585 | 0.348026 / 0.319835 | micro normal 略高，macro shuffled 更高 |
+| Chameleon | 0.449561 / 0.442837 | 0.438596 / 0.429895 | normal > shuffled，但弱于 default PCNV |
+| Squirrel | 0.295869 / 0.273211 | 0.315082 / 0.298631 | 明显失败，且 shuffled 更强 |
+
+裁决：
+
+- PCNV 暂时保留为 active-but-risky candidate；
+- default PCNV 的性能信号强于 SRGNV，但 Actor/Chameleon 的 shuffled control 不干净；
+- sharpened PCNV 在 Texas 上给出强信号，但固定尖锐 assignment 导致 Chameleon/Squirrel 存在 prototype collapse 风险；
+- 不能声称 PCNV 已足以作为顶会/顶刊主方法；
+- 下一步只能实现 entropy-guarded / adaptive prototype calibration；如果 normal-vs-shuffled 与 usage entropy 问题不能同时改善，应放弃 prototype calibration 主线。

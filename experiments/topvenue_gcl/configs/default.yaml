@@ -61,6 +61,13 @@ srgnv_residual_threshold: 0.25
 srgnv_residual_temperature: 0.1
 srgnv_min_residual_weight: 0.05
 srgnv_shuffle_residual: false
+pcnv_num_prototypes: 16
+pcnv_base_weight: 1.0
+pcnv_prototype_weight: 0.2
+pcnv_balance_weight: 0.05
+pcnv_assignment_temperature: 0.2
+pcnv_target_temperature: 0.1
+pcnv_shuffle_assignments: false
 variance_loss_weight: 1.0
 covariance_loss_weight: 0.01
 eval_mode: auto

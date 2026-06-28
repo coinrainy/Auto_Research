@@ -1081,3 +1081,18 @@
   - 当前保留价值：作为 negative-result ablation，说明简单蒸馏 graph view 中与 ego view 正交的 residual 会优化 residual alignment，但不稳定带来下游分类收益。
   - 已新增文档：`experiments/topvenue_gcl/docs/structure_residual_gated_natural_view_candidate.md`，并更新 `README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/srgnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv`；随后下一代 idea 应直接约束或诊断 downstream separability / neighborhood conflict，而不是继续蒸馏 representation residual。
+- 2026-06-29 PCNV-GCL prototype calibration 实现与 split0 early gate：
+  - 已实现 `experiments/topvenue_gcl/train.py --method pcnv_gcl`，暂名 Prototype-Calibrated Natural-View GCL。
+  - 方法保留 `gcn_mlp_gcl` Natural-View bootstrap，并加入 trainable prototypes；ego view 与 graph view 在 prototype assignment 空间做双向 stop-gradient consistency。
+  - 新增 `--pcnv-shuffle-assignments` 作为机制 control；新增配置/CLI：`pcnv_num_prototypes`、`pcnv_base_weight`、`pcnv_prototype_weight`、`pcnv_balance_weight`、`pcnv_assignment_temperature`、`pcnv_target_temperature`。
+  - 新增诊断字段：`pcnv_consistency_loss`、`pcnv_balance_loss`、`pcnv_assignment_entropy_mean`、`pcnv_assignment_max_prob_mean`、`pcnv_usage_entropy_mean`、`pcnv_prototype_cosine_offdiag_mean` 等，并同步到 `summarize_split_study.py`。
+  - 已完成 smoke：`python -m py_compile train.py summarize_split_study.py src/*.py`、Texas normal/shuffled 2 epoch、Chameleon 2 epoch。
+  - 已执行 default PCNV split0 early gate：Texas/Actor/Chameleon/Squirrel × split0 × seed0 × 50 epoch 的 `gcn_mlp_gcl`、PCNV normal 与 PCNV shuffled，输出目录 `experiments/topvenue_gcl/runs/pcnv_split0_s0_e50/`。
+  - Default PCNV normal vs `gcn_mlp_gcl`：Texas +0.027027/+0.085552，Actor +0.007895/+0.007423，Chameleon +0.028509/+0.029835，Squirrel -0.014409/-0.019669。
+  - Default PCNV shuffled vs `gcn_mlp_gcl`：Texas +0.000000/-0.036472，Actor +0.013158/+0.022509，Chameleon +0.030702/+0.033567，Squirrel -0.016330/-0.014506。
+  - 已执行 sharpened PCNV 补充 gate：`--pcnv-prototype-weight 0.5 --pcnv-balance-weight 0.1 --pcnv-assignment-temperature 0.1 --pcnv-target-temperature 0.03`，输出目录 `experiments/topvenue_gcl/runs/pcnv_sharp_split0_s0_e50/`。
+  - Sharpened PCNV：Texas normal 0.729730/0.459091，shuffled 0.702703/0.414448；Actor normal 0.351316/0.306585，shuffled 0.348026/0.319835；Chameleon normal 0.449561/0.442837，shuffled 0.438596/0.429895；Squirrel normal 0.295869/0.273211，shuffled 0.315082/0.298631。
+  - 当前裁决：PCNV 暂时保留为 active-but-risky candidate；它比 SRGNV 有更强的 split0 性能信号，但 default 的 Actor/Chameleon shuffled control 不干净，sharpened 的 Chameleon/Squirrel 有 prototype usage entropy 过低和性能退化风险。
+  - 当前不能声称 PCNV 是可投稿主方法；下一步只允许实现 entropy-guarded / adaptive prototype calibration，若 normal-vs-shuffled 与 usage entropy 问题不能同时改善，应放弃 prototype calibration 主线。
+  - 已新增文档：`experiments/topvenue_gcl/docs/prototype_calibrated_natural_view_candidate.md`，并更新 `experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Texas Actor Chameleon Squirrel" METHODS="pcnv_gcl" SPLITS="0 1 2" SEEDS="0 1" EPOCHS=50 RUNS_DIR="runs/pcnv_guarded_s0-1_splits0-2_e50" RUN_TAG="normal" OVERWRITE=1 bash scripts/run_split_study.sh`；但在运行该命令前应先实现 entropy-guarded / confidence-weighted PCNV，而不是继续直接扩大 default/sharp PCNV。
