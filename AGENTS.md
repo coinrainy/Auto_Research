@@ -921,3 +921,26 @@
   - 已修复 `experiments/README.md` 开头乱码，并明确 `grace_idea/` 是历史候选资产、`topvenue_gcl/` 是新主工作区。
   - 当前裁决：本轮自实现的小 loss 候选全部未过 early gate；不要继续调这些 loss 的小参数。下一步应回到已验证强信号，优先做 SP-GCL/GraphACL/GraphECL/PolyGCL 级强基线的非 patch、标准化复现或训练时模块重构。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && python train.py --dataset Actor --method gcn_mlp_gcl --epochs 100 --split-index 0 --seed 0` 仅用于确认强对照上限；更推荐先实现 `scripts/run_split_study.sh`，按 dataset/split/seed 批量对齐 GRACE、GCN-MLP 与后续强基线复现。
+- 2026-06-28 topvenue_gcl split-study 协议与 GCN-MLP strong control：
+  - 已新增 `experiments/topvenue_gcl/scripts/run_split_study.sh`，支持通过环境变量配置 `DATASETS`、`METHODS`、`SPLITS`、`SEEDS`、`EPOCHS`、`RUNS_DIR`、`CONFIG`、`EXTRA_ARGS`、`OVERWRITE`。
+  - 已新增 `experiments/topvenue_gcl/summarize_split_study.py`，自动读取 `run.json`，按 `dataset + split_index + seed` 对齐 baseline method（默认 `grace`），输出逐 run 表与 dataset/method aggregate 表。
+  - 已给 `train.py` 增加 `--overwrite`，避免同名 run 重跑时把日志和 artifact 混写。
+  - 已验证：`python -m py_compile train.py summarize_split_study.py src/*.py`、`bash -n scripts/run_split_study.sh && bash -n scripts/run_smoke.sh`、`DATASETS="Texas" METHODS="grace gcn_mlp_gcl" SPLITS="0" SEEDS="0" EPOCHS=2 RUNS_DIR="runs/split_study_smoke" OVERWRITE=1 bash scripts/run_split_study.sh`。
+  - 已执行轻量 split sanity：`DATASETS="Texas Actor" METHODS="grace gcn_mlp_gcl" SPLITS="0 1 2" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/split_study_texas_actor_s0_splits0-2_e50" OVERWRITE=1 bash scripts/run_split_study.sh`。
+  - Texas 结果：GCN-MLP F1Mi/F1Ma mean=0.639640/0.322785，相对 GRACE +0.036036/+0.048717，3/3 split micro 正向。
+  - Actor 结果：GCN-MLP F1Mi/F1Ma mean=0.353728/0.311257，相对 GRACE +0.076535/+0.076413，3/3 split micro 正向。
+  - 裁决更新：`gcn_mlp_gcl` 从普通对照升级为下一阶段 strong control / architecture foundation；但它本身仍不够创新，不能作为论文主方法。后续新模块必须同时超过 GRACE 与 GCN-MLP，若只超过 GRACE 不保留。
+  - 已更新 `experiments/topvenue_gcl/docs/early_gate_summary_2026-06-28.md`、`docs/implementation_principles.md` 与 `README.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Chameleon Squirrel" METHODS="grace gcn_mlp_gcl" SPLITS="0 1 2" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/split_study_wiki_s0_splits0-2_e50" OVERWRITE=1 bash scripts/run_split_study.sh`，确认 GCN-MLP strong control 在 WikipediaNetwork 上的边界。
+- 2026-06-28 Natural-View foundation 与 DANV-GCL 初版：
+  - 已执行 Chameleon/Squirrel × splits 0/1/2 × seed0 × 50 epoch 的 GRACE vs GCN-MLP split-study：`DATASETS="Chameleon Squirrel" METHODS="grace gcn_mlp_gcl" SPLITS="0 1 2" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/split_study_wiki_s0_splits0-2_e50" OVERWRITE=1 bash scripts/run_split_study.sh`。
+  - Chameleon：GCN-MLP F1Mi/F1Ma mean=0.416667/0.403677，相对 GRACE +0.021930/+0.018146，3/3 split micro 正向。
+  - Squirrel：GCN-MLP F1Mi/F1Ma mean=0.309638/0.300817，相对 GRACE +0.025296/+0.022114，3/3 split micro 正向。
+  - 综合 Texas/Actor/Chameleon/Squirrel，GCN-MLP 在 4 个 heterophily 数据集的 splits 0/1/2 上全部 micro 正向，升级为 Natural-View GCL foundation。
+  - 已新增 `experiments/topvenue_gcl/docs/natural_view_gcl_foundation_memo.md`，提出下一代候选 **Disagreement-Aware Natural-View GCL (DANV-GCL)**：在 GCN-MLP 天然双视图上学习“何时对齐、何时保留分歧”。
+  - 已实现 `--method danv_gcl`：用 raw-neighbor agreement、view cosine、raw propagation residual energy 构造 stop-gradient alignment gate；高 gate 节点做加权 GCN-MLP alignment，低 gate 节点加入 disagreement-preserving cosine penalty；输出 `diag_danv_gate_mean/std`。
+  - 已验证 DANV smoke：`python -m py_compile train.py summarize_split_study.py src/*.py` 与 `python train.py --dataset Texas --method danv_gcl --epochs 2 --seed 0 --split-index 0 --skip-eval --run-name smoke_texas_danv_manual --overwrite`。
+  - 已执行 DANV split0 first gate：`DATASETS="Texas Actor Chameleon Squirrel" METHODS="grace gcn_mlp_gcl danv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/split_study_danv_s0_split0_e50" OVERWRITE=1 bash scripts/run_split_study.sh`。
+  - DANV vs GCN-MLP split0：Actor +0.005263/+0.014987，Chameleon +0.006579/+0.009536，Squirrel +0.003842/+0.002403，但 Texas -0.054054/-0.123677。
+  - 当前裁决：DANV 是 active-but-risky candidate，不是成功方法。它达到“值得扩到 splits 0-2”的边缘标准，但 Texas 退化是 major warning；下一步必须做 splits 0/1/2 复核和 gate/penalty 消融。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl danv_gcl" SPLITS="0 1 2" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/split_study_danv_s0_splits0-2_e50" OVERWRITE=1 bash scripts/run_split_study.sh`，随后用 `python summarize_split_study.py --runs-dir runs/split_study_danv_s0_splits0-2_e50 --baseline-method gcn_mlp_gcl --out runs/split_study_danv_s0_splits0-2_e50/runs_vs_gcn_mlp.csv --aggregate-out runs/split_study_danv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv`。

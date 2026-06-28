@@ -21,6 +21,10 @@ cache_confidence_threshold: 0.5
 cache_confidence_temperature: 0.1
 cache_confidence_min_weight: 0.05
 num_negative_samples: 256
+danv_alignment_weight: 1.0
+danv_disagreement_weight: 0.1
+danv_gate_temperature: 1.0
+danv_min_align_weight: 0.05
 variance_loss_weight: 1.0
 covariance_loss_weight: 0.01
 eval_mode: auto

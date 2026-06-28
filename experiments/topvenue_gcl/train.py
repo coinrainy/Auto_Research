@@ -1,5 +1,6 @@
 import argparse
 import json
+import shutil
 import time
 from pathlib import Path
 
@@ -42,6 +43,7 @@ def parse_args():
     parser.add_argument("--method", default="energy_spgcl",
                         choices=[
                             "grace",
+                            "danv_gcl",
                             "energy_spgcl",
                             "gcn_mlp_gcl",
                             "er_residual_gcl",
@@ -66,6 +68,7 @@ def parse_args():
     parser.add_argument("--skip-eval", action="store_true")
     parser.add_argument("--log-every", type=int, default=10)
     parser.add_argument("--run-name", default=None)
+    parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
 
@@ -102,6 +105,13 @@ def make_run_dir(args, config):
         f"seed{config['seed']}_split{args.split_index}"
     )
     run_dir = Path(args.runs_dir) / stem
+    if run_dir.exists() and any(run_dir.iterdir()):
+        if not args.overwrite:
+            raise FileExistsError(
+                f"Run directory already exists and is non-empty: {run_dir}. "
+                "Use --overwrite or choose a new --run-name."
+            )
+        shutil.rmtree(run_dir)
     ensure_dir(run_dir)
     return run_dir
 
@@ -192,6 +202,43 @@ def _sample_negative_indices(num_nodes, num_negatives, device):
     return negatives
 
 
+def _standardize(vector):
+    return (vector - vector.mean()) / vector.std(unbiased=False).clamp_min(1e-12)
+
+
+@torch.no_grad()
+def _danv_alignment_gate(data, parts, config):
+    raw_low_raw = row_normalized_propagate(data.x.detach(), data.edge_index, add_self=True)
+    raw = F.normalize(data.x.detach().float(), dim=1)
+    raw_low = F.normalize(raw_low_raw.float(), dim=1)
+    raw_agreement = (raw * raw_low).sum(dim=1)
+    raw_residual = (data.x.detach().float() - raw_low_raw.float()).norm(dim=1)
+    raw_scale = data.x.detach().float().norm(dim=1).clamp_min(1e-12)
+    raw_residual_energy = raw_residual / raw_scale
+    view_cosine = (
+        F.normalize(parts["ego"].detach(), dim=1)
+        * F.normalize(parts["graph"].detach(), dim=1)
+    ).sum(dim=1)
+    score = (
+        _standardize(raw_agreement)
+        + _standardize(view_cosine)
+        - _standardize(raw_residual_energy)
+    )
+    gate = torch.sigmoid(score / max(float(config["danv_gate_temperature"]), 1e-12))
+    min_weight = float(config["danv_min_align_weight"])
+    return gate * (1.0 - min_weight) + min_weight
+
+
+def _weighted_cosine_abs(z1, z2, weight):
+    cosine = (
+        F.normalize(z1, dim=1)
+        * F.normalize(z2, dim=1)
+    ).sum(dim=1).abs()
+    weight = weight.detach().to(cosine.device, dtype=cosine.dtype)
+    weight = weight / weight.mean().clamp_min(1e-12)
+    return (cosine * weight).mean()
+
+
 @torch.no_grad()
 def _static_cache_keys(data, config):
     mode = config.get("cache_key_mode", "raw_signature")
@@ -239,8 +286,9 @@ def train_er_cache_gcl(model, data, config, args):
         weight_decay=float(config["weight_decay"]),
     )
     energy_spgcl = args.method == "energy_spgcl"
-    residual_only = args.method in {"er_residual_gcl", "gcn_mlp_gcl"}
-    graph_target = args.method == "gcn_mlp_gcl"
+    danv_gcl = args.method == "danv_gcl"
+    residual_only = args.method in {"er_residual_gcl", "gcn_mlp_gcl", "danv_gcl"}
+    graph_target = args.method in {"gcn_mlp_gcl", "danv_gcl"}
     topk = 0 if (args.disable_cache or residual_only) else int(config["cache_topk"])
     cache_update = max(1, int(config["cache_update_interval"]))
     cache_idx = None
@@ -272,7 +320,24 @@ def train_er_cache_gcl(model, data, config, args):
 
         pred_ego = model.pred_ego(parts["ego"])
         pred_high = model.pred_high(target)
-        if energy_spgcl:
+        if danv_gcl:
+            align_gate = _danv_alignment_gate(data, parts, config)
+            disagreement_gate = 1.0 - align_gate
+            loss_align = 0.5 * (
+                weighted_negative_cosine(pred_ego, parts["graph"], align_gate)
+                + weighted_negative_cosine(pred_high, parts["ego"], align_gate)
+            )
+            loss_disagreement = _weighted_cosine_abs(
+                parts["ego"],
+                parts["graph"],
+                disagreement_gate,
+            )
+            loss_self = (
+                float(config["danv_alignment_weight"]) * loss_align
+                + float(config["danv_disagreement_weight"]) * loss_disagreement
+            )
+            loss_cache = parts["final"].new_tensor(0.0)
+        elif energy_spgcl:
             pos_idx = _sample_positive_indices(cache_idx)
             neg_idx = _sample_negative_indices(
                 data.num_nodes,
@@ -341,7 +406,12 @@ def train_er_cache_gcl(model, data, config, args):
         confidence_result = _cache_confidence(cache_keys, cache_idx, config)
         cache_weight = None if confidence_result is None else confidence_result[1]
         diagnostics = _cache_diagnostics(parts, cache_idx, cache_keys, cache_weight)
+        if danv_gcl:
+            gate = _danv_alignment_gate(data, parts, config)
+            diagnostics["danv_gate_mean"] = float(gate.mean().item())
+            diagnostics["danv_gate_std"] = float(gate.std(unbiased=False).item())
     diagnostics["cache_control"] = (
+        "danv" if danv_gcl else
         "energy_spgcl" if energy_spgcl else
         "gcn_mlp_only" if graph_target else
         "residual_only" if residual_only else
@@ -378,6 +448,8 @@ def main():
     args = parse_args()
     config = override_config(load_yaml(args.config), args)
     if args.method == "gcn_mlp_gcl" and args.final_repr is None:
+        config["final_repr"] = "ego_graph"
+    if args.method == "danv_gcl" and args.final_repr is None:
         config["final_repr"] = "ego_graph"
     if args.method == "energy_spgcl" and args.final_repr is None:
         config["final_repr"] = "ego_high"

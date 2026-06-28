@@ -2,7 +2,9 @@
 
 本目录用于从头实现新的图对比学习候选方法，避免继续依赖 patch 第三方官方代码或旧 `grace_idea/` 中累积的失败原型。
 
-当前 active candidate：**Energy-SPGCL**，`GCN-MLP Natural View GCL` 是必须击败的强对照，`ER-Residual-GCL` 已降级为失败/条件性消融。
+当前 active foundation：**GCN-MLP Natural View GCL**。它在 Texas/Actor/Chameleon/Squirrel 的轻量 split sanity 中稳定超过 GRACE，但本身不够创新；后续 candidate 必须在它之上给出新机制和增益。`ER-Cache`、`ER-Residual`、`Energy-SPGCL` 均已降级为失败/条件性消融。
+
+当前下一代候选：**Disagreement-Aware Natural-View GCL (DANV-GCL)**，目标是在 GCN-MLP 天然双视图底座上学习“何时对齐、何时保留分歧”。
 
 核心假设：
 
@@ -17,10 +19,22 @@ cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl
 bash scripts/run_smoke.sh
 ```
 
+小规模 split-study：
+
+```bash
+DATASETS="Texas Actor" METHODS="grace gcn_mlp_gcl" SPLITS="0 1 2" SEEDS="0" EPOCHS=50 OVERWRITE=1 bash scripts/run_split_study.sh
+```
+
+输出：
+
+- `runs/<study>/split_study_runs.csv`
+- `runs/<study>/split_study_aggregate.csv`
+
 单次运行示例：
 
 ```bash
 python train.py --dataset Texas --method gcn_mlp_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method danv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method energy_spgcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_residual_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_cache_gcl --epochs 5 --split-index 0 --seed 0

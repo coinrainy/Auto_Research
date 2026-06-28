@@ -40,3 +40,75 @@
 2. 将 SPARC residual calibration 从 post-hoc/patch 经验，改造成可复现的标准训练或标准 evaluation module；
 3. 若无法从头复现 official SP-GCL 级 embedding quality，则不要声称新 SOTA，只记录为 negative result。
 
+## 2026-06-28 追加：GCN-MLP strong control split sanity
+
+已新增 `scripts/run_split_study.sh` 与 `summarize_split_study.py`，并完成 Texas/Actor × splits 0/1/2 × seed0 × 50 epoch 的轻量复核。
+
+命令：
+
+```bash
+DATASETS="Texas Actor" \
+METHODS="grace gcn_mlp_gcl" \
+SPLITS="0 1 2" \
+SEEDS="0" \
+EPOCHS=50 \
+RUNS_DIR="runs/split_study_texas_actor_s0_splits0-2_e50" \
+OVERWRITE=1 \
+bash scripts/run_split_study.sh
+```
+
+Aggregate：
+
+| Dataset | Method | Runs | F1Mi mean | F1Ma mean | ΔF1Mi vs GRACE | ΔF1Ma vs GRACE | Positive/Negative F1Mi |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Texas | `gcn_mlp_gcl` | 3 | 0.639640 | 0.322785 | +0.036036 | +0.048717 | 3/0 |
+| Actor | `gcn_mlp_gcl` | 3 | 0.353728 | 0.311257 | +0.076535 | +0.076413 | 3/0 |
+
+裁决更新：
+
+- `gcn_mlp_gcl` 不再只是普通 baseline，而是下一阶段必须击败的 strong control / architecture foundation。
+- 它仍不是足够创新的论文主方法；下一步的创新应建立在 GCN-MLP 天然双视图底座上，并证明新增模块稳定超过该底座，而不是只超过 GRACE。
+- 优先补 Chameleon/Squirrel 的同配置 split-study，判断 strong control 的边界；如果 WikipediaNetwork 失败，下一代模块应专门解释为什么 GCN-MLP 对 WebKB/Actor 有效、对 Chameleon/Squirrel 不稳。
+
+## 2026-06-28 追加：WikipediaNetwork split sanity
+
+已继续执行 Chameleon/Squirrel × splits 0/1/2 × seed0 × 50 epoch：
+
+```bash
+DATASETS="Chameleon Squirrel" \
+METHODS="grace gcn_mlp_gcl" \
+SPLITS="0 1 2" \
+SEEDS="0" \
+EPOCHS=50 \
+RUNS_DIR="runs/split_study_wiki_s0_splits0-2_e50" \
+OVERWRITE=1 \
+bash scripts/run_split_study.sh
+```
+
+Aggregate：
+
+| Dataset | Method | Runs | F1Mi mean | F1Ma mean | ΔF1Mi vs GRACE | ΔF1Ma vs GRACE | Positive/Negative F1Mi |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Chameleon | `gcn_mlp_gcl` | 3 | 0.416667 | 0.403677 | +0.021930 | +0.018146 | 3/0 |
+| Squirrel | `gcn_mlp_gcl` | 3 | 0.309638 | 0.300817 | +0.025296 | +0.022114 | 3/0 |
+
+裁决更新：
+
+- `gcn_mlp_gcl` 在 Texas/Actor/Chameleon/Squirrel 的 splits 0/1/2 上全部 micro 正向，已成为当前最强实验线索。
+- 它仍低于 SP-GCL 等强 heterophily-specific baseline 的已知水平，因此不能作为 SOTA 主方法。
+- 下一代 active idea 应是 **Disagreement-Aware Natural-View GCL (DANV-GCL)**：在 GCN-MLP natural views 上学习“何时对齐、何时保留分歧”，并必须同时超过 GRACE 与 GCN-MLP。
+
+## 2026-06-28 追加：DANV-GCL split0 gate
+
+已实现 `--method danv_gcl`，并在 Texas/Actor/Chameleon/Squirrel split0 seed0 50 epoch 上做 first gate。
+
+相对 GCN-MLP：
+
+| Dataset | ΔF1Mi | ΔF1Ma | 裁决 |
+| --- | ---: | ---: | --- |
+| Texas | -0.054054 | -0.123677 | 明显失败 |
+| Actor | +0.005263 | +0.014987 | 小幅正向 |
+| Chameleon | +0.006579 | +0.009536 | 小幅正向 |
+| Squirrel | +0.003842 | +0.002403 | 小幅正向 |
+
+当前裁决：DANV 是 active-but-risky candidate，不是成功方法。它达到“值得扩到 splits 0-2”的边缘标准，但 Texas 退化是 major warning。下一步必须做 split0-2 复核和 penalty/gate 消融。
