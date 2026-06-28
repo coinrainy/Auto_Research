@@ -4,9 +4,9 @@
 
 ## 当前裁决
 
-`mpnv_gcl` 是 SSPNV / AFPNV / BSPNV 家族停止后新的 active-but-risky candidate。
+`mpnv_gcl` 已降级为失败/条件性消融资产，不再作为 active main idea。
 
-它不是 SOTA 结论，但已经比前一轮 SSPNV 小变体更值得继续推进：在 Squirrel 的 10 split / seed0 / 50 epoch gate 中，真实 semantic/spatial multi-positive mask 明显强于 shuffled-positive control，说明结构化多正样本目标比单采样 positive 更有机制信号。
+原因：seed0 在 Squirrel 的 10 split / 50 epoch gate 中曾出现强正信号，但 seed1/seed2 扩展门控没有复现稳定优势。MPNV 当前只能证明 dense multi-positive objective 是一个值得保留的 ablation/diagnostic component，不能支撑 2026 顶会/顶刊主方法。
 
 ## 方法定义
 
@@ -41,7 +41,7 @@ python train.py --dataset Chameleon --method mpnv_gcl --epochs 50 --split-index 
 - `configs/default.yaml`：新增 `mpnv_semantic_weight`、`mpnv_spatial_weight`、`mpnv_bootstrap_weight`、`mpnv_include_self`、`mpnv_shuffle_positives`；
 - `summarize_split_study.py`：记录 MPNV positive mask 规模、density 与 shuffle control。
 
-## 10 Split Gate
+## Seed0 10 Split Gate
 
 执行设置：
 
@@ -74,46 +74,71 @@ MPNV normal:   +0.015370 +0.021134 +0.018252 +0.019212 +0.009606 +0.004803 +0.00
 MPNV shuffled: -0.013449 -0.008646 +0.005764 +0.002882 +0.015370 -0.008646 +0.021134 +0.007685 -0.012488 +0.000000
 ```
 
-## 解释边界
+## Seed1/Seed2 复核
 
-支持信号：
+执行设置：
 
-- Squirrel 上 normal MPNV 10/10 split micro 正向；
-- Squirrel 上 shuffled-positive control 基本退化，说明收益不是简单来自额外 dense loss 形式；
-- MPNV 使用 dense mask，而不是 SSPNV 的单采样 positive，更接近 top-venue reference pattern。
+- Dataset：Texas / Actor / Chameleon / Squirrel；
+- Splits：0-9；
+- Seeds：1 / 2；
+- Epochs：50；
+- Baseline：`gcn_mlp_gcl`。
 
-风险：
-
-- Chameleon 上 shuffled control 也明显正向，说明该数据集不能作为强机制证据；
-- 当前只跑 seed0，尚未验证 model seed 稳定性；
-- 尚未与 SP-GCL、S3GCL、PolyGCL、GraphECL 等强基线同协议对齐；
-- dense mask 在更大图上的复杂度需要说明，必要时要改为 sampled block 或 sparse mask。
-
-## 推进标准
-
-继续推进的最低标准：
-
-- Texas / Actor / Chameleon / Squirrel 至少 3/4 dataset 相对 `gcn_mlp_gcl` mean F1Mi 为正；
-- Squirrel normal 明显强于 shuffled 的结论在 seed1/seed2 保持；
-- 至少一个 homophily dataset 不明显退化；
-- 强基线对齐前不能写 SOTA claim。
-
-停止标准：
-
-- seed1/seed2 后 Squirrel normal-vs-shuffled 差异消失；
-- Texas/Actor 明显负向，且无法通过无标签 gate 识别回退；
-- Chameleon/Squirrel 的收益主要来自 shuffled control；
-- 强基线对齐后低于 SP-GCL/S3GCL/PolyGCL/GraphECL 且没有新的机制诊断价值。
-
-## 下一步建议命令
+执行命令：
 
 ```bash
-cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl
 DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl mpnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh
+python summarize_split_study.py --runs-dir runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50 --baseline-method gcn_mlp_gcl --out runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50/runs_vs_gcn_mlp.csv --aggregate-out runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50/aggregate_vs_gcn_mlp.csv
 ```
 
-随机正样本对照：
+Aggregate vs `gcn_mlp_gcl`：
 
-```bash
-DATASETS="Chameleon Squirrel" METHODS="mpnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/mpnv_gate_wiki_shuffled_s1-2_splits0-9_e50" RUN_TAG="shuffled" EXTRA_ARGS="--mpnv-shuffle-positives" OVERWRITE=1 bash scripts/run_split_study.sh
+| Dataset | MPNV F1Mi mean | MPNV F1Ma mean | ΔF1Mi | ΔF1Ma | Positive/Negative F1Mi | 裁决 |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| Texas | 0.639189 | 0.363024 | +0.002703 | -0.000075 | 10/9 | micro 近零，macro 不安全 |
+| Actor | 0.350658 | 0.318501 | -0.001776 | -0.001529 | 12/7 | 均值负向，不能作为成功证据 |
+| Chameleon | 0.428838 | 0.421045 | +0.000219 | +0.000657 | 9/11 | seed0 正信号未复现 |
+| Squirrel | 0.310711 | 0.300447 | -0.000288 | +0.001016 | 10/10 | micro 不优于 baseline，seed0 10/10 正向失效 |
+
+Squirrel seed1/seed2 split-level delta：
+
+```text
+-0.009606 +0.012488 -0.003842 +0.023055 +0.004803 +0.010567 +0.016330 -0.009606 -0.024015 -0.010567 +0.004803 +0.015370 -0.008646 -0.021134 +0.007685 -0.001921 -0.025937 +0.010567 -0.001921 +0.005764
 ```
+
+## 最终解释
+
+保留价值：
+
+- MPNV 使用 dense mask，而不是 SSPNV 的单采样 positive，更接近 top-venue reference pattern；
+- dense semantic/spatial mask 的工程路径已跑通，可作为后续 selective objective 或 diagnostic component；
+- seed0 的 Squirrel normal-vs-shuffled 现象说明 structured positives 可能在部分训练状态下有价值。
+
+失败点：
+
+- seed1/seed2 下四个数据集 mean delta 均接近 0，且 Actor/Squirrel micro 为负；
+- Squirrel seed1/seed2 不再保持 normal 10/10 split 正向；
+- Chameleon seed1/seed2 不再稳定，positive/negative 为 9/11；
+- MPNV 默认开启会伤害一部分 split，缺少无标签选择/回退机制；
+- 尚未与 SP-GCL、S3GCL、PolyGCL、GraphECL 等强基线同协议对齐；
+- dense mask 在更大图上的复杂度仍需说明，必要时要改为 sampled block 或 sparse mask。
+
+## 停止裁决
+
+MPNV 触发停止条件：
+
+- seed1/seed2 后 Squirrel normal 优势消失；
+- 4 个数据集没有形成至少 3/4 dataset mean micro 正向；
+- Chameleon/Squirrel 不再提供稳定机制证据；
+- 当前版本不能作为 active SOTA candidate。
+
+后续不再继续跑 MPNV shuffled seed1/seed2，因为 normal gate 已经失败；继续跑 shuffled 只能解释失败原因，不能改变主线裁决。
+
+## 下一步方向
+
+下一代方法不能再是“默认添加 multi-positive loss”。更合理的方向是：
+
+- label-free objective activation：只在可预测收益的节点/图上启用 semantic/spatial multi-positive；
+- node-level fallback：低置信区域退回 `gcn_mlp_gcl` bootstrap；
+- sparse/block multi-positive：降低 dense mask 复杂度；
+- 或直接回到 S3GCL / GraphECL / PolyGCL 级参考范式，重新设计训练目标。

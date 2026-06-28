@@ -1028,3 +1028,12 @@
   - 当前裁决：MPNV 升级为新的 active-but-risky candidate，但不能声称 SOTA。Squirrel normal-vs-shuffled 是当前最干净机制信号；Chameleon 只能作为性能正信号。
   - 已新增文档：`experiments/topvenue_gcl/docs/multi_positive_natural_view_candidate.md`，并更新 `experiments/topvenue_gcl/README.md`、`docs/early_gate_summary_2026-06-28.md` 与 `docs/implementation_principles.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl mpnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh`；随后补 `DATASETS="Chameleon Squirrel" METHODS="mpnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/mpnv_gate_wiki_shuffled_s1-2_splits0-9_e50" RUN_TAG="shuffled" EXTRA_ARGS="--mpnv-shuffle-positives" OVERWRITE=1 bash scripts/run_split_study.sh`。
+- 2026-06-29 MPNV seed1/seed2 复核与放弃：
+  - 已执行 MPNV normal 扩展门控：Texas/Actor/Chameleon/Squirrel × splits 0-9 × seeds 1/2 × 50 epoch，输出目录为 `experiments/topvenue_gcl/runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50/`。
+  - 已生成汇总：`runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50/runs_vs_gcn_mlp.csv` 与 `aggregate_vs_gcn_mlp.csv`。
+  - MPNV vs `gcn_mlp_gcl` seed1/2 aggregate：Texas ΔF1Mi/ΔF1Ma=+0.002703/-0.000075，Actor -0.001776/-0.001529，Chameleon +0.000219/+0.000657，Squirrel -0.000288/+0.001016。
+  - Positive/negative F1Mi count：Texas 10/9，Actor 12/7，Chameleon 9/11，Squirrel 10/10；Squirrel seed0 的 10/10 positive 结论未复现。
+  - 当前裁决：MPNV 不再作为 active main idea，降级为失败/条件性消融资产。seed0 Squirrel normal-vs-shuffled 现象只保留为 diagnostic clue，不能支撑主方法。
+  - 已跳过 MPNV shuffled seed1/2 扩展，因为 normal gate 已失败；继续跑 shuffled 只能解释失败原因，不能改变主线裁决。
+  - 已更新文档：`experiments/topvenue_gcl/README.md`、`docs/multi_positive_natural_view_candidate.md`、`docs/early_gate_summary_2026-06-28.md` 与 `docs/implementation_principles.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50/aggregate_vs_gcn_mlp.csv`，随后基于失败边界设计带 label-free objective activation / fallback 的新候选，而不是继续默认开启 MPNV。

@@ -352,3 +352,36 @@ Aggregate vs `gcn_mlp_gcl`：
 - Chameleon 上 normal 与 shuffled 都正向，说明不能把 Chameleon 当作强机制证明，只能作为性能正信号；
 - 当前不能声称 SOTA，下一步必须做 seed1/seed2、Texas/Actor 扩展、homophily safety 与强基线同协议对齐；
 - 若 seed1/seed2 后 Squirrel normal-vs-shuffled 差异消失，或收益主要来自 shuffled control，应立即放弃 MPNV 主线。
+
+## 2026-06-29 追加：MPNV seed1/seed2 复核与降级
+
+已执行 Texas/Actor/Chameleon/Squirrel × splits 0-9 × seeds 1/2 × 50 epoch 的 MPNV normal gate，并以 `gcn_mlp_gcl` 为 baseline 汇总。
+
+执行：
+
+```bash
+DATASETS="Texas Actor Chameleon Squirrel" \
+METHODS="gcn_mlp_gcl mpnv_gcl" \
+SPLITS="0 1 2 3 4 5 6 7 8 9" \
+SEEDS="1 2" \
+EPOCHS=50 \
+RUNS_DIR="runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50" \
+OVERWRITE=1 \
+bash scripts/run_split_study.sh
+```
+
+Aggregate vs `gcn_mlp_gcl`：
+
+| Dataset | MPNV F1Mi mean | MPNV F1Ma mean | ΔF1Mi | ΔF1Ma | Positive/Negative F1Mi | 裁决 |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| Texas | 0.639189 | 0.363024 | +0.002703 | -0.000075 | 10/9 | 近零，不是强信号 |
+| Actor | 0.350658 | 0.318501 | -0.001776 | -0.001529 | 12/7 | 均值负向 |
+| Chameleon | 0.428838 | 0.421045 | +0.000219 | +0.000657 | 9/11 | seed0 正信号未复现 |
+| Squirrel | 0.310711 | 0.300447 | -0.000288 | +0.001016 | 10/10 | seed0 10/10 正向失效 |
+
+裁决：
+
+- MPNV 不再作为 active main idea；
+- seed0 的 Squirrel normal-vs-shuffled 现象保留为 diagnostic clue，但不能支撑方法主张；
+- Chameleon/Squirrel seed1/2 均未复现稳定优势，因此跳过 shuffled-positive seed1/2 扩展，避免继续消耗算力解释一个已经失败的主线；
+- 下一步应设计带无标签选择/回退机制的新候选，或者回到 S3GCL / GraphECL / PolyGCL 级参考范式重做训练目标。

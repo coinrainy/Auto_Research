@@ -26,7 +26,7 @@
 
 当前 active foundation 是 `gcn_mlp_gcl`。它是必须击败的 strong control，但不是论文主贡献。
 
-当前 active-but-risky candidate 是 `mpnv_gcl`。它使用 dense semantic/spatial multi-positive mask 和 Natural-View bootstrap，试图把 SSPNV 的单采样 positive 改成更接近 S3GCL/GraphECL 范式的 multi-positive contrastive objective。
+当前没有通过复核的 active main idea。`mpnv_gcl` 曾是 active-but-risky candidate，但 seed1/seed2 扩展门控失败，已降级为失败/条件性消融资产。
 
 当前已经停止的主线：
 
@@ -36,6 +36,7 @@
 - `danv_gcl` / `danv_degree_gcl`；
 - `fdnv_gcl`；
 - `sspnv_gcl` / `afpnv_gcl` / `bspnv_gcl` 作为最终主方法。
+- `mpnv_gcl` 作为最终主方法。
 
 后续所有新候选必须同时报告：
 
@@ -129,9 +130,9 @@ MPNV 当前裁决：
 - spatial mask 来源于原图一跳邻居，监督 low-pass target；
 - 保留 `gcn_mlp_gcl` 的 Natural-View bootstrap；
 - `--mpnv-shuffle-positives` 是必须保留的机制 control，用于打乱 positive mask 与节点对应关系；
-- Chameleon/Squirrel × splits 0-9 × seed0 × 50 epoch 中，MPNV 相对 `gcn_mlp_gcl` 分别取得 +0.017105/+0.019132 与 +0.015082/+0.014767 的 F1Mi/F1Ma mean delta；
-- Squirrel normal 10/10 split micro 正向，shuffled control 仅 +0.000961/+0.000668，是当前最干净的机制信号；
-- Chameleon shuffled control 也为正，说明 Chameleon 只能作为性能正信号，不能作为机制证明；
-- 当前裁决是 active-but-risky，不是成功方法；
-- 下一步必须跑 seed1/seed2、Texas/Actor 扩展、homophily safety 和强基线对齐；
-- 若 MPNV 的收益在 seed1/seed2 主要来自 shuffled control，或 Texas/Actor 明确退化且无法 label-free 回退，应停止 MPNV 主线。
+- Chameleon/Squirrel × splits 0-9 × seed0 × 50 epoch 中，MPNV 相对 `gcn_mlp_gcl` 曾分别取得 +0.017105/+0.019132 与 +0.015082/+0.014767 的 F1Mi/F1Ma mean delta；
+- 但 Texas/Actor/Chameleon/Squirrel × splits 0-9 × seeds 1/2 × 50 epoch 复核失败：ΔF1Mi 分别为 +0.002703、-0.001776、+0.000219、-0.000288；
+- Squirrel seed1/seed2 不再保持 normal 10/10 split micro 正向，seed0 核心机制证据失效；
+- 当前裁决是降级为失败/条件性消融资产，不再作为 active main idea；
+- 后续不再继续跑 MPNV shuffled seed1/2，因为 normal gate 已失败；
+- 下一代方法必须加入 label-free objective activation / node-level fallback，或彻底更换训练目标。

@@ -6,7 +6,7 @@
 
 SSPNV / AFPNV / BSPNV 已降级为机制与消融资产，不再作为 active main idea。固定完整 SSPNV 的入口为 `--method sspnv_gcl`；AFPNV 的入口为 `--method afpnv_gcl`；BSPNV branch selection 的入口为 `--method bspnv_gcl`。BSPNV 强于 AFPNV，但没有同时超过 Chameleon semantic-only 与 Squirrel full SSPNV，因此触发停止条件。
 
-当前 active-but-risky candidate：**Multi-Positive Natural-View GCL (MPNV-GCL)**，入口为 `--method mpnv_gcl`。它用 dense semantic/spatial multi-positive mask 替代 SSPNV 的单采样 positive，并保留 Natural-View bootstrap。Chameleon/Squirrel 10 split / seed0 / 50 epoch gate 显示，MPNV 相对 `gcn_mlp_gcl` 分别取得 +0.017105/+0.019132 与 +0.015082/+0.014767 的 F1Mi/F1Ma 增益；其中 Squirrel 10/10 split micro 正向，且 shuffled-positive control 近乎无效，是当前最干净的机制信号。Chameleon 上 shuffled control 也较强，因此不能把该数据集作为强机制证据。
+MPNV-GCL 已降级为失败/条件性消融资产，不再作为 active main idea。它用 dense semantic/spatial multi-positive mask 替代 SSPNV 的单采样 positive，并保留 Natural-View bootstrap；seed0 在 Chameleon/Squirrel 上曾出现正信号，但 seed1/seed2 扩展门控未复现稳定优势。Texas/Actor/Chameleon/Squirrel × splits0-9 × seeds1-2 × 50 epoch 下，MPNV 相对 `gcn_mlp_gcl` 的 mean F1Mi delta 分别为 +0.002703、-0.001776、+0.000219、-0.000288，均不足以支撑主方法。
 
 新增 `--method afpnv_gcl` 和 `--method bspnv_gcl`：分别对应置信度加权与 semantic/spatial/bootstrap branch selection。二者都已经跑通 Chameleon/Squirrel 10 split，但都没有形成足够强的主线结果。
 
@@ -17,8 +17,8 @@ SSPNV / AFPNV / BSPNV 已降级为机制与消融资产，不再作为 active ma
 - high-energy residual、low-pass positive cache、DANV penalty 与 FDNV routed filter target 均已在 early gate 中降级为失败/条件性消融，不作为当前主线；
 - SSPNV 的核心待证机制是 filter-specific positive construction，但 random-positive control 已证明固定双分支叙事不够；
 - AFPNV/BSPNV 已尝试解释何时选择 semantic、spatial 或 bootstrap-only objective，但未过升级门槛；
-- MPNV 将 positive construction 从单采样改为 dense multi-positive mask，是当前需要继续验证的新训练目标；
-- 下一步必须用 seed1/seed2、Texas/Actor 扩展、homophily safety 与强基线同协议对齐来裁决 MPNV，而不是直接声称 SOTA。
+- MPNV 将 positive construction 从单采样改为 dense multi-positive mask，但 seed1/seed2 复核失败，当前只保留为机制/消融资产；
+- 当前没有可直接包装为 2026 顶会/顶刊主方法的 active idea；下一步必须换成带无标签选择/回退机制的新候选，或回到 S3GCL/GraphECL/PolyGCL 级参考范式重新设计训练目标。
 
 最小 smoke：
 
