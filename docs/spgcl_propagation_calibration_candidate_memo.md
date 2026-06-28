@@ -367,6 +367,37 @@ python evaluate_propagation_calibration.py \
 - 本轮曾启动 `select_sparc_mode_proxy.py` 的完整 seed7 selector 评估，但它与 C-grid 重复训练同一批 linear probes，耗时过长，已中断。
 - seed7 selector 所需的核心结论可由 C-grid 直接得到；后续应重构 selector 脚本，使其可读取已有 C-grid candidate scores，避免重复 fit logistic regression。
 
+已新增轻量汇总脚本：
+
+- `experiments/grace_idea/summarize_sparc_selectors.py`
+
+该脚本读取已有 C-grid aggregate CSV，不重新训练 linear probe，直接生成 selector 对照表：
+
+```bash
+cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
+python summarize_sparc_selectors.py \
+  --cgrid runs/summaries/sparc_seed42_cgrid_aggregate.csv \
+  --seed-label seed42 \
+  --cgrid runs/summaries/sparc_seed7_cgrid_aggregate.csv \
+  --seed-label seed7 \
+  --out runs/summaries/sparc_selector_seed42_seed7.csv \
+  --aggregate-out runs/summaries/sparc_selector_seed42_seed7_aggregate.csv
+```
+
+输出文件：
+
+- `runs/summaries/sparc_selector_seed42_seed7.csv`
+- `runs/summaries/sparc_selector_seed42_seed7_aggregate.csv`
+
+该脚本当前支持的 selector：
+
+- `ssl`: 不做 SPARC 校准；
+- `prop2`: 固定 `ssl_prop2`；
+- `resid1`: 固定 `ssl_resid1`；
+- `feature_adaptive_v1`: Chameleon 选 `ssl_prop2`，Squirrel 选 `ssl_resid1`。
+
+当前正式 cross-seed selector 表以 `summarize_sparc_selectors.py` 输出为准；后续新增 seed 时应先生成各 seed C-grid aggregate，再用该脚本合并，避免重复训练探针。
+
 ## 研究假设
 
 SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embedding 仍混合了两类信息：

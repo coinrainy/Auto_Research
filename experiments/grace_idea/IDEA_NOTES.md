@@ -34,6 +34,7 @@
 - `--method pgsp_gcl`：Propagation-Guided Single-Pass GCL 原型。该方法已实现 single-pass encoder、tree/square anchor sampling、多跳传播签名 pseudo-positive 排序与 SP-like objective；当前早筛结果明显弱于 official SP-GCL，已降级为失败原型/后续 scaffold。
 - `evaluate_propagation_calibration.py`：SPARC-GCL 候选的传播/残差校准评估脚本，可对任意 `artifacts.pt` 的 SSL embedding 评估 `ssl`、`propK`、`ssl_propK`、`ssl_residK` 等表示。
 - `select_sparc_mode_proxy.py`：SPARC-GCL 的 label-free mode selection 早筛脚本，可比较 balanced proxy、edge-contrast、effective-rank、feature-adaptive selector 与 validation/oracle 上界。
+- `summarize_sparc_selectors.py`：读取已有 SPARC C-grid aggregate CSV 并汇总 cross-seed selector 表，避免 `select_sparc_mode_proxy.py` 重复训练 linear probes。
 - `select_representation.py`：raw-complement 的表示选择诊断工具，可从 `artifacts.pt` 中比较 `raw/saved/anchor/graph/complement/hidden`，用验证集选择候选表示；当前发现 Cora 可通过 graph/saved fallback 避免 anchor 崩溃，但仍低于 GRACE，Actor 上 saved 表示有清楚增量，WebKB 三小图多数 split 仍由 raw feature 主导。
 
 `es_weighted` 的设计边界：
@@ -241,6 +242,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - Feature-adaptive rule 使用原始特征 edge-random contrast 分流：Chameleon 的 feature contrast 为 +0.008638，选择 `ssl_prop2`，F1Mi/F1Ma=0.640570/0.641855；Squirrel 的 feature contrast 为 -0.001591，选择 `ssl_resid1`，F1Mi/F1Ma=0.488953/0.485416。
 - 已完成 official SP-GCL seed7 复核：Chameleon `ssl` 为 0.631360/0.631923，`ssl_prop2` 为 0.641009/0.641697，`ssl_resid1` 为 0.645175/0.645380；Squirrel `ssl` 为 0.448991/0.443961，`ssl_prop2` 为 0.476753/0.473270，`ssl_resid1` 为 0.483093/0.479099。
 - 跨 seed42/seed7 汇总显示：固定 `ssl_resid1` / effective-rank route 的平均 F1Mi/F1Ma=0.564119/0.562299，略高于 feature-adaptive v1 的 0.563406/0.562017，也高于固定 `ssl_prop2` 的 0.559660/0.558323。
+- 已新增 `summarize_sparc_selectors.py` 并生成正式 cross-seed selector 表：`runs/summaries/sparc_selector_seed42_seed7.csv` 与 `runs/summaries/sparc_selector_seed42_seed7_aggregate.csv`。
 - 当前裁决：SPARC-GCL 仍是 active candidate，但主线从 Feature-disassortativity Adaptive SPARC 收缩为 propagation-residual calibration，其中 `ssl_resid1` / effective-rank route 是当前最稳默认。feature contrast 保留为解释变量和未来 gate 信号，不作为当前主 selector claim。
 - 详细记录见 `docs/spgcl_propagation_calibration_candidate_memo.md`。
 
@@ -273,6 +275,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `evaluate_propagation_calibration.py` 支持 `--max-hop`、`--modes`、`--split-indices`、`--c-values` 与 `--max-iter`，用于 SPARC-GCL 的 post-hoc propagation calibration gate。
 - `scripts/run_spgcl_embedding_export.sh` 可导出 Geom-GCN 数据、运行本地 official SP-GCL、保存 embedding，并转换为 `evaluate_propagation_calibration.py` 可读的 `artifacts.pt`。
 - `select_sparc_mode_proxy.py` 支持 `--modes`、`--split-indices`、`--c-values`、`--proxy-*` 与 `--adaptive-feature-contrast-threshold`，用于比较 SPARC 的无标签 mode selection 策略。
+- `summarize_sparc_selectors.py` 支持多个 `--cgrid/--seed-label` 输入，输出 selector 逐 seed/dataset 表与跨 seed aggregate。
 - `evaluate_raw_features.py` 支持对原始 `data.x` 使用当前同一套 mask/random linear evaluation 协议，作为 ego/residual/GRACE 的 feature-only 硬 baseline。
 - `evaluate_feature_fusion.py` 支持递归读取 `artifacts.pt`，在同一 split 下评估 `raw`、`ssl`、`raw+ssl concat`，并输出 concat 相对 raw/ssl 的 paired delta 与 aggregate summary。
 - `select_representation.py` 支持读取 `artifacts.pt` 并用验证集选择 raw/saved/anchor/graph/complement/hidden 候选表示；当前定位为单 run / 小批量诊断工具，全候选完整 C 网格在 Actor 上过慢，不作为正式大规模评估主入口。
