@@ -22,7 +22,29 @@
 - S3GCL：MLP inference + spectral biased views + semantic/spatial positives；
 - GraphECL：fast inference + structure encoder / MLP encoder + heterophily scripts。
 
-## 当前新候选：Energy-SPGCL
+## 当前主线状态
+
+当前 active foundation 是 `gcn_mlp_gcl`。它是必须击败的 strong control，但不是论文主贡献。
+
+当前 active-but-risky candidate 是 `mpnv_gcl`。它使用 dense semantic/spatial multi-positive mask 和 Natural-View bootstrap，试图把 SSPNV 的单采样 positive 改成更接近 S3GCL/GraphECL 范式的 multi-positive contrastive objective。
+
+当前已经停止的主线：
+
+- `er_cache_gcl`；
+- `er_residual_gcl`；
+- `energy_spgcl`；
+- `danv_gcl` / `danv_degree_gcl`；
+- `fdnv_gcl`；
+- `sspnv_gcl` / `afpnv_gcl` / `bspnv_gcl` 作为最终主方法。
+
+后续所有新候选必须同时报告：
+
+- vs GRACE；
+- vs `gcn_mlp_gcl`；
+- vs shuffled/random/no-structure control；
+- 失败数据集和停止条件。
+
+## 历史候选：Energy-SPGCL 与 Natural-View foundation
 
 工作假设：
 
@@ -98,3 +120,18 @@ SSPNV / AFPNV / BSPNV 当前裁决：
 - SSPNV 家族已触发停止条件，全部降级为失败/条件性消融资产；
 - 不再继续调 SSPNV/AFPNV/BSPNV 的 threshold、temperature、branch bias；
 - 下一代 active idea 必须换训练目标或参考范式，继续保留 `gcn_mlp_gcl` 作为 strong foundation，但不要再把 filter-specific positives 的小变体包装成主线。
+
+MPNV 当前裁决：
+
+- `mpnv_gcl` 入口为 `--method mpnv_gcl`；
+- 它不再做单一 semantic/spatial positive 采样，而是构造 dense semantic mask 与 dense spatial mask；
+- semantic mask 来源于 raw propagation signature KNN，监督 high-pass target；
+- spatial mask 来源于原图一跳邻居，监督 low-pass target；
+- 保留 `gcn_mlp_gcl` 的 Natural-View bootstrap；
+- `--mpnv-shuffle-positives` 是必须保留的机制 control，用于打乱 positive mask 与节点对应关系；
+- Chameleon/Squirrel × splits 0-9 × seed0 × 50 epoch 中，MPNV 相对 `gcn_mlp_gcl` 分别取得 +0.017105/+0.019132 与 +0.015082/+0.014767 的 F1Mi/F1Ma mean delta；
+- Squirrel normal 10/10 split micro 正向，shuffled control 仅 +0.000961/+0.000668，是当前最干净的机制信号；
+- Chameleon shuffled control 也为正，说明 Chameleon 只能作为性能正信号，不能作为机制证明；
+- 当前裁决是 active-but-risky，不是成功方法；
+- 下一步必须跑 seed1/seed2、Texas/Actor 扩展、homophily safety 和强基线对齐；
+- 若 MPNV 的收益在 seed1/seed2 主要来自 shuffled control，或 Texas/Actor 明确退化且无法 label-free 回退，应停止 MPNV 主线。

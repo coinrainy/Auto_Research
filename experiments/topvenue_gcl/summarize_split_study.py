@@ -48,6 +48,11 @@ def read_run_json(path):
         "bspnv_semantic_win_fraction": diagnostics.get("bspnv_semantic_win_fraction"),
         "bspnv_spatial_win_fraction": diagnostics.get("bspnv_spatial_win_fraction"),
         "bspnv_bootstrap_win_fraction": diagnostics.get("bspnv_bootstrap_win_fraction"),
+        "mpnv_semantic_pos_mean": diagnostics.get("mpnv_semantic_pos_mean"),
+        "mpnv_spatial_pos_mean": diagnostics.get("mpnv_spatial_pos_mean"),
+        "mpnv_semantic_density": diagnostics.get("mpnv_semantic_density"),
+        "mpnv_spatial_density": diagnostics.get("mpnv_spatial_density"),
+        "mpnv_shuffle_positives": diagnostics.get("mpnv_shuffle_positives"),
     }
 
 

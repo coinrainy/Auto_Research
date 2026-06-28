@@ -1015,3 +1015,16 @@
   - 当前裁决：BSPNV 未达到预设升级门槛，SSPNV / AFPNV / BSPNV 家族全部降级为 ablation assets；不再继续调 threshold、temperature 或 branch bias。
   - 已更新文档：`experiments/topvenue_gcl/docs/semantic_spatial_positive_natural_view_candidate.md`、`docs/early_gate_summary_2026-06-28.md`、`docs/implementation_principles.md` 与 `experiments/topvenue_gcl/README.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && rg -n "semantic|spatial|high|low|mlp|inference|contrast|positive" ../../third_party_baselines/reference_gcl/S3GCL ../../third_party_baselines/reference_gcl/GraphECL ../../third_party_baselines/reference_gcl/PolyGCL -g '*.py' -g '*.md'`，转向新的训练目标或 top-venue reference pattern，不再微调 SSPNV 家族。
+- 2026-06-29 MPNV-GCL multi-positive natural-view 实现与小门控：
+  - 已从 S3GCL、GraphECL、PolyGCL 参考范式中抽取下一代方向：不再微调 SSPNV 的单采样 positive，而是构造 dense semantic/spatial multi-positive mask。
+  - 已实现 `--method mpnv_gcl`：ego/MLP view 为 anchor，semantic mask 监督 high-pass target，spatial mask 监督 low-pass target，并保留 GCN-MLP Natural-View bootstrap。
+  - 新增 `src/losses.py::multi_positive_info_nce`，支持一个 anchor 对多个 positives 的 dense-mask InfoNCE。
+  - 新增配置与 CLI：`mpnv_semantic_weight`、`mpnv_spatial_weight`、`mpnv_bootstrap_weight`、`mpnv_include_self`、`mpnv_shuffle_positives` 与 `--mpnv-shuffle-positives`。
+  - 新增诊断字段：`mpnv_semantic_pos_mean`、`mpnv_spatial_pos_mean`、`mpnv_semantic_density`、`mpnv_spatial_density`、`mpnv_shuffle_positives`。
+  - 已完成 smoke：Chameleon/Squirrel 的 `mpnv_gcl` 2 epoch 正常训练；`--mpnv-shuffle-positives` control 正常记录 `cache_control=mpnv_shuffled`。
+  - 已执行 Chameleon/Squirrel × splits 0-9 × seed0 × 50 epoch 的 baseline/MPNV/shuffled 小门控，输出目录为 `experiments/topvenue_gcl/runs/mpnv_gate_wiki_s0_splits0-2_e50/`。
+  - MPNV vs `gcn_mlp_gcl`：Chameleon ΔF1Mi/ΔF1Ma=+0.017105/+0.019132，7/10 split micro 正向；Squirrel +0.015082/+0.014767，10/10 split micro 正向。
+  - Shuffled-positive control：Chameleon +0.014254/+0.012411，说明 Chameleon 上机制对照不干净；Squirrel +0.000961/+0.000668，5/4 正/负，接近无效。
+  - 当前裁决：MPNV 升级为新的 active-but-risky candidate，但不能声称 SOTA。Squirrel normal-vs-shuffled 是当前最干净机制信号；Chameleon 只能作为性能正信号。
+  - 已新增文档：`experiments/topvenue_gcl/docs/multi_positive_natural_view_candidate.md`，并更新 `experiments/topvenue_gcl/README.md`、`docs/early_gate_summary_2026-06-28.md` 与 `docs/implementation_principles.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl mpnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh`；随后补 `DATASETS="Chameleon Squirrel" METHODS="mpnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/mpnv_gate_wiki_shuffled_s1-2_splits0-9_e50" RUN_TAG="shuffled" EXTRA_ARGS="--mpnv-shuffle-positives" OVERWRITE=1 bash scripts/run_split_study.sh`。

@@ -4,11 +4,9 @@
 
 当前 active foundation：**GCN-MLP Natural View GCL**。它在 Texas/Actor/Chameleon/Squirrel 的轻量 split sanity 中稳定超过 GRACE，但本身不够创新；后续 candidate 必须在它之上给出新机制和增益。`ER-Cache`、`ER-Residual`、`Energy-SPGCL`、`DANV` 与 `FDNV` 均已降级为失败/条件性消融。
 
-当前 active foundation：**GCN-MLP Natural View GCL**。它仍是后续新方法必须击败的 strong control。
-
 SSPNV / AFPNV / BSPNV 已降级为机制与消融资产，不再作为 active main idea。固定完整 SSPNV 的入口为 `--method sspnv_gcl`；AFPNV 的入口为 `--method afpnv_gcl`；BSPNV branch selection 的入口为 `--method bspnv_gcl`。BSPNV 强于 AFPNV，但没有同时超过 Chameleon semantic-only 与 Squirrel full SSPNV，因此触发停止条件。
 
-10 split / seed0 / 50 epoch 的 early gate 显示 SSPNV 相对 `gcn_mlp_gcl` 在 Texas、Actor、Chameleon、Squirrel 的 mean micro/macro 均为正；其中 Chameleon 为 10/10 split micro 正向，Squirrel 为 9/10。Actor 仅弱正且不稳定，因此暂时只作为边界数据集。
+当前 active-but-risky candidate：**Multi-Positive Natural-View GCL (MPNV-GCL)**，入口为 `--method mpnv_gcl`。它用 dense semantic/spatial multi-positive mask 替代 SSPNV 的单采样 positive，并保留 Natural-View bootstrap。Chameleon/Squirrel 10 split / seed0 / 50 epoch gate 显示，MPNV 相对 `gcn_mlp_gcl` 分别取得 +0.017105/+0.019132 与 +0.015082/+0.014767 的 F1Mi/F1Ma 增益；其中 Squirrel 10/10 split micro 正向，且 shuffled-positive control 近乎无效，是当前最干净的机制信号。Chameleon 上 shuffled control 也较强，因此不能把该数据集作为强机制证据。
 
 新增 `--method afpnv_gcl` 和 `--method bspnv_gcl`：分别对应置信度加权与 semantic/spatial/bootstrap branch selection。二者都已经跑通 Chameleon/Squirrel 10 split，但都没有形成足够强的主线结果。
 
@@ -19,7 +17,8 @@ SSPNV / AFPNV / BSPNV 已降级为机制与消融资产，不再作为 active ma
 - high-energy residual、low-pass positive cache、DANV penalty 与 FDNV routed filter target 均已在 early gate 中降级为失败/条件性消融，不作为当前主线；
 - SSPNV 的核心待证机制是 filter-specific positive construction，但 random-positive control 已证明固定双分支叙事不够；
 - AFPNV/BSPNV 已尝试解释何时选择 semantic、spatial 或 bootstrap-only objective，但未过升级门槛；
-- 下一版必须换训练目标或参考范式，而不是继续微调 SSPNV 家族。
+- MPNV 将 positive construction 从单采样改为 dense multi-positive mask，是当前需要继续验证的新训练目标；
+- 下一步必须用 seed1/seed2、Texas/Actor 扩展、homophily safety 与强基线同协议对齐来裁决 MPNV，而不是直接声称 SOTA。
 
 最小 smoke：
 
@@ -56,6 +55,8 @@ python train.py --dataset Texas --method fdnv_gcl --epochs 5 --split-index 0 --s
 python train.py --dataset Texas --method sspnv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method afpnv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method bspnv_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method mpnv_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method mpnv_gcl --epochs 5 --split-index 0 --seed 0 --mpnv-shuffle-positives
 python train.py --dataset Texas --method energy_spgcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_residual_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_cache_gcl --epochs 5 --split-index 0 --seed 0

@@ -16,6 +16,7 @@ from src.data import graph_stats, load_dataset, should_use_mask_eval, split_mask
 from src.eval import linear_probe_random, linear_probe_with_masks
 from src.losses import (
     info_nce_loss,
+    multi_positive_info_nce,
     negative_cosine,
     sampled_info_nce,
     vicreg_regularizer,
@@ -49,6 +50,7 @@ def parse_args():
                             "sspnv_gcl",
                             "afpnv_gcl",
                             "bspnv_gcl",
+                            "mpnv_gcl",
                             "energy_spgcl",
                             "gcn_mlp_gcl",
                             "er_residual_gcl",
@@ -90,6 +92,10 @@ def parse_args():
     parser.add_argument("--afpnv-min-branch-weight", type=float, default=None)
     parser.add_argument("--bspnv-branch-temperature", type=float, default=None)
     parser.add_argument("--bspnv-bootstrap-bias", type=float, default=None)
+    parser.add_argument("--mpnv-semantic-weight", type=float, default=None)
+    parser.add_argument("--mpnv-spatial-weight", type=float, default=None)
+    parser.add_argument("--mpnv-bootstrap-weight", type=float, default=None)
+    parser.add_argument("--mpnv-shuffle-positives", action="store_true")
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -166,6 +172,14 @@ def override_config(config, args):
         merged["bspnv_branch_temperature"] = args.bspnv_branch_temperature
     if args.bspnv_bootstrap_bias is not None:
         merged["bspnv_bootstrap_bias"] = args.bspnv_bootstrap_bias
+    if args.mpnv_semantic_weight is not None:
+        merged["mpnv_semantic_weight"] = args.mpnv_semantic_weight
+    if args.mpnv_spatial_weight is not None:
+        merged["mpnv_spatial_weight"] = args.mpnv_spatial_weight
+    if args.mpnv_bootstrap_weight is not None:
+        merged["mpnv_bootstrap_weight"] = args.mpnv_bootstrap_weight
+    if args.mpnv_shuffle_positives:
+        merged["mpnv_shuffle_positives"] = True
     return merged
 
 
@@ -413,6 +427,29 @@ def _spatial_positive_indices(data):
 
 
 @torch.no_grad()
+def _multi_positive_masks(data, semantic_idx, config):
+    num_nodes = data.num_nodes
+    device = data.x.device
+    semantic_mask = torch.zeros((num_nodes, num_nodes), device=device, dtype=torch.bool)
+    row = torch.arange(num_nodes, device=device).view(-1, 1).expand_as(semantic_idx)
+    semantic_mask[row.reshape(-1), semantic_idx.reshape(-1)] = True
+
+    spatial_mask = torch.zeros((num_nodes, num_nodes), device=device, dtype=torch.bool)
+    source, target = data.edge_index
+    spatial_mask[source, target] = True
+    spatial_mask[target, source] = True
+    if bool(config.get("mpnv_include_self", True)):
+        diag = torch.arange(num_nodes, device=device)
+        semantic_mask[diag, diag] = True
+        spatial_mask[diag, diag] = True
+    if bool(config.get("mpnv_shuffle_positives", False)):
+        perm = torch.randperm(num_nodes, device=device)
+        semantic_mask = semantic_mask[:, perm]
+        spatial_mask = spatial_mask[:, perm]
+    return semantic_mask, spatial_mask
+
+
+@torch.no_grad()
 def _positive_confidence(cache_keys, semantic_idx, spatial_idx):
     keys = F.normalize(cache_keys, dim=1)
     semantic_positive = keys[semantic_idx.reshape(-1)].view(
@@ -521,6 +558,7 @@ def train_er_cache_gcl(model, data, config, args):
     sspnv_gcl = args.method in {"sspnv_gcl", "afpnv_gcl", "bspnv_gcl"}
     afpnv_gcl = args.method == "afpnv_gcl"
     bspnv_gcl = args.method == "bspnv_gcl"
+    mpnv_gcl = args.method == "mpnv_gcl"
     residual_only = args.method in {
         "er_residual_gcl",
         "gcn_mlp_gcl",
@@ -530,6 +568,7 @@ def train_er_cache_gcl(model, data, config, args):
         "sspnv_gcl",
         "afpnv_gcl",
         "bspnv_gcl",
+        "mpnv_gcl",
     }
     graph_target = args.method in {
         "gcn_mlp_gcl",
@@ -539,12 +578,13 @@ def train_er_cache_gcl(model, data, config, args):
         "sspnv_gcl",
         "afpnv_gcl",
         "bspnv_gcl",
+        "mpnv_gcl",
     }
     topk = 0 if (args.disable_cache or residual_only) else int(config["cache_topk"])
     cache_update = max(1, int(config["cache_update_interval"]))
     cache_idx = None
     cache_keys = _static_cache_keys(data, config)
-    semantic_idx = _semantic_positive_indices(data, config) if sspnv_gcl else None
+    semantic_idx = _semantic_positive_indices(data, config) if (sspnv_gcl or mpnv_gcl) else None
     spatial_idx = _spatial_positive_indices(data) if sspnv_gcl else None
     if sspnv_gcl and bool(config.get("sspnv_random_semantic", False)):
         semantic_idx = _random_positive_indices(
@@ -570,6 +610,9 @@ def train_er_cache_gcl(model, data, config, args):
             spatial_idx,
             config,
         )
+    mpnv_masks = None
+    if mpnv_gcl:
+        mpnv_masks = _multi_positive_masks(data, semantic_idx, config)
     history = []
     diagnostics = {}
     for epoch in range(1, int(config["epochs"]) + 1):
@@ -674,6 +717,30 @@ def train_er_cache_gcl(model, data, config, args):
                 float(config["sspnv_bootstrap_weight"]) * loss_bootstrap
                 + semantic_scale * float(config["sspnv_semantic_weight"]) * loss_semantic
                 + spatial_scale * float(config["sspnv_spatial_weight"]) * loss_spatial
+            )
+            loss_cache = parts["final"].new_tensor(0.0)
+        elif mpnv_gcl:
+            semantic_mask, spatial_mask = mpnv_masks
+            loss_semantic = multi_positive_info_nce(
+                pred_ego,
+                parts["high"],
+                semantic_mask,
+                float(config["tau"]),
+            )
+            loss_spatial = multi_positive_info_nce(
+                pred_ego,
+                parts["low"],
+                spatial_mask,
+                float(config["tau"]),
+            )
+            loss_bootstrap = 0.5 * (
+                negative_cosine(pred_ego, parts["graph"])
+                + negative_cosine(pred_high, parts["ego"])
+            )
+            loss_self = (
+                float(config["mpnv_bootstrap_weight"]) * loss_bootstrap
+                + float(config["mpnv_semantic_weight"]) * loss_semantic
+                + float(config["mpnv_spatial_weight"]) * loss_spatial
             )
             loss_cache = parts["final"].new_tensor(0.0)
         elif energy_spgcl:
@@ -795,9 +862,17 @@ def train_er_cache_gcl(model, data, config, args):
             diagnostics["bspnv_bootstrap_win_fraction"] = float((winners == 2).float().mean().item())
             diagnostics["bspnv_semantic_conf_mean"] = float(semantic_conf.mean().item())
             diagnostics["bspnv_spatial_conf_mean"] = float(spatial_conf.mean().item())
+        if mpnv_gcl:
+            semantic_mask, spatial_mask = mpnv_masks
+            diagnostics["mpnv_semantic_pos_mean"] = float(semantic_mask.float().sum(dim=1).mean().item())
+            diagnostics["mpnv_spatial_pos_mean"] = float(spatial_mask.float().sum(dim=1).mean().item())
+            diagnostics["mpnv_semantic_density"] = float(semantic_mask.float().mean().item())
+            diagnostics["mpnv_spatial_density"] = float(spatial_mask.float().mean().item())
+            diagnostics["mpnv_shuffle_positives"] = bool(config.get("mpnv_shuffle_positives", False))
     diagnostics["cache_control"] = (
         ("danv_degree" if danv_degree_gcl else "danv") if danv_gcl else
         "fdnv" if fdnv_gcl else
+        ("mpnv_shuffled" if bool(config.get("mpnv_shuffle_positives", False)) else "mpnv") if mpnv_gcl else
         "bspnv" if bspnv_gcl else
         "afpnv" if afpnv_gcl else
         _sspnv_control_name(config) if sspnv_gcl else
@@ -838,7 +913,7 @@ def main():
     config = override_config(load_yaml(args.config), args)
     if args.method == "gcn_mlp_gcl" and args.final_repr is None:
         config["final_repr"] = "ego_graph"
-    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl"} and args.final_repr is None:
+    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl"} and args.final_repr is None:
         config["final_repr"] = "ego_graph"
     if args.method == "energy_spgcl" and args.final_repr is None:
         config["final_repr"] = "ego_high"

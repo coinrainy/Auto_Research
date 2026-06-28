@@ -38,6 +38,17 @@ def sampled_info_nce(anchor, positive, negatives, tau, sample_weight=None):
     return (loss * sample_weight).mean()
 
 
+def multi_positive_info_nce(anchor, sample, positive_mask, tau):
+    anchor = F.normalize(anchor, dim=1)
+    sample = F.normalize(sample, dim=1)
+    positive_mask = positive_mask.to(anchor.device, dtype=torch.bool)
+    sim = anchor @ sample.t() / tau
+    log_prob = sim - torch.logsumexp(sim, dim=1, keepdim=True)
+    pos_count = positive_mask.sum(dim=1).clamp_min(1)
+    loss = -(log_prob * positive_mask.to(log_prob.dtype)).sum(dim=1) / pos_count
+    return loss.mean()
+
+
 def negative_cosine(pred, target):
     pred = F.normalize(pred, dim=1)
     target = F.normalize(target.detach(), dim=1)

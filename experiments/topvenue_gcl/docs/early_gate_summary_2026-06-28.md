@@ -309,3 +309,46 @@ Branch diagnostics：
 - SSPNV / AFPNV / BSPNV 家族全部降级为 ablation assets；
 - 不再继续调该家族的 threshold、temperature、branch bias；
 - 下一代方法应回到 S3GCL / GraphECL / PolyGCL 级参考范式，寻找不同训练目标，而不是继续做 SSPNV 小变体。
+
+## 2026-06-29 追加：MPNV-GCL multi-positive gate
+
+已实现 `--method mpnv_gcl`：在 GCN-MLP Natural-View foundation 上，用 dense semantic/spatial multi-positive mask 替代 SSPNV 的单采样 positive。
+
+设计来源：
+
+- S3GCL 的 semantic/spatial positive mask；
+- GraphECL 的 MLP inference / graph target 思路；
+- 当前 `gcn_mlp_gcl` 的 ego-view 与 graph-view natural-view foundation。
+
+训练目标：
+
+- semantic mask：raw propagation signature KNN，监督 high-pass target；
+- spatial mask：原图一跳邻居，监督 low-pass target；
+- bootstrap：保留 ego view 与 graph view 的 Natural-View alignment；
+- control：`--mpnv-shuffle-positives` 打乱 positive mask 的节点对应关系。
+
+执行设置：
+
+```bash
+RUNS_DIR="runs/mpnv_gate_wiki_s0_splits0-2_e50"
+DATASETS="Chameleon Squirrel" METHODS="gcn_mlp_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Chameleon Squirrel" METHODS="mpnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="normal" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Chameleon Squirrel" METHODS="mpnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="shuffled" EXTRA_ARGS="--mpnv-shuffle-positives" OVERWRITE=1 bash scripts/run_split_study.sh
+```
+
+Aggregate vs `gcn_mlp_gcl`：
+
+| Dataset | Method | ΔF1Mi | ΔF1Ma | Positive/Negative F1Mi | 裁决 |
+| --- | --- | ---: | ---: | --- | --- |
+| Chameleon | MPNV | +0.017105 | +0.019132 | 7/3 | 正向，但 shuffled control 也强 |
+| Chameleon | MPNV shuffled | +0.014254 | +0.012411 | 7/3 | 机制对照不够干净 |
+| Squirrel | MPNV | +0.015082 | +0.014767 | 10/0 | 当前最强机制信号 |
+| Squirrel | MPNV shuffled | +0.000961 | +0.000668 | 5/4 | 接近无效，支持结构化 mask |
+
+裁决：
+
+- MPNV 升级为新的 active-but-risky candidate；
+- Squirrel 上 normal 10/10 split micro 正向，且 shuffled-positive control 基本失效，是目前比 SSPNV/BSPNV 更干净的机制证据；
+- Chameleon 上 normal 与 shuffled 都正向，说明不能把 Chameleon 当作强机制证明，只能作为性能正信号；
+- 当前不能声称 SOTA，下一步必须做 seed1/seed2、Texas/Actor 扩展、homophily safety 与强基线同协议对齐；
+- 若 seed1/seed2 后 Squirrel normal-vs-shuffled 差异消失，或收益主要来自 shuffled control，应立即放弃 MPNV 主线。

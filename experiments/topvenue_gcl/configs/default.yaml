@@ -43,6 +43,11 @@ afpnv_conf_temperature: 0.1
 afpnv_min_branch_weight: 0.05
 bspnv_branch_temperature: 0.1
 bspnv_bootstrap_bias: 0.25
+mpnv_semantic_weight: 0.1
+mpnv_spatial_weight: 0.1
+mpnv_bootstrap_weight: 1.0
+mpnv_include_self: true
+mpnv_shuffle_positives: false
 variance_loss_weight: 1.0
 covariance_loss_weight: 0.01
 eval_mode: auto
