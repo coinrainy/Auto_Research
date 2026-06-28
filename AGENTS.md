@@ -896,3 +896,13 @@
   - Four-seed patched branch vs original official SP-GCL `ssl`：Chameleon +0.029002/+0.029461，Squirrel +0.036143/+0.036794；8/8 seed-dataset pair 为正，overall +0.032573/+0.033128。
   - 当前裁决：SPARC residual branch 从 post-hoc 表征校准推进为训练时方法的证据明显增强，继续作为 active candidate；但仍需 ablation 证明收益来自 residual auxiliary objective，而不是只来自 `hidden_resid` 输出拼接或维度扩大。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && for mode in hidden resid hidden_resid; do DATASETS="Chameleon Squirrel" OUT_DIR="runs/spgcl_sparc_residual_seed0_e100_${mode}" RESET_EPOCHS=100 LINEAR_EPOCHS=10 RESET_HIDDEN=256 RESET_SEED_NUM=32 RESET_MAX_SIZE=512 RESET_SUBG_NUM_HOPS=2 SEED=0 SPARC_RESIDUAL_WEIGHT=0.1 SPARC_EMBED_MODE="${mode}" bash scripts/run_spgcl_sparc_residual_export.sh; done`，随后评估三种 embed mode，确认 `hidden_resid` 是否必要。
+- 2026-06-28 用户裁决：放弃 SPARC-GCL 当前路线，重启顶会范式 idea 搜索：
+  - 用户明确要求放弃当前 idea，原因是其实验实现方式与当前顶会顶刊论文实验实现存在差异；后续如果遇到实现问题，可以拉取顶会/顶刊实验代码作为参考。
+  - 已立即中断正在运行的 SPARC embed-mode C-grid 消融进程，确认无残留 `evaluate_propagation_calibration.py` / SP-GCL 训练进程。
+  - SPARC-GCL / patched official SP-GCL residual branch 正式降级为 abandoned candidate，不再继续扩展实验。
+  - 已拉取顶会 GCL 参考实现到 ignored 目录 `third_party_baselines/reference_gcl/`：`PolyGCL`（ICLR 2024）、`S3GCL`（ICML 2024）、`GraphECL`（ICML 2024）。第三方源码不提交入主仓库。
+  - 已新增重启备忘录：`docs/gcl_idea_reset_topvenue_reference_memo.md`。
+  - 新方向原则：不再 patch 第三方 official code；从第一版开始建立独立标准训练入口、dataset loader、10 split evaluator、run scripts、baseline 对齐与 ablation/control。
+  - 当前推荐新候选：优先探索 inference-efficient heterophily GCL with neighbor-cache distillation，其次 distribution-aware positive pair construction；实现范式参考 GraphECL/S3GCL/PolyGCL。
+  - 已创建新主工作区：`experiments/topvenue_gcl/`，包含 `configs/`、`scripts/`、`src/`、`docs/`、`runs/`、`README.md`、局部 `.gitignore` 与 `docs/implementation_principles.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && find ../../third_party_baselines/reference_gcl -maxdepth 3 -name 'run*.sh' -o -name '*train*.py' -o -name 'main*.py'`，继续抽取 GraphECL/S3GCL/PolyGCL 的标准训练入口与 evaluator 设计。
