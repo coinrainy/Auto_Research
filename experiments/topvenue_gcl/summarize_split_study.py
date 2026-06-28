@@ -36,6 +36,12 @@ def read_run_json(path):
         "cache_low_sim_mean": diagnostics.get("cache_low_sim_mean"),
         "sspnv_semantic_sim_mean": diagnostics.get("sspnv_semantic_sim_mean"),
         "sspnv_spatial_self_fraction": diagnostics.get("sspnv_spatial_self_fraction"),
+        "sspnv_random_semantic": diagnostics.get("sspnv_random_semantic"),
+        "sspnv_random_spatial": diagnostics.get("sspnv_random_spatial"),
+        "afpnv_semantic_weight_mean": diagnostics.get("afpnv_semantic_weight_mean"),
+        "afpnv_spatial_weight_mean": diagnostics.get("afpnv_spatial_weight_mean"),
+        "afpnv_semantic_conf_mean": diagnostics.get("afpnv_semantic_conf_mean"),
+        "afpnv_spatial_conf_mean": diagnostics.get("afpnv_spatial_conf_mean"),
     }
 
 

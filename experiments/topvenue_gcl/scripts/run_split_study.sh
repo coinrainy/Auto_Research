@@ -13,6 +13,7 @@ RUNS_DIR="${RUNS_DIR:-runs/split_study}"
 CONFIG="${CONFIG:-configs/default.yaml}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"
 OVERWRITE="${OVERWRITE:-0}"
+RUN_TAG="${RUN_TAG:-}"
 
 mkdir -p "$RUNS_DIR"
 
@@ -25,6 +26,9 @@ for dataset in $DATASETS; do
     for seed in $SEEDS; do
       for method in $METHODS; do
         run_name="${dataset}_${method}_seed${seed}_split${split}_e${EPOCHS}"
+        if [[ -n "$RUN_TAG" ]]; then
+          run_name="${run_name}_${RUN_TAG}"
+        fi
         cmd=(
           python train.py
           --config "$CONFIG"
@@ -56,4 +60,3 @@ python summarize_split_study.py \
   --runs-dir "$RUNS_DIR" \
   --out "$RUNS_DIR/split_study_runs.csv" \
   --aggregate-out "$RUNS_DIR/split_study_aggregate.csv"
-

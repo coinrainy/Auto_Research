@@ -992,3 +992,15 @@
   - 当前主要成果：`gcn_mlp_gcl` 已作为 strong foundation 稳定超过 GRACE；SSPNV 在 Texas/Actor/Chameleon/Squirrel 的 10 split seed0 early gate 中相对 `gcn_mlp_gcl` 的 mean micro/macro 均为正，Chameleon 10/10 split micro 正向，Squirrel 9/10 split micro 正向。
   - 当前风险：仍未完成多 model seed、semantic/spatial/random-positive 消融、homophily safety 与 SP-GCL/S3GCL/PolyGCL/GraphECL 等强基线同协议对齐，因此不能声称 SOTA。
   - 下一步建议：优先补 SSPNV 消融与多 seed，而不是继续新增复杂模块。
+- 2026-06-28 SSPNV control、AFPNV 实现与裁决：
+  - 已实现 SSPNV random-positive controls：`--sspnv-random-semantic` 与 `--sspnv-random-spatial`，并在 `run.json` / `summarize_split_study.py` 中记录对应诊断字段。
+  - 已将 `scripts/run_split_study.sh` 泛化为支持 `RUN_TAG`，便于在同一 `RUNS_DIR` 内保存 full、semantic-only、spatial-only、random control 等多变体。
+  - 已实现 `--method afpnv_gcl`：在 SSPNV 的 semantic/spatial sampled InfoNCE 上加入 raw propagation signature 正样本置信度加权；新增配置 `afpnv_semantic_conf_threshold`、`afpnv_spatial_conf_threshold`、`afpnv_conf_temperature`、`afpnv_min_branch_weight`。
+  - 已验证：`python -m py_compile train.py summarize_split_study.py src/*.py`、`bash -n scripts/run_split_study.sh && bash -n scripts/run_smoke.sh`、Chameleon/Squirrel 的 `afpnv_gcl` 2 epoch smoke。
+  - 已执行 Chameleon/Squirrel × splits 0-9 × seed0 × 50 epoch 的 SSPNV controls 与 AFPNV 小门控，输出目录为 `experiments/topvenue_gcl/runs/sspnv_controls_wiki_s0_splits0-9_e50/`。
+  - Chameleon vs `gcn_mlp_gcl`：full SSPNV +0.027412/+0.029084，semantic-only +0.037281/+0.038611，spatial-only +0.033553/+0.036636，random semantic +0.029825/+0.029735，random spatial +0.023465/+0.025592，AFPNV +0.025000/+0.024495。
+  - Squirrel vs `gcn_mlp_gcl`：full SSPNV +0.007397/+0.003500，semantic-only +0.004803/+0.000484，spatial-only +0.000480/-0.000961，random semantic -0.004131/-0.009298，random spatial -0.000096/-0.003287，AFPNV +0.004995/-0.000219。
+  - 当前裁决：固定完整 SSPNV 不再作为最终主方法包装；Chameleon 上 random semantic 与单分支 control 过强，削弱“结构化 semantic-spatial 双正样本拆分必要性”；Squirrel 上 random positives 失败，说明结构化 positives 仍有条件性价值。
+  - AFPNV 已实现但未超过 full SSPNV 或 Chameleon semantic-only，因此当前只保留为 ablation，不升级为 active main idea。
+  - 已更新文档：`experiments/topvenue_gcl/docs/semantic_spatial_positive_natural_view_candidate.md`、`docs/early_gate_summary_2026-06-28.md`、`docs/implementation_principles.md` 与 `experiments/topvenue_gcl/README.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Chameleon Squirrel" METHODS="gcn_mlp_gcl sspnv_gcl afpnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1" EPOCHS=50 RUNS_DIR="runs/afpnv_s1_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh`；若 AFPNV seed1 仍弱于 full SSPNV 或 semantic-only，应停止置信度加权路线，转向更明确的 branch/objective selection 或放弃 SSPNV 家族。

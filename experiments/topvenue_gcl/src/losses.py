@@ -22,7 +22,7 @@ def info_nce_loss(z1, z2, tau):
     return 0.5 * (loss_1 + loss_2).mean()
 
 
-def sampled_info_nce(anchor, positive, negatives, tau):
+def sampled_info_nce(anchor, positive, negatives, tau, sample_weight=None):
     anchor = F.normalize(anchor, dim=1)
     positive = F.normalize(positive, dim=1)
     negatives = F.normalize(negatives, dim=2)
@@ -30,7 +30,12 @@ def sampled_info_nce(anchor, positive, negatives, tau):
     neg_logits = torch.einsum("nd,nkd->nk", anchor, negatives) / tau
     logits = torch.cat([pos_logit, neg_logits], dim=1)
     labels = torch.zeros(anchor.size(0), device=anchor.device, dtype=torch.long)
-    return F.cross_entropy(logits, labels)
+    loss = F.cross_entropy(logits, labels, reduction="none")
+    if sample_weight is None:
+        return loss.mean()
+    sample_weight = sample_weight.detach().to(loss.device, dtype=loss.dtype)
+    sample_weight = sample_weight / sample_weight.mean().clamp_min(1e-12)
+    return (loss * sample_weight).mean()
 
 
 def negative_cosine(pred, target):

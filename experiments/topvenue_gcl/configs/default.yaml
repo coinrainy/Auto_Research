@@ -35,6 +35,12 @@ sspnv_semantic_weight: 0.1
 sspnv_spatial_weight: 0.1
 sspnv_bootstrap_weight: 1.0
 sspnv_semantic_topk: 5
+sspnv_random_semantic: false
+sspnv_random_spatial: false
+afpnv_semantic_conf_threshold: 0.35
+afpnv_spatial_conf_threshold: 0.35
+afpnv_conf_temperature: 0.1
+afpnv_min_branch_weight: 0.05
 variance_loss_weight: 1.0
 covariance_loss_weight: 0.01
 eval_mode: auto

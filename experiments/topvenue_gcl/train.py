@@ -47,6 +47,7 @@ def parse_args():
                             "danv_degree_gcl",
                             "fdnv_gcl",
                             "sspnv_gcl",
+                            "afpnv_gcl",
                             "energy_spgcl",
                             "gcn_mlp_gcl",
                             "er_residual_gcl",
@@ -80,6 +81,12 @@ def parse_args():
     parser.add_argument("--sspnv-spatial-weight", type=float, default=None)
     parser.add_argument("--sspnv-bootstrap-weight", type=float, default=None)
     parser.add_argument("--sspnv-semantic-topk", type=int, default=None)
+    parser.add_argument("--sspnv-random-semantic", action="store_true")
+    parser.add_argument("--sspnv-random-spatial", action="store_true")
+    parser.add_argument("--afpnv-semantic-conf-threshold", type=float, default=None)
+    parser.add_argument("--afpnv-spatial-conf-threshold", type=float, default=None)
+    parser.add_argument("--afpnv-conf-temperature", type=float, default=None)
+    parser.add_argument("--afpnv-min-branch-weight", type=float, default=None)
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -140,6 +147,18 @@ def override_config(config, args):
         merged["sspnv_bootstrap_weight"] = args.sspnv_bootstrap_weight
     if args.sspnv_semantic_topk is not None:
         merged["sspnv_semantic_topk"] = args.sspnv_semantic_topk
+    if args.sspnv_random_semantic:
+        merged["sspnv_random_semantic"] = True
+    if args.sspnv_random_spatial:
+        merged["sspnv_random_spatial"] = True
+    if args.afpnv_semantic_conf_threshold is not None:
+        merged["afpnv_semantic_conf_threshold"] = args.afpnv_semantic_conf_threshold
+    if args.afpnv_spatial_conf_threshold is not None:
+        merged["afpnv_spatial_conf_threshold"] = args.afpnv_spatial_conf_threshold
+    if args.afpnv_conf_temperature is not None:
+        merged["afpnv_conf_temperature"] = args.afpnv_conf_temperature
+    if args.afpnv_min_branch_weight is not None:
+        merged["afpnv_min_branch_weight"] = args.afpnv_min_branch_weight
     return merged
 
 
@@ -338,6 +357,35 @@ def _semantic_positive_indices(data, config):
 
 
 @torch.no_grad()
+def _random_positive_indices(num_nodes, topk, device):
+    topk = max(1, int(topk))
+    if num_nodes <= 1:
+        return torch.zeros((num_nodes, topk), device=device, dtype=torch.long)
+    row = torch.arange(num_nodes, device=device).view(-1, 1)
+    positive = torch.randint(
+        low=0,
+        high=num_nodes - 1,
+        size=(num_nodes, topk),
+        device=device,
+    )
+    return positive + (positive >= row).long()
+
+
+@torch.no_grad()
+def _random_single_positive_indices(num_nodes, device):
+    if num_nodes <= 1:
+        return torch.zeros(num_nodes, device=device, dtype=torch.long)
+    row = torch.arange(num_nodes, device=device)
+    positive = torch.randint(
+        low=0,
+        high=num_nodes - 1,
+        size=(num_nodes,),
+        device=device,
+    )
+    return positive + (positive >= row).long()
+
+
+@torch.no_grad()
 def _spatial_positive_indices(data):
     num_nodes = data.num_nodes
     edge_index = data.edge_index
@@ -355,6 +403,46 @@ def _spatial_positive_indices(data):
     ])
     positive[unique] = target_sorted[starts]
     return positive
+
+
+@torch.no_grad()
+def _afpnv_branch_weights(cache_keys, semantic_idx, spatial_idx, config):
+    keys = F.normalize(cache_keys, dim=1)
+    semantic_positive = keys[semantic_idx.reshape(-1)].view(
+        semantic_idx.size(0),
+        semantic_idx.size(1),
+        -1,
+    )
+    semantic_sim = (keys.view(keys.size(0), 1, -1) * semantic_positive).sum(dim=2).mean(dim=1)
+    spatial_sim = (keys * keys[spatial_idx]).sum(dim=1)
+    temperature = max(float(config["afpnv_conf_temperature"]), 1e-12)
+    min_weight = float(config["afpnv_min_branch_weight"])
+    semantic_weight = torch.sigmoid(
+        (semantic_sim - float(config["afpnv_semantic_conf_threshold"])) / temperature
+    )
+    spatial_weight = torch.sigmoid(
+        (spatial_sim - float(config["afpnv_spatial_conf_threshold"])) / temperature
+    )
+    semantic_weight = semantic_weight * (1.0 - min_weight) + min_weight
+    spatial_weight = spatial_weight * (1.0 - min_weight) + min_weight
+    return semantic_weight, spatial_weight, semantic_sim, spatial_sim
+
+
+def _sspnv_control_name(config):
+    tags = []
+    if bool(config.get("sspnv_random_semantic", False)):
+        tags.append("random_semantic")
+    if bool(config.get("sspnv_random_spatial", False)):
+        tags.append("random_spatial")
+    semantic_active = float(config["sspnv_semantic_weight"]) > 0.0
+    spatial_active = float(config["sspnv_spatial_weight"]) > 0.0
+    if semantic_active and not spatial_active:
+        tags.append("semantic_only")
+    elif spatial_active and not semantic_active:
+        tags.append("spatial_only")
+    elif not semantic_active and not spatial_active:
+        tags.append("bootstrap_only")
+    return "sspnv" if not tags else "sspnv_" + "_".join(tags)
 
 
 @torch.no_grad()
@@ -407,7 +495,8 @@ def train_er_cache_gcl(model, data, config, args):
     danv_gcl = args.method in {"danv_gcl", "danv_degree_gcl"}
     danv_degree_gcl = args.method == "danv_degree_gcl"
     fdnv_gcl = args.method == "fdnv_gcl"
-    sspnv_gcl = args.method == "sspnv_gcl"
+    sspnv_gcl = args.method in {"sspnv_gcl", "afpnv_gcl"}
+    afpnv_gcl = args.method == "afpnv_gcl"
     residual_only = args.method in {
         "er_residual_gcl",
         "gcn_mlp_gcl",
@@ -415,6 +504,7 @@ def train_er_cache_gcl(model, data, config, args):
         "danv_degree_gcl",
         "fdnv_gcl",
         "sspnv_gcl",
+        "afpnv_gcl",
     }
     graph_target = args.method in {
         "gcn_mlp_gcl",
@@ -422,6 +512,7 @@ def train_er_cache_gcl(model, data, config, args):
         "danv_degree_gcl",
         "fdnv_gcl",
         "sspnv_gcl",
+        "afpnv_gcl",
     }
     topk = 0 if (args.disable_cache or residual_only) else int(config["cache_topk"])
     cache_update = max(1, int(config["cache_update_interval"]))
@@ -429,6 +520,22 @@ def train_er_cache_gcl(model, data, config, args):
     cache_keys = _static_cache_keys(data, config)
     semantic_idx = _semantic_positive_indices(data, config) if sspnv_gcl else None
     spatial_idx = _spatial_positive_indices(data) if sspnv_gcl else None
+    if sspnv_gcl and bool(config.get("sspnv_random_semantic", False)):
+        semantic_idx = _random_positive_indices(
+            data.num_nodes,
+            int(config["sspnv_semantic_topk"]),
+            data.x.device,
+        )
+    if sspnv_gcl and bool(config.get("sspnv_random_spatial", False)):
+        spatial_idx = _random_single_positive_indices(data.num_nodes, data.x.device)
+    afpnv_branch_stats = None
+    if afpnv_gcl:
+        afpnv_branch_stats = _afpnv_branch_weights(
+            cache_keys,
+            semantic_idx,
+            spatial_idx,
+            config,
+        )
     history = []
     diagnostics = {}
     for epoch in range(1, int(config["epochs"]) + 1):
@@ -502,12 +609,14 @@ def train_er_cache_gcl(model, data, config, args):
                 parts["high"][sem_pos_idx],
                 parts["high"][neg_idx],
                 float(config["tau"]),
+                None if not afpnv_gcl else afpnv_branch_stats[0],
             )
             loss_spatial = sampled_info_nce(
                 pred_ego,
                 parts["low"][spatial_idx],
                 parts["low"][neg_idx],
                 float(config["tau"]),
+                None if not afpnv_gcl else afpnv_branch_stats[1],
             )
             loss_bootstrap = 0.5 * (
                 negative_cosine(pred_ego, parts["graph"])
@@ -613,10 +722,25 @@ def train_er_cache_gcl(model, data, config, args):
             diagnostics["sspnv_semantic_sim_std"] = float(semantic_sim.std(unbiased=False).item())
             diagnostics["sspnv_spatial_self_fraction"] = float(spatial_is_self.float().mean().item())
             diagnostics["sspnv_semantic_topk"] = int(config["sspnv_semantic_topk"])
+            diagnostics["sspnv_random_semantic"] = bool(config.get("sspnv_random_semantic", False))
+            diagnostics["sspnv_random_spatial"] = bool(config.get("sspnv_random_spatial", False))
+        if afpnv_gcl:
+            semantic_weight, spatial_weight, semantic_conf, spatial_conf = afpnv_branch_stats
+            diagnostics["afpnv_semantic_weight_mean"] = float(semantic_weight.mean().item())
+            diagnostics["afpnv_semantic_weight_std"] = float(
+                semantic_weight.std(unbiased=False).item()
+            )
+            diagnostics["afpnv_spatial_weight_mean"] = float(spatial_weight.mean().item())
+            diagnostics["afpnv_spatial_weight_std"] = float(
+                spatial_weight.std(unbiased=False).item()
+            )
+            diagnostics["afpnv_semantic_conf_mean"] = float(semantic_conf.mean().item())
+            diagnostics["afpnv_spatial_conf_mean"] = float(spatial_conf.mean().item())
     diagnostics["cache_control"] = (
         ("danv_degree" if danv_degree_gcl else "danv") if danv_gcl else
         "fdnv" if fdnv_gcl else
-        "sspnv" if sspnv_gcl else
+        "afpnv" if afpnv_gcl else
+        _sspnv_control_name(config) if sspnv_gcl else
         "energy_spgcl" if energy_spgcl else
         "gcn_mlp_only" if graph_target else
         "residual_only" if residual_only else
@@ -654,7 +778,7 @@ def main():
     config = override_config(load_yaml(args.config), args)
     if args.method == "gcn_mlp_gcl" and args.final_repr is None:
         config["final_repr"] = "ego_graph"
-    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl"} and args.final_repr is None:
+    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl"} and args.final_repr is None:
         config["final_repr"] = "ego_graph"
     if args.method == "energy_spgcl" and args.final_repr is None:
         config["final_repr"] = "ego_high"

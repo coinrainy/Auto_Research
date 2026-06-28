@@ -234,8 +234,44 @@ Aggregate：
 
 裁决更新：
 
-- SSPNV-GCL 升级为当前 active candidate；
+- SSPNV-GCL 升级为当时 active candidate；
 - 这不是最终 SOTA 结论，只说明该 idea 通过了比 DANV/FDNV 更硬的 early gate；
 - Actor 只能作为边界数据集，不能作为主要成功叙事；
 - 下一步不再扩展复杂模块，优先做 semantic-only、spatial-only、random semantic/spatial positive、homophily safety 与强基线同协议对齐；
 - 若 random positive 或单分支消融接近完整方法，应立即收缩或放弃 SSPNV 主张。
+
+## 2026-06-28 追加：SSPNV control 与 AFPNV 裁决
+
+已完成 Chameleon/Squirrel × splits 0-9 × seed0 × 50 epoch 的 SSPNV control：
+
+- full SSPNV；
+- semantic-only：`--sspnv-spatial-weight 0.0`；
+- spatial-only：`--sspnv-semantic-weight 0.0`；
+- random semantic：`--sspnv-random-semantic`；
+- random spatial：`--sspnv-random-spatial`；
+- AFPNV：新增 `--method afpnv_gcl`，用 raw propagation signature 正样本置信度对 semantic/spatial loss 做节点级加权。
+
+Aggregate vs `gcn_mlp_gcl`：
+
+| Dataset | Variant | ΔF1Mi | ΔF1Ma | 裁决 |
+| --- | --- | ---: | ---: | --- |
+| Chameleon | full SSPNV | +0.027412 | +0.029084 | 正向但不是最强 |
+| Chameleon | semantic-only | +0.037281 | +0.038611 | 当前最强 |
+| Chameleon | spatial-only | +0.033553 | +0.036636 | 也强，削弱双分支必要性 |
+| Chameleon | random semantic | +0.029825 | +0.029735 | major warning：随机 semantic 也强 |
+| Chameleon | random spatial | +0.023465 | +0.025592 | 仍正向 |
+| Chameleon | AFPNV | +0.025000 | +0.024495 | 未超过 full/semantic-only |
+| Squirrel | full SSPNV | +0.007397 | +0.003500 | 当前最强但稳定性一般 |
+| Squirrel | semantic-only | +0.004803 | +0.000484 | 接近 full |
+| Squirrel | spatial-only | +0.000480 | -0.000961 | 基本无效 |
+| Squirrel | random semantic | -0.004131 | -0.009298 | 明确失败 |
+| Squirrel | random spatial | -0.000096 | -0.003287 | 基本无效 |
+| Squirrel | AFPNV | +0.004995 | -0.000219 | 未超过 full SSPNV |
+
+裁决更新：
+
+- 固定完整 SSPNV 不再作为最终主方法包装；
+- Chameleon 上 random semantic 和单分支 control 太强，说明“结构化 semantic-spatial 正样本拆分是必要机制”的主张站不稳；
+- Squirrel 上 random positives 失败，说明结构化 positives 仍有条件性价值；
+- AFPNV 已实现但未通过升级门槛，保留为 ablation，不作为 active main idea；
+- 下一阶段若继续 SSPNV 家族，必须做 branch/objective selection，而不是固定同权相加或简单置信度加权。
