@@ -808,4 +808,13 @@ split0 seed0：
 | Chameleon | +0.043860 | +0.028509 | 0.952180 | 强正且 control 支持 |
 | Squirrel | -0.008646 | 未跑 | 0.533684 | 失败 |
 
-裁决：RWIRRNV 升级为新的 active-but-risky candidate，但不能声称成功。它解决了 NPRRNV 伤害 Chameleon 的问题，并在 Texas/Chameleon 给出比 DS-RRNV 更强的单 split 信号；但 Squirrel 仍失败，Actor control 不干净。下一步必须做 splits 0-2 复核与 Squirrel failure fix。
+splits 0-2、seed0、50 epoch 复核：
+
+| Dataset | normal ΔF1Mi vs GCN-MLP | shuffled-weight ΔF1Mi vs GCN-MLP | normal - shuffled-weight | normal 正/负 split | 裁决 |
+| --- | ---: | ---: | ---: | --- | --- |
+| Texas | +0.117117 | +0.054054 | +0.063063 | 3/0 | 强正，control 清楚 |
+| Chameleon | +0.013889 | +0.005117 | +0.008772 | 2/0 | 小正，control 基本支持 |
+| Squirrel | +0.014089 | +0.012488 | +0.001601 | 2/1 | 性能小正，但 control 弱 |
+| Actor | +0.002851 | +0.000658 | +0.002193 | 1/1 | 边缘正，证据很弱 |
+
+裁决：RWIRRNV 继续作为 active-but-risky candidate，证据从单 split 升级为四个异配数据集 splits 0-2 均值正向，且 Texas/Chameleon 的 reliability 排序 control 支持机制。但 Squirrel/Actor 的 normal-vs-shuffled 差距太小，不能声称 reliability weighting 已经普适有效。下一步必须做 10 splits / 多 seed 复核、强基线同协议对齐与 Squirrel/Actor failure analysis；若 control 仍弱，应放弃通用 SOTA 叙事。

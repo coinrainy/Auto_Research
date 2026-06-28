@@ -124,7 +124,7 @@ splits 0-2 seed0 复核：
 invariance_scale = (1 - high_gate)^2
 ```
 
-split0 seed0 结果：
+split0 seed0 初筛结果：
 
 | Dataset | ΔF1Mi vs GCN-MLP | normal - shuffled | 裁决 |
 | --- | ---: | ---: | --- |
@@ -210,13 +210,22 @@ split0 seed0 结果：
 | Chameleon | +0.043860 | +0.028509 | 0.952180 | 强正且 control 支持 |
 | Squirrel | -0.008646 | 未跑 | 0.533684 | 失败 |
 
-裁决：RWIRRNV 升级为新的 active-but-risky candidate，但不是成功方法。它在 Texas/Chameleon 上比 DS-RRNV 更强，并且 reliability 排序 control 支持；Actor 信号弱且 shuffled-weight 略强；Squirrel 仍失败，说明单纯降低 true-pair invariance 不能解决高密度图的主要问题。下一步只允许做 splits 0-2 复核与 Squirrel-specific failure fix，不应直接包装成论文主方法。
+splits 0-2、seed0、50 epoch 复核结果：
+
+| Dataset | normal ΔF1Mi vs GCN-MLP | shuffled-weight ΔF1Mi vs GCN-MLP | normal - shuffled-weight | normal 正/负 split | 裁决 |
+| --- | ---: | ---: | ---: | --- | --- |
+| Texas | +0.117117 | +0.054054 | +0.063063 | 3/0 | 强正，control 清楚 |
+| Chameleon | +0.013889 | +0.005117 | +0.008772 | 2/0 | 小正，control 基本支持 |
+| Squirrel | +0.014089 | +0.012488 | +0.001601 | 2/1 | 性能小正，但 control 弱 |
+| Actor | +0.002851 | +0.000658 | +0.002193 | 1/1 | 边缘正，证据很弱 |
+
+裁决：RWIRRNV 继续保留为 active-but-risky candidate，并且比 split0 初筛更健康：四个数据集的 normal 均值都不低于 `gcn_mlp_gcl`，Texas 信号很强，Chameleon/Squirrel 也从“局部/失败”变成小幅正向。但这仍不是成功方法：Squirrel 的 shuffled-weight control 几乎同样有效，Actor 的收益接近噪声，说明当前 reliability 排序还不能支撑通用机制 claim。下一步应进入 10 splits / 多 seed 复核、强基线对齐与 failure analysis，而不是继续添加模块后直接包装论文主方法。
 
 ## 下一步
 
-保留 `rwirrnv_gcl` 为当前最有价值候选，但后续必须解决两个问题：
+保留 `rwirrnv_gcl` 为当前最有价值候选，但后续必须解决三个问题：
 
-- Squirrel mechanism：RWIRRNV 在 Texas/Chameleon 强正，但 Squirrel 低于 baseline；后续需要解释或修复高密度图上降低 invariance 仍无效的问题；
+- Squirrel/Actor mechanism：RWIRRNV 在 Texas 强正、Chameleon 小正，但 Squirrel/Actor 的 normal-vs-shuffled 差距太小；后续需要证明 reliability 排序本身有效，而不是只引入了温和 regularization；
 - 高密度扰动配对：DPRRNV 在 Squirrel 有修复信号，但 full-shuffled control 不够干净；NPRRNV 进一步说明节点级 target perturbation 仍会伤害 Chameleon；若后续继承该线索，必须转向 reliability-weighted invariance / filtering；
 - 强基线对齐：RRNV 仍只与内部 `gcn_mlp_gcl` 对齐，尚未和 PolyGCL / S3GCL / GraphECL 等强基线同协议比较。
 
@@ -229,6 +238,7 @@ cat runs/dprrnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv
 cat runs/nprrnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv
 cat runs/nprrnv_strict_split0_s0_e50/aggregate_vs_gcn_mlp.csv
 cat runs/rwirrnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv
+cat runs/rwirrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv
 ```
 
-若继续方法实验，优先围绕 RWIRRNV 做 splits 0-2 复核与 Squirrel failure analysis；停止 `darrnv_gcl`、`dirrnv_gcl` 和 `nprrnv_gcl` 主线，DPRRNV/NPRRNV 仅作为 Squirrel 机制线索，不作为下一轮默认扩展对象。
+若继续方法实验，优先围绕 RWIRRNV 做 10 splits / seeds 1-2 复核、Squirrel/Actor shuffled-weight failure analysis 与强基线同协议对齐；停止 `darrnv_gcl`、`dirrnv_gcl` 和 `nprrnv_gcl` 主线，DPRRNV/NPRRNV 仅作为 Squirrel 机制线索，不作为下一轮默认扩展对象。

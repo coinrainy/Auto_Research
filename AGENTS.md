@@ -1187,5 +1187,8 @@
   - 已完成 smoke：`python -m py_compile train.py summarize_split_study.py src/*.py`、`python train.py --help | rg "rwirrnv|nprrnv|method"`、Texas/Squirrel RWIRRNV 2 epoch smoke；Texas reliability mean 约 0.999961，Squirrel 约 0.527888。
   - 已执行 RWIRRNV split0 seed0 50 epoch normal，输出目录 `experiments/topvenue_gcl/runs/rwirrnv_split0_s0_e50/`；normal vs `gcn_mlp_gcl`：Texas +0.081081、Actor +0.009211、Chameleon +0.043860、Squirrel -0.008646。
   - 已执行 `--rwirrnv-shuffle-weight` control（Texas/Chameleon/Actor）：normal-vs-shuffled-weight 分别为 Texas +0.108108、Chameleon +0.028509、Actor -0.003289。
-  - 当前裁决：RWIRRNV 升级为 active-but-risky candidate。Texas/Chameleon 是强证据且 control 支持；Actor 弱且 control 不干净；Squirrel 仍失败，不能声称成功。
-  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/rwirrnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv` 查看 RWIRRNV 边界；随后跑 splits 0-2 复核并做 Squirrel failure analysis。
+  - 已执行 RWIRRNV splits 0-2、seed0、50 epoch normal 与 `--rwirrnv-shuffle-weight` control，输出目录 `experiments/topvenue_gcl/runs/rwirrnv_s0_splits0-2_e50/`。
+  - splits 0-2 normal vs `gcn_mlp_gcl`：Texas +0.117117、Chameleon +0.013889、Squirrel +0.014089、Actor +0.002851；normal 正/负 split 分别为 Texas 3/0、Chameleon 2/0、Squirrel 2/1、Actor 1/1。
+  - splits 0-2 shuffled-weight vs `gcn_mlp_gcl`：Texas +0.054054、Chameleon +0.005117、Squirrel +0.012488、Actor +0.000658；normal-vs-shuffled-weight 分别为 Texas +0.063063、Chameleon +0.008772、Squirrel +0.001601、Actor +0.002193。
+  - 当前裁决：RWIRRNV 继续作为 active-but-risky candidate，证据从单 split 升级为四个异配数据集均值正向；Texas 是当前最强证据，Chameleon 小正且 control 基本支持，Squirrel/Actor 的 control 差距太小，不能声称 reliability weighting 已经通用有效。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/rwirrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv` 查看 RWIRRNV 多 split 边界；随后扩展到 splits 0-9 / seeds 1-2，并补强 PolyGCL、S3GCL、GraphECL 等强基线同协议对齐。
