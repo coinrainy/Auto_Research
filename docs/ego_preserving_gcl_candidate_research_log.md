@@ -739,3 +739,40 @@ python select_representation.py --run-dir /tmp/raw_complement_actor_anchor_graph
 - Texas：raw 与 anchor_graph 持平，方法必须证明没有牺牲 raw baseline；
 - Actor：anchor/anchor_graph 超过 raw，但 micro/macro 偏好不同；
 - 下一步若实现 gate，应至少包含 `raw`、`graph`、`anchor/anchor_graph` 三类候选或其等价机制，而不只是 graph-vs-anchor。
+
+## 2026-06-28 output selection random-control 诊断
+
+目标：检查 validation-based output selection 是否只是后验挑候选。新增 `--random-selection-repeats`，每个 artifact/repeat 在正常 validation selection 之外额外生成 `selected_random` 控制行；aggregate 按 `status` 分组输出。
+
+代码更新：
+
+- `select_representation.py` 新增 `--random-selection-repeats`；
+- 输出新增 `selected_random` 行；
+- aggregate 同时汇总 `selected` 与 `selected_random`。
+
+新增命令：
+
+```bash
+python select_representation.py --run-dir /tmp/raw_complement_cora_graph/Cora_raw_complement_gcl_seed0 --run-dir /tmp/raw_complement_cora_graph_seed1/Cora_raw_complement_gcl_seed1 --run-dir /tmp/raw_complement_cora_graph_seed2/Cora_raw_complement_gcl_seed2 --selection-eval-mode random --random-repeats 3 --random-selection-repeats 5 --candidate-names raw graph anchor_graph --c-min-power -8 --c-max-power 8 --out runs/summaries/raw_complement_cora_output_selection_minimal_candidates_s0-2.csv --aggregate-out runs/summaries/raw_complement_cora_output_selection_minimal_candidates_s0-2_aggregate.csv
+python select_representation.py --run-dir /tmp/raw_complement_actor_anchor_graph_seed0_split0/Actor_raw_complement_gcl_seed0_split0 --run-dir /tmp/raw_complement_texas_anchor_graph_seed0_split0/Texas_raw_complement_gcl_seed0_split0 --selection-eval-mode mask --random-selection-repeats 20 --candidate-names raw graph anchor_graph --c-min-power -8 --c-max-power 8 --out runs/summaries/raw_complement_actor_texas_output_selection_minimal_candidates.csv --aggregate-out runs/summaries/raw_complement_actor_texas_output_selection_minimal_candidates_aggregate.csv
+```
+
+结果：
+
+| Dataset | Status | F1Mi mean | F1Ma mean | selected counts |
+| --- | --- | ---: | ---: | --- |
+| Cora | selected | 0.810834 | 0.790843 | graph:9 |
+| Cora | selected_random | 0.766123 | 0.732582 | anchor_graph:19; graph:17; raw:9 |
+| Actor | selected | 0.364474 | 0.343554 | anchor_graph:1 |
+| Actor | selected_random | 0.338651 | 0.310091 | anchor_graph:9; graph:6; raw:5 |
+| Texas | selected | 0.810811 | 0.619968 | anchor_graph:1 |
+| Texas | selected_random | 0.770270 | 0.533084 | anchor_graph:9; graph:6; raw:5 |
+
+判断：
+
+- validation selection 在 Cora/Actor/Texas 上均优于 random candidate selection；
+- Cora/Texas gap 较大，说明候选选择不是无意义后验噪声；
+- Actor gap 较小但仍正，且 macro 改善比 micro 更明显；
+- 该证据支持继续方法化 output selection/gate，但当前选择仍依赖标签验证集，不能直接作为无标签 GCL 主贡献。
+
+下一步：把 validation selection 作为上界，设计无标签 proxy 或 light-validation protocol，并加入 shuffled/random selection control 作为机制实验。

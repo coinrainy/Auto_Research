@@ -38,6 +38,7 @@ def parse_args():
     parser.add_argument('--train-ratio', type=float, default=0.1)
     parser.add_argument('--val-ratio', type=float, default=0.1)
     parser.add_argument('--random-repeats', type=int, default=3)
+    parser.add_argument('--random-selection-repeats', type=int, default=0)
     return parser.parse_args()
 
 
@@ -268,6 +269,29 @@ def candidate_priority(name):
     return priority.get(name, -1)
 
 
+def append_selected_row(rows, artifact_path, dataset_name, method, seed,
+                        split_index, repeat, eval_mode, status,
+                        selected_name, selected):
+    rows.append({
+        **row_prefix(
+            artifact_path,
+            dataset_name,
+            method,
+            seed,
+            split_index,
+            repeat,
+            eval_mode,
+        ),
+        'status': status,
+        'candidate': status,
+        'selected_candidate': selected_name,
+        'best_c': selected['best_c'],
+        'val_micro': selected['val_micro'],
+        'test_micro': selected['test_micro'],
+        'test_macro': selected['test_macro'],
+    })
+
+
 def evaluate_artifact(artifact_path, args):
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', FutureWarning)
@@ -358,8 +382,28 @@ def evaluate_artifact(artifact_path, args):
             key=lambda name: (scored[name]['val_micro'], candidate_priority(name)),
         )
         selected = scored[selected_name]
-        rows.append({
-            **row_prefix(
+        append_selected_row(
+            rows,
+            artifact_path,
+            dataset_name,
+            method,
+            seed,
+            split_index,
+            repeat,
+            eval_mode,
+            'selected',
+            selected_name,
+            selected,
+        )
+        candidate_names = sorted(scored)
+        for control_idx in range(args.random_selection_repeats):
+            rng = np.random.default_rng(
+                seed * 1000003 + split_index * 9176 + repeat * 101
+                + control_idx * 37
+            )
+            random_name = candidate_names[int(rng.integers(len(candidate_names)))]
+            append_selected_row(
+                rows,
                 artifact_path,
                 dataset_name,
                 method,
@@ -367,15 +411,10 @@ def evaluate_artifact(artifact_path, args):
                 split_index,
                 repeat,
                 eval_mode,
-            ),
-            'status': 'selected',
-            'candidate': 'selected',
-            'selected_candidate': selected_name,
-            'best_c': selected['best_c'],
-            'val_micro': selected['val_micro'],
-            'test_micro': selected['test_micro'],
-            'test_macro': selected['test_macro'],
-        })
+                'selected_random',
+                random_name,
+                scored[random_name],
+            )
     return rows
 
 
@@ -389,15 +428,19 @@ def write_csv(path, rows, fieldnames):
 
 
 def aggregate(rows):
-    selected = [row for row in rows if row.get('status') == 'selected']
+    selected = [
+        row for row in rows
+        if row.get('status') in ['selected', 'selected_random']
+    ]
     groups = defaultdict(list)
     for row in selected:
-        groups[(row['dataset'], row['method'])].append(row)
+        groups[(row['dataset'], row['method'], row['status'])].append(row)
     out = []
-    for (dataset, method), group in sorted(groups.items()):
+    for (dataset, method, status), group in sorted(groups.items()):
         rec = {
             'dataset': dataset,
             'method': method,
+            'status': status,
             'num_runs': len(group),
         }
         for metric in ['test_micro', 'test_macro', 'val_micro']:
