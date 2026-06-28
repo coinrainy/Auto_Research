@@ -827,3 +827,25 @@ splits 0-9、seed0、50 epoch 硬门控，并新增 `--rwirrnv-constant-weight` 
 | Actor | -0.001513 | -0.004934 | -0.001184 | +0.003421 | -0.000329 | 低于 baseline |
 
 裁决：RWIRRNV 不能继续作为“per-node reliability ranking”主线。10 split 结果支持“invariance attenuation 有用”这一弱假设，但不支持当前节点 reliability score 的对应关系；Chameleon/Squirrel 的 control 直接击穿排序叙事。后续应放弃继续调该 reliability score，转向 graph-level 或 schedule-level invariance attenuation，并把 normal/shuffled/constant 三重 control 设为默认门槛。
+
+## 2026-06-29 追加：BPRRNV bootstrap-preserving selective RRNV
+
+已实现 `--method bprrnv_gcl` 与备忘录：`docs/bootstrap_preserving_rrnv_candidate.md`。
+
+方法：保留 `gcn_mlp_gcl` 的 Natural-View bootstrap loss，只加入 density/energy selective RR regularizer，避免 RRNV 直接替代主训练目标。
+
+核心对照：
+
+- `--rrnv-shuffle-pairs`：打乱 RR pair correspondence；
+- `--bprrnv-uniform-gate`：去掉 density/energy selector，仅保留同强度辅助 RR 正则。
+
+Texas/Chameleon/Squirrel/Actor × splits0-2 × seed0 × 50 epoch：
+
+| Variant | Texas ΔF1Mi | Chameleon ΔF1Mi | Squirrel ΔF1Mi | Actor ΔF1Mi | Overall ΔF1Mi | 裁决 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| BPRRNV `w=0.25` | -0.018018 | -0.002924 | -0.005443 | +0.002632 | -0.005938 | 强正则失败 |
+| BPRRNV `w=0.1` | +0.027027 | +0.003655 | +0.000640 | +0.005044 | +0.009092 | active-but-risky |
+| Uniform gate `w=0.1` | +0.000000 | +0.006579 | -0.005123 | +0.002632 | +0.001022 | selector 有价值但 Chameleon 反例 |
+| Shuffled pair `w=0.1` | -0.027027 | -0.010234 | -0.007365 | -0.001754 | -0.011595 | pair correspondence control 支持 normal |
+
+裁决：BPRRNV 升级为 active-but-risky candidate，但不是成功主方法。下一步必须扩展到 splits0-9、多 seed、homophily safety，并补 `--bprrnv-no-density-gate` 与 `--bprrnv-no-energy-gate`。

@@ -70,6 +70,7 @@ def parse_args():
                             "nprrnv_gcl",
                             "rwirrnv_gcl",
                             "eairrnv_gcl",
+                            "bprrnv_gcl",
                             "energy_spgcl",
                             "gcn_mlp_gcl",
                             "er_residual_gcl",
@@ -186,6 +187,19 @@ def parse_args():
     parser.add_argument("--eairrnv-strength", type=float, default=None)
     parser.add_argument("--eairrnv-power", type=float, default=None)
     parser.add_argument("--eairrnv-min-invariance-scale", type=float, default=None)
+    parser.add_argument("--bprrnv-rr-weight", type=float, default=None)
+    parser.add_argument("--bprrnv-invariance-weight", type=float, default=None)
+    parser.add_argument("--bprrnv-variance-weight", type=float, default=None)
+    parser.add_argument("--bprrnv-covariance-weight", type=float, default=None)
+    parser.add_argument("--bprrnv-degree-threshold", type=float, default=None)
+    parser.add_argument("--bprrnv-degree-temperature", type=float, default=None)
+    parser.add_argument("--bprrnv-energy-threshold", type=float, default=None)
+    parser.add_argument("--bprrnv-energy-strength", type=float, default=None)
+    parser.add_argument("--bprrnv-energy-power", type=float, default=None)
+    parser.add_argument("--bprrnv-min-energy-factor", type=float, default=None)
+    parser.add_argument("--bprrnv-uniform-gate", action="store_true")
+    parser.add_argument("--bprrnv-no-density-gate", action="store_true")
+    parser.add_argument("--bprrnv-no-energy-gate", action="store_true")
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -412,6 +426,32 @@ def override_config(config, args):
         merged["eairrnv_power"] = args.eairrnv_power
     if args.eairrnv_min_invariance_scale is not None:
         merged["eairrnv_min_invariance_scale"] = args.eairrnv_min_invariance_scale
+    if args.bprrnv_rr_weight is not None:
+        merged["bprrnv_rr_weight"] = args.bprrnv_rr_weight
+    if args.bprrnv_invariance_weight is not None:
+        merged["bprrnv_invariance_weight"] = args.bprrnv_invariance_weight
+    if args.bprrnv_variance_weight is not None:
+        merged["bprrnv_variance_weight"] = args.bprrnv_variance_weight
+    if args.bprrnv_covariance_weight is not None:
+        merged["bprrnv_covariance_weight"] = args.bprrnv_covariance_weight
+    if args.bprrnv_degree_threshold is not None:
+        merged["bprrnv_degree_threshold"] = args.bprrnv_degree_threshold
+    if args.bprrnv_degree_temperature is not None:
+        merged["bprrnv_degree_temperature"] = args.bprrnv_degree_temperature
+    if args.bprrnv_energy_threshold is not None:
+        merged["bprrnv_energy_threshold"] = args.bprrnv_energy_threshold
+    if args.bprrnv_energy_strength is not None:
+        merged["bprrnv_energy_strength"] = args.bprrnv_energy_strength
+    if args.bprrnv_energy_power is not None:
+        merged["bprrnv_energy_power"] = args.bprrnv_energy_power
+    if args.bprrnv_min_energy_factor is not None:
+        merged["bprrnv_min_energy_factor"] = args.bprrnv_min_energy_factor
+    if args.bprrnv_uniform_gate:
+        merged["bprrnv_uniform_gate"] = True
+    if args.bprrnv_no_density_gate:
+        merged["bprrnv_no_density_gate"] = True
+    if args.bprrnv_no_energy_gate:
+        merged["bprrnv_no_energy_gate"] = True
     return merged
 
 
@@ -815,6 +855,23 @@ def _rrnv_loss(z_ego, z_graph, config, invariance_scale=1.0, shuffle_pairs=None)
     }
 
 
+def _rrnv_component_losses(z_ego, z_graph, shuffle_pairs=False):
+    if shuffle_pairs:
+        z_graph = z_graph[torch.randperm(z_graph.size(0), device=z_graph.device)]
+    norm_ego = F.normalize(z_ego, dim=1)
+    norm_graph = F.normalize(z_graph, dim=1)
+    invariance = F.mse_loss(norm_ego, norm_graph)
+    variance = 0.5 * (variance_loss(z_ego) + variance_loss(z_graph))
+    covariance = 0.5 * (covariance_loss(z_ego) + covariance_loss(z_graph))
+    cosine = (norm_ego * norm_graph).sum(dim=1)
+    return {
+        "invariance": invariance,
+        "variance": variance,
+        "covariance": covariance,
+        "cosine": cosine,
+    }
+
+
 def _rrnv_weighted_invariance_loss(z_ego, z_graph, reliability, config, shuffle_pairs=None):
     if shuffle_pairs is None:
         shuffle_pairs = bool(config.get("rrnv_shuffle_pairs", False))
@@ -904,6 +961,72 @@ def _eairrnv_invariance_scale(parts, config):
         "energy_ratio_mean": energy_mean.detach(),
         "energy_ratio_std": energy_ratio.std(unbiased=False).detach(),
         "conflict": conflict.detach(),
+    }
+
+
+def _bprrnv_aux_gate(data, parts, config):
+    avg_degree = data.edge_index.size(1) / max(1, data.num_nodes)
+    degree_threshold = max(float(config["bprrnv_degree_threshold"]), 1e-12)
+    degree_temperature = max(float(config["bprrnv_degree_temperature"]), 1e-12)
+    density_factor = torch.sigmoid(
+        torch.tensor(
+            (math.log1p(degree_threshold) - math.log1p(avg_degree))
+            / degree_temperature,
+            device=data.x.device,
+            dtype=data.x.dtype,
+        )
+    )
+    if bool(config.get("bprrnv_no_density_gate", False)):
+        density_factor = torch.ones_like(density_factor)
+
+    high_norm = parts["high"].detach().norm(dim=1)
+    graph_norm = parts["graph"].detach().norm(dim=1).clamp_min(1e-12)
+    energy_ratio = high_norm / graph_norm
+    energy_mean = energy_ratio.mean()
+    energy_threshold = max(float(config["bprrnv_energy_threshold"]), 1e-12)
+    energy_conflict = energy_mean / (
+        energy_mean + energy_mean.new_tensor(energy_threshold)
+    )
+    energy_factor = 1.0 - float(config["bprrnv_energy_strength"]) * energy_conflict.pow(
+        float(config["bprrnv_energy_power"])
+    )
+    energy_factor = energy_factor.clamp(float(config["bprrnv_min_energy_factor"]), 1.0)
+    if bool(config.get("bprrnv_no_energy_gate", False)):
+        energy_factor = torch.ones_like(energy_factor)
+
+    aux_gate = (density_factor * energy_factor).clamp(0.0, 1.0)
+    if bool(config.get("bprrnv_uniform_gate", False)):
+        aux_gate = torch.ones_like(aux_gate)
+    return {
+        "aux_gate": aux_gate,
+        "density_factor": density_factor,
+        "energy_factor": energy_factor,
+        "energy_conflict": energy_conflict.detach(),
+        "energy_ratio_mean": energy_mean.detach(),
+        "energy_ratio_std": energy_ratio.std(unbiased=False).detach(),
+        "avg_degree": avg_degree,
+    }
+
+
+def _bprrnv_regularizer_loss(z_ego, z_graph, config, aux_gate):
+    components = _rrnv_component_losses(
+        z_ego,
+        z_graph,
+        shuffle_pairs=bool(config.get("rrnv_shuffle_pairs", False)),
+    )
+    core = (
+        float(config["bprrnv_invariance_weight"]) * components["invariance"]
+        + float(config["bprrnv_variance_weight"]) * components["variance"]
+        + float(config["bprrnv_covariance_weight"]) * components["covariance"]
+    )
+    loss = float(config["bprrnv_rr_weight"]) * aux_gate * core
+    return loss, {
+        "rrnv_invariance_loss": components["invariance"].detach(),
+        "rrnv_variance_loss": components["variance"].detach(),
+        "rrnv_covariance_loss": components["covariance"].detach(),
+        "rrnv_pair_cosine": components["cosine"].detach(),
+        "bprrnv_core_loss": core.detach(),
+        "bprrnv_regularizer_loss": loss.detach(),
     }
 
 
@@ -1308,6 +1431,7 @@ def train_er_cache_gcl(model, data, config, args):
     nprrnv_gcl = args.method == "nprrnv_gcl"
     rwirrnv_gcl = args.method == "rwirrnv_gcl"
     eairrnv_gcl = args.method == "eairrnv_gcl"
+    bprrnv_gcl = args.method == "bprrnv_gcl"
     residual_only = args.method in {
         "er_residual_gcl",
         "gcn_mlp_gcl",
@@ -1332,6 +1456,7 @@ def train_er_cache_gcl(model, data, config, args):
         "nprrnv_gcl",
         "rwirrnv_gcl",
         "eairrnv_gcl",
+        "bprrnv_gcl",
     }
     graph_target = args.method in {
         "gcn_mlp_gcl",
@@ -1356,6 +1481,7 @@ def train_er_cache_gcl(model, data, config, args):
         "nprrnv_gcl",
         "rwirrnv_gcl",
         "eairrnv_gcl",
+        "bprrnv_gcl",
     }
     topk = 0 if (args.disable_cache or residual_only) else int(config["cache_topk"])
     cache_update = max(1, int(config["cache_update_interval"]))
@@ -1636,6 +1762,20 @@ def train_er_cache_gcl(model, data, config, args):
                 config,
                 invariance_scale=invariance_scale,
             )
+            loss_cache = parts["final"].new_tensor(0.0)
+        elif bprrnv_gcl:
+            loss_base = 0.5 * (
+                negative_cosine(pred_ego, parts["graph"])
+                + negative_cosine(pred_high, parts["ego"])
+            )
+            gate_stats = _bprrnv_aux_gate(data, parts, config)
+            loss_rr, rrnv_stats = _bprrnv_regularizer_loss(
+                pred_ego,
+                pred_high,
+                config,
+                gate_stats["aux_gate"],
+            )
+            loss_self = loss_base + loss_rr
             loss_cache = parts["final"].new_tensor(0.0)
         elif darrnv_gcl:
             loss_base = 0.5 * (
@@ -2166,6 +2306,53 @@ def train_er_cache_gcl(model, data, config, args):
             diagnostics["eairrnv_energy_threshold"] = float(config["eairrnv_energy_threshold"])
             diagnostics["eairrnv_strength"] = float(config["eairrnv_strength"])
             diagnostics["eairrnv_power"] = float(config["eairrnv_power"])
+        if bprrnv_gcl:
+            pred_ego = model.pred_ego(parts["ego"])
+            pred_high = model.pred_high(parts["graph"])
+            gate_stats = _bprrnv_aux_gate(data, parts, config)
+            bootstrap_loss = 0.5 * (
+                negative_cosine(pred_ego, parts["graph"])
+                + negative_cosine(pred_high, parts["ego"])
+            )
+            _, rrnv_stats = _bprrnv_regularizer_loss(
+                pred_ego,
+                pred_high,
+                config,
+                gate_stats["aux_gate"],
+            )
+            cosine = rrnv_stats["rrnv_pair_cosine"]
+            diagnostics["bprrnv_bootstrap_loss"] = float(bootstrap_loss.item())
+            diagnostics["bprrnv_regularizer_loss"] = float(
+                rrnv_stats["bprrnv_regularizer_loss"].item()
+            )
+            diagnostics["bprrnv_core_loss"] = float(rrnv_stats["bprrnv_core_loss"].item())
+            diagnostics["rrnv_invariance_loss"] = float(rrnv_stats["rrnv_invariance_loss"].item())
+            diagnostics["rrnv_variance_loss"] = float(rrnv_stats["rrnv_variance_loss"].item())
+            diagnostics["rrnv_covariance_loss"] = float(rrnv_stats["rrnv_covariance_loss"].item())
+            diagnostics["rrnv_pair_cosine_mean"] = float(cosine.mean().item())
+            diagnostics["rrnv_pair_cosine_std"] = float(cosine.std(unbiased=False).item())
+            diagnostics["rrnv_shuffle_pairs"] = bool(config.get("rrnv_shuffle_pairs", False))
+            diagnostics["bprrnv_aux_gate"] = float(gate_stats["aux_gate"].item())
+            diagnostics["bprrnv_density_factor"] = float(gate_stats["density_factor"].item())
+            diagnostics["bprrnv_energy_factor"] = float(gate_stats["energy_factor"].item())
+            diagnostics["bprrnv_energy_conflict"] = float(
+                gate_stats["energy_conflict"].item()
+            )
+            diagnostics["bprrnv_energy_ratio_mean"] = float(
+                gate_stats["energy_ratio_mean"].item()
+            )
+            diagnostics["bprrnv_energy_ratio_std"] = float(
+                gate_stats["energy_ratio_std"].item()
+            )
+            diagnostics["bprrnv_avg_degree"] = float(gate_stats["avg_degree"])
+            diagnostics["bprrnv_rr_weight"] = float(config["bprrnv_rr_weight"])
+            diagnostics["bprrnv_uniform_gate"] = bool(config.get("bprrnv_uniform_gate", False))
+            diagnostics["bprrnv_no_density_gate"] = bool(
+                config.get("bprrnv_no_density_gate", False)
+            )
+            diagnostics["bprrnv_no_energy_gate"] = bool(
+                config.get("bprrnv_no_energy_gate", False)
+            )
         if darrnv_gcl:
             pred_ego = model.pred_ego(parts["ego"])
             pred_high = model.pred_high(parts["graph"])
@@ -2207,6 +2394,7 @@ def train_er_cache_gcl(model, data, config, args):
         ("nprrnv_full_shuffled" if bool(config.get("rrnv_shuffle_pairs", False)) else "nprrnv_gate_shuffled" if bool(config.get("nprrnv_shuffle_gate", False)) else "nprrnv") if nprrnv_gcl else
         ("rwirrnv_constant_weight" if bool(config.get("rwirrnv_constant_weight", False)) else "rwirrnv_weight_shuffled" if bool(config.get("rwirrnv_shuffle_weight", False)) else "rwirrnv") if rwirrnv_gcl else
         ("eairrnv_shuffled" if bool(config.get("rrnv_shuffle_pairs", False)) else "eairrnv") if eairrnv_gcl else
+        ("bprrnv_uniform" if bool(config.get("bprrnv_uniform_gate", False)) else "bprrnv_no_density" if bool(config.get("bprrnv_no_density_gate", False)) else "bprrnv_no_energy" if bool(config.get("bprrnv_no_energy_gate", False)) else "bprrnv_shuffled" if bool(config.get("rrnv_shuffle_pairs", False)) else "bprrnv") if bprrnv_gcl else
         ("aompnv_shuffled" if bool(config.get("aompnv_shuffle_positives", False)) else "aompnv") if aompnv_gcl else
         ("mpnv_shuffled" if bool(config.get("mpnv_shuffle_positives", False)) else "mpnv") if mpnv_gcl else
         "bspnv" if bspnv_gcl else
@@ -2249,7 +2437,7 @@ def main():
     config = override_config(load_yaml(args.config), args)
     if args.method == "gcn_mlp_gcl" and args.final_repr is None:
         config["final_repr"] = "ego_graph"
-    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl", "srgnv_gcl", "pcnv_gcl", "lcos_gcl", "lcm_gcl", "dsp_gcl", "rrnv_gcl", "darrnv_gcl", "dsrrnv_gcl", "dirrnv_gcl", "dprrnv_gcl", "nprrnv_gcl", "rwirrnv_gcl", "eairrnv_gcl"} and args.final_repr is None:
+    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl", "srgnv_gcl", "pcnv_gcl", "lcos_gcl", "lcm_gcl", "dsp_gcl", "rrnv_gcl", "darrnv_gcl", "dsrrnv_gcl", "dirrnv_gcl", "dprrnv_gcl", "nprrnv_gcl", "rwirrnv_gcl", "eairrnv_gcl", "bprrnv_gcl"} and args.final_repr is None:
         config["final_repr"] = "ego_graph"
     if args.method == "energy_spgcl" and args.final_repr is None:
         config["final_repr"] = "ego_high"

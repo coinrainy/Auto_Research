@@ -1211,3 +1211,18 @@
   - 当前裁决：EAIRRNV 不作为 active main idea；单一 graph-level energy scale 在 Texas/Chameleon 有用，但不能提供 Squirrel safety，strength sweep 也不能修复。DARRNV 说明 density auxiliary gate 可保护 Squirrel 但会丢失 Texas 主信号。
   - 已新增文档：`experiments/topvenue_gcl/docs/energy_adaptive_invariance_rrnv_candidate.md`，并更新 `experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md` 与本 `AGENTS.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/eairrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv && cat runs/darrnv_s0_splits0-2_e50/split_study_aggregate.csv`；随后实现 bootstrap-preserving 的 density/energy selective RR regularization，不再继续调单一 `eairrnv_strength`。
+- 2026-06-29 BPRRNV bootstrap-preserving selective RRNV 实现与初筛：
+  - 已继续使用 `academic-research-suite` experiment-agent/code-runner 路线，不向用户追问，按失败即放弃原则自主推进 RRNV 后续候选。
+  - 已实现 `experiments/topvenue_gcl/train.py --method bprrnv_gcl`，Bootstrap-Preserving Selective RRNV：保留 `gcn_mlp_gcl` 的 Natural-View bootstrap loss，只额外加入 density/energy selective RR regularizer。
+  - BPRRNV 的辅助正则为 `bprrnv_rr_weight * aux_gate * (invariance + 0.1 variance + 0.01 covariance)`；`aux_gate = density_factor * energy_factor`，分别按图平均度与 graph/high energy conflict 衰减。
+  - 已新增配置/CLI：`bprrnv_rr_weight`、`bprrnv_invariance_weight`、`bprrnv_variance_weight`、`bprrnv_covariance_weight`、`bprrnv_degree_threshold`、`bprrnv_degree_temperature`、`bprrnv_energy_threshold`、`bprrnv_energy_strength`、`bprrnv_energy_power`、`bprrnv_min_energy_factor`、`--bprrnv-uniform-gate`、`--bprrnv-no-density-gate`、`--bprrnv-no-energy-gate`。
+  - 已新增并汇总诊断字段：`bprrnv_bootstrap_loss`、`bprrnv_regularizer_loss`、`bprrnv_core_loss`、`bprrnv_aux_gate`、`bprrnv_density_factor`、`bprrnv_energy_factor`、`bprrnv_energy_conflict`、`bprrnv_energy_ratio_mean/std`、`bprrnv_avg_degree` 等。
+  - 已完成 smoke：`python -m py_compile train.py summarize_split_study.py src/*.py`、`python train.py --help | rg "bprrnv|method"`、Texas/Squirrel 2 epoch smoke。
+  - 初始默认 `bprrnv_rr_weight=0.25` 在 Texas/Chameleon/Squirrel/Actor × splits0-2 × seed0 × 50 epoch 中失败：相对 `gcn_mlp_gcl` overall mean micro delta 为 -0.005938；因此已将默认权重下调为 0.1。
+  - 0.1 normal vs `gcn_mlp_gcl`：Texas +0.027027、Chameleon +0.003655、Squirrel +0.000640、Actor +0.005044，overall +0.009092。
+  - 0.1 uniform gate vs `gcn_mlp_gcl`：Texas +0.000000、Chameleon +0.006579、Squirrel -0.005123、Actor +0.002632，overall +0.001022。
+  - 0.1 shuffled pair vs `gcn_mlp_gcl`：Texas -0.027027、Chameleon -0.010234、Squirrel -0.007365、Actor -0.001754，overall -0.011595。
+  - 0.1 normal-vs-shuffled：Texas +0.054054、Chameleon +0.013889、Squirrel +0.008005、Actor +0.006798，overall +0.020687。
+  - 当前裁决：BPRRNV 升级为 active-but-risky candidate，但不是成功主方法；Texas 机制最干净，Squirrel safety 有改善，Chameleon 上 uniform gate 局部更强，Actor 机制差距较弱。
+  - 已新增文档：`experiments/topvenue_gcl/docs/bootstrap_preserving_rrnv_candidate.md`，并更新 `experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md` 与本 `AGENTS.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Texas Chameleon Squirrel Actor" METHODS="gcn_mlp_gcl bprrnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/bprrnv_w01_s0_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh`；随后补跑 `--rrnv-shuffle-pairs`、`--bprrnv-uniform-gate`、`--bprrnv-no-density-gate` 与 `--bprrnv-no-energy-gate` controls。
