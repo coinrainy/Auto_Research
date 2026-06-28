@@ -246,6 +246,9 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - 已完成 official SP-GCL seed0 最小复核：Chameleon `ssl_resid1` 相对 `ssl` F1Mi/F1Ma +0.004167/+0.004183，5/10 split micro 为正、5/10 为负；Squirrel `ssl_resid1` 相对 `ssl` +0.033429/+0.034853，10/10 split micro 为正。
 - 三 official seeds（seed42/seed7/seed0）中，完整可比的 `ssl_resid1` 相对 `ssl` 平均提升为 F1Mi/F1Ma +0.021851/+0.022380；按数据集看，Chameleon 为 +0.008480/+0.008224，Squirrel 为 +0.035223/+0.036536。
 - 由于 seed0 只跑了 `ssl` 与 `ssl_resid1`，三 seed selector 表中的 `prop2` 与 `feature_adaptive_v1` 不是完整可比证据；当前完整证据只支持固定 `ssl_resid1` / effective-rank route。
+- 已完成 official SP-GCL seed1 最小复核：Chameleon `ssl_resid1` 相对 `ssl` F1Mi/F1Ma +0.011184/+0.010416，7/10 split micro 为正、2/10 为负；Squirrel `ssl_resid1` 相对 `ssl` +0.027281/+0.029493，10/10 split micro 为正。
+- 四 official seeds（seed42/seed7/seed0/seed1）的完整可比 `ssl_resid1` 证据：overall F1Mi/F1Ma delta=+0.021196/+0.021774；Chameleon +0.009156/+0.008772，Squirrel +0.033237/+0.034775。
+- 已新增 `build_sparc_artifacts.py`，可将 official SP-GCL embedding artifact 转换为 `spgcl_official_sparc_resid1` artifact；四 seed artifact-level method 评估得到 Chameleon 0.640132/0.640153、Squirrel 0.483381/0.479678，与 residual summary 对齐。
 - 当前裁决：SPARC-GCL 仍是 active candidate，但主线从 Feature-disassortativity Adaptive SPARC 收缩为 propagation-residual calibration，其中 `ssl_resid1` / effective-rank route 是当前最稳默认。feature contrast 保留为解释变量和未来 gate 信号，不作为当前主 selector claim。
 - 详细记录见 `docs/spgcl_propagation_calibration_candidate_memo.md`。
 
@@ -276,6 +279,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `raw_complement_gcl` 支持 `--raw-complement-weight`、`--raw-complement-detach-anchor/--no-raw-complement-detach-anchor`、`--raw-complement-eval-mode anchor|hidden|graph|anchor_graph|raw_graph`，并记录 raw/complement correlation diagnostics；当前 `--raw-complement-weight` 默认值已改为 `0.0`，`0.05` 仅作为附录消融/robustness check。
 - `pgsp_gcl` 支持 `--pgsp-hops`、`--pgsp-topk`、`--pgsp-neg-topk`、`--pgsp-max-size`、`--pgsp-target-blend`、`--pgsp-neg-selection`、`--pgsp-anchor-sampling`、`--pgsp-seed-num`、`--pgsp-anchor-hops`、`--pgsp-square-sample`、`--pgsp-hidden`、`--pgsp-dropout`、`--pgsp-use-bn`。
 - `evaluate_propagation_calibration.py` 支持 `--max-hop`、`--modes`、`--split-indices`、`--c-values` 与 `--max-iter`，用于 SPARC-GCL 的 post-hoc propagation calibration gate。
+- `build_sparc_artifacts.py` 可把已有 SSL `artifacts.pt` 转换为 artifact-level SPARC method，例如 `spgcl_official_sparc_resid1`，便于主表把 SPARC 当作独立方法而不是临时 eval mode。
 - `scripts/run_spgcl_embedding_export.sh` 可导出 Geom-GCN 数据、运行本地 official SP-GCL、保存 embedding，并转换为 `evaluate_propagation_calibration.py` 可读的 `artifacts.pt`。
 - `select_sparc_mode_proxy.py` 支持 `--modes`、`--split-indices`、`--c-values`、`--proxy-*` 与 `--adaptive-feature-contrast-threshold`，用于比较 SPARC 的无标签 mode selection 策略。
 - `summarize_sparc_selectors.py` 支持多个 `--cgrid/--seed-label` 输入，输出 selector 逐 seed/dataset 表与跨 seed aggregate。

@@ -468,6 +468,96 @@ python summarize_sparc_selectors.py \
 
 注意：seed0 本轮只跑了 `ssl` 与 `ssl_resid1`，因此三 seed selector aggregate 中的 `prop2` 与 `feature_adaptive_v1` 行不是完整可比证据；它们只能继续作为 seed42/seed7 的辅助观察。当前完整证据支持把固定 `ssl_resid1` / effective-rank route 作为 SPARC 的最稳默认路线。
 
+## Official seed1 复核与方法化 artifact
+
+为继续排除 official seed 偶然性，已补跑 seed1：
+
+```bash
+cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
+DATASETS="Chameleon Squirrel" \
+OUT_DIR="runs/spgcl_official_embeddings_seed1_e100" \
+RESET_EPOCHS=100 \
+LINEAR_EPOCHS=10 \
+RESET_HIDDEN=256 \
+RESET_SEED_NUM=32 \
+RESET_MAX_SIZE=512 \
+RESET_SUBG_NUM_HOPS=2 \
+SEED=1 \
+bash scripts/run_spgcl_embedding_export.sh
+```
+
+最小 C-grid 复核：
+
+```bash
+python evaluate_propagation_calibration.py \
+  --runs-dir runs/spgcl_official_embeddings_seed1_e100/artifacts \
+  --include-methods spgcl_official \
+  --modes ssl ssl_resid1 \
+  --max-hop 1 \
+  --split-indices 0 1 2 3 4 5 6 7 8 9 \
+  --c-values 4 16 64 \
+  --max-iter 500 \
+  --out runs/summaries/sparc_seed1_resid1_cgrid.csv \
+  --aggregate-out runs/summaries/sparc_seed1_resid1_cgrid_aggregate.csv
+```
+
+seed1 结果：
+
+| Seed | Dataset | `ssl` F1Mi/F1Ma | `ssl_resid1` F1Mi/F1Ma | Delta F1Mi/F1Ma | Split sign |
+| --- | --- | ---: | ---: | ---: | --- |
+| seed1 | Chameleon | 0.628289 / 0.628816 | 0.639474 / 0.639231 | +0.011184 / +0.010416 | 7/10 正、2/10 负 |
+| seed1 | Squirrel | 0.454755 / 0.448902 | 0.482037 / 0.478395 | +0.027281 / +0.029493 | 10/10 正 |
+
+四个 official seeds（seed42/seed7/seed0/seed1）中，完整可比的 `ssl_resid1` 结果为：
+
+| Dataset | `ssl_resid1` mean F1Mi/F1Ma | Mean delta F1Mi/F1Ma | Seed-level micro deltas |
+| --- | ---: | ---: | --- |
+| Chameleon | 0.640132 / 0.640153 | +0.009156 / +0.008772 | seed42 +0.007456; seed7 +0.013816; seed0 +0.004167; seed1 +0.011184 |
+| Squirrel | 0.483381 / 0.479678 | +0.033237 / +0.034775 | seed42 +0.038136; seed7 +0.034102; seed0 +0.033429; seed1 +0.027281 |
+| Overall | 0.561756 / 0.559915 | +0.021196 / +0.021774 | 8 dataset-seed rows |
+
+方法化入口已新增：
+
+- `experiments/grace_idea/build_sparc_artifacts.py`
+
+该脚本把 strong SSL embedding artifact 显式转换为 SPARC artifact，例如把 official SP-GCL 的 `z` 转为 `spgcl_official_sparc_resid1` 的 `[normalize(z), normalize(z-Pz)]` 表示：
+
+```bash
+python build_sparc_artifacts.py \
+  --runs-dir runs/spgcl_official_embeddings_seed42_e100/artifacts \
+  --runs-dir runs/spgcl_official_embeddings_seed7_e100/artifacts \
+  --runs-dir runs/spgcl_official_embeddings_seed0_e100/artifacts \
+  --runs-dir runs/spgcl_official_embeddings_seed1_e100/artifacts \
+  --out-dir runs/sparc_resid1_artifacts_seed42_seed7_seed0_seed1 \
+  --mode ssl_resid1 \
+  --method-suffix sparc_resid1 \
+  --overwrite
+```
+
+生成的 artifacts 可被现有评估脚本作为独立 method 读取：
+
+```bash
+python evaluate_propagation_calibration.py \
+  --runs-dir runs/sparc_resid1_artifacts_seed42_seed7_seed0_seed1 \
+  --include-methods spgcl_official_sparc_resid1 \
+  --modes ssl \
+  --max-hop 1 \
+  --split-indices 0 1 2 3 4 5 6 7 8 9 \
+  --c-values 4 16 64 \
+  --max-iter 500 \
+  --out runs/summaries/sparc_resid1_artifact_method_seed42_seed7_seed0_seed1.csv \
+  --aggregate-out runs/summaries/sparc_resid1_artifact_method_seed42_seed7_seed0_seed1_aggregate.csv
+```
+
+artifact method 结果与四 seed residual summary 对齐：
+
+| Method | Dataset | Runs | F1Mi/F1Ma |
+| --- | --- | ---: | ---: |
+| `spgcl_official_sparc_resid1` | Chameleon | 40 | 0.640132 / 0.640153 |
+| `spgcl_official_sparc_resid1` | Squirrel | 40 | 0.483381 / 0.479678 |
+
+这一步的意义是把 SPARC 从 “evaluation mode” 固化为可比较的 artifact-level method。下一步仍需推进到训练时 residual projector / calibration objective，否则论文贡献会被质疑为 post-hoc linear-probe trick。
+
 ## 研究假设
 
 SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embedding 仍混合了两类信息：
@@ -505,8 +595,9 @@ SPARC-GCL 是当前最值得继续的 active candidate。
 继续理由：
 
 - 直接建立在已验证强 baseline SP-GCL 上；
-- 在 Squirrel 的 three official seeds × 10 split 上有稳定正向信号；
-- 在 Chameleon 的 three official seeds 上均为正均值，但 split-level 稳定性弱于 Squirrel；
+- 在 Squirrel 的 four official seeds × 10 split 上有稳定正向信号；
+- 在 Chameleon 的 four official seeds 上均为正均值，但 split-level 稳定性弱于 Squirrel；
+- 已有 artifact-level method 入口 `spgcl_official_sparc_resid1`，不再只依赖临时 evaluation mode；
 - 创新点更清楚：不是再做 augmentation，也不是简单 high/low-pass filter，而是 strong GCL embedding 的 propagation residual calibration；
 - 算力友好，适合 RTX 3060。
 
