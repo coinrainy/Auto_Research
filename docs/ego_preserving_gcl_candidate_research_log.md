@@ -1336,3 +1336,62 @@ done
 cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
 DATASETS="Chameleon Squirrel" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="raw_complement_gcl" EPOCHS=50 BATCH_SIZE=4096 SAVE_DIR="runs/raw_complement_graph_projected_w01_wiki_splits0-9_seed0_e50" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode anchor_graph --raw-complement-weight 0 --raw-complement-graph-loss-weight 0.1" LOG_EVERY=50 scripts/run_split_study.sh
 ```
+
+## 2026-06-28 Auxiliary Graph-Context Preservation 10 Split 判定
+
+目标：对 auxiliary graph-context preservation 做 Chameleon/Squirrel 完整 10 split 检查，判断它是否会伤害当前主战场。
+
+命令：
+
+```bash
+DATASETS="Chameleon Squirrel" \
+SPLITS="0 1 2 3 4 5 6 7 8 9" \
+SEEDS="0" \
+METHODS="raw_complement_gcl" \
+EPOCHS=50 \
+BATCH_SIZE=4096 \
+SAVE_DIR="runs/raw_complement_graph_projected_w01_wiki_splits0-9_seed0_e50" \
+TRAIN_EXTRA_ARGS="--raw-complement-eval-mode anchor_graph --raw-complement-weight 0 --raw-complement-graph-loss-weight 0.1" \
+LOG_EVERY=50 \
+scripts/run_split_study.sh
+
+python summarize_raw_complement_probe.py \
+  --datasets Chameleon Squirrel \
+  --splits 0 1 2 3 4 5 6 7 8 9 \
+  --seeds 0 \
+  --raw-dir runs/raw_feature_smoke \
+  --grace-dir /tmp/grace_chameleon_e50 \
+  --grace-dir /tmp/grace_squirrel_e50 \
+  --grace-dir runs/wiki_splits0-9_seeds1-2_e50 \
+  --raw-complement-dir runs/raw_complement_graph_projected_w01_wiki_splits0-9_seed0_e50 \
+  --paired-out runs/summaries/raw_complement_graph_projected_w01_wiki_e50_splits0-9_seed0_paired.csv \
+  --aggregate-out runs/summaries/raw_complement_graph_projected_w01_wiki_e50_splits0-9_seed0_aggregate.csv
+```
+
+Projected auxiliary loss 0.1 的 10 split 结果：
+
+| Dataset | RC - raw F1Mi | RC - raw F1Ma | RC - GRACE F1Mi | RC - GRACE F1Ma | positive vs raw |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Chameleon | +0.034868 | +0.035219 | +0.067325 | +0.069773 | 10/10 micro, 10/10 macro |
+| Squirrel | +0.010375 | +0.013260 | +0.067147 | +0.078075 | 10/10 micro, 10/10 macro |
+
+与 no-penalty `anchor_graph_weight0` 的 paired 差异：
+
+| Dataset | projected - no-penalty F1Mi | pos/neg | projected - no-penalty F1Ma | pos/neg |
+| --- | ---: | ---: | ---: | ---: |
+| Chameleon | ~0.000000 | 5/5 | +0.000056 | 5/5 |
+| Squirrel | +0.000672 | 5/5 | -0.000118 | 5/5 |
+
+判断：
+
+- projected auxiliary graph loss 没有明显伤害 Chameleon/Squirrel 主战场；
+- 它也没有带来可写成主贡献的主战场增益，10 split 上基本等同 no-penalty；
+- 结合 Cora seeds0-2 只从 0.812597 / 0.791041 提升到 0.818567 / 0.794162，仍低于 GRACE 0.824948 / 0.810003，说明该模块不能解决 homophily non-degradation；
+- 当前裁决：保留实现作为 optional safety refinement / appendix ablation，但不继续把它包装成核心创新，也不继续围绕该权重做大网格搜索；
+- 主方法仍应保持 no-penalty raw-relative graph complement；auxiliary graph loss 只可作为“缩小 Cora gap 但不足以完全修复”的负/混合证据。
+
+下一步建议：
+
+- 不继续扩大 auxiliary graph loss 的多 seed 搜索，除非后续论文需要 safety appendix；
+- 优先补强主方法与更强 heterophily GCL baseline 的直接对比；
+- 同时寻找更结构性的 homophily fallback，而不是依赖单个 auxiliary loss。

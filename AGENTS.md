@@ -724,3 +724,11 @@
   - Chameleon/Squirrel split0 seed0 sanity：projected `0.1` 分别为 0.471491/0.467915 与 0.348703/0.343346，低于 no-penalty 的 0.475877/0.472223 与 0.355427/0.349828，说明该 refinement 可能轻微伤主战场。
   - 当前判断：auxiliary graph-context preservation 有缩小 Cora gap 的信号，但不是突破；只能作为 safety refinement candidate，不能作为主方法。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Chameleon Squirrel" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="raw_complement_gcl" EPOCHS=50 BATCH_SIZE=4096 SAVE_DIR="runs/raw_complement_graph_projected_w01_wiki_splits0-9_seed0_e50" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode anchor_graph --raw-complement-weight 0 --raw-complement-graph-loss-weight 0.1" LOG_EVERY=50 scripts/run_split_study.sh`。
+- 2026-06-28 Auxiliary graph-context preservation 10 split 判定：
+  - 已执行 Chameleon/Squirrel splits0-9 × seed0 × 50 epochs 的 projected auxiliary graph loss `0.1` 完整筛查，输出目录为 `experiments/grace_idea/runs/raw_complement_graph_projected_w01_wiki_splits0-9_seed0_e50`。
+  - 已生成汇总：`runs/summaries/raw_complement_graph_projected_w01_wiki_e50_splits0-9_seed0_paired.csv` 与 `runs/summaries/raw_complement_graph_projected_w01_wiki_e50_splits0-9_seed0_aggregate.csv`。
+  - Projected `0.1` 相对 raw：Chameleon F1Mi/F1Ma +0.034868/+0.035219，Squirrel +0.010375/+0.013260；两个数据集均 10/10 split 为正。
+  - Projected `0.1` 相对 GRACE：Chameleon +0.067325/+0.069773，Squirrel +0.067147/+0.078075；两个数据集均 10/10 split 为正。
+  - 与 no-penalty `anchor_graph_weight0` 的 paired 差异：Chameleon F1Mi/F1Ma 约 +0.000000/+0.000056，Squirrel +0.000672/-0.000118；pos/neg 都是 5/5，说明它基本不改变主战场均值。
+  - 当前裁决：该模块没有明显伤害 Chameleon/Squirrel，但也没有提供主战场增益；结合 Cora macro 仍明显低于 GRACE，不能作为核心创新。保留实现作为 optional safety refinement / appendix ablation，不继续做大范围权重搜索。
+  - 下一步建议：转向强 baseline 对比与更结构性的 homophily fallback；当前主方法仍是 no-penalty raw-relative graph complement。
