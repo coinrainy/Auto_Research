@@ -258,6 +258,8 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - 已实现 `raw_complement_gcl` 原型，异配 Texas/Cornell/Wisconsin/Actor × splits0-9 相对 GRACE 全部 10/10 正向；相对 raw feature baseline 基本持平到小幅正向/负向，说明该方向有真实方法潜力。
 - `raw_complement_gcl` 当前最大风险是 homophily safety：Cora anchor mode 从 GRACE 0.8224/0.8015 降到 0.6524/0.6047；graph fallback 回升到 0.7997/0.7655 但仍低于 GRACE。
 - 表示选择诊断显示：Cora 完整 C 网格随机选择会选择 saved/graph-context，F1Mi/F1Ma 约 0.800738/0.777029；异配 raw-vs-saved 快速诊断中 Actor 10/10 选择 saved，Cornell/Texas/Wisconsin 多数选择 raw。当前叙事应继续收缩为 raw-feature anchored complement learning，而不是通用 Graph SSL SOTA。
+- Homophily graph fallback 补充显示：Cora 相对 GRACE 仍明显退化（F1Mi/F1Ma -0.022696/-0.035991），CiteSeer micro 略升但 macro 略降（+0.006900/-0.004330），PubMed 小幅退化（-0.004734/-0.004725）。因此风险不是全面同配失败，而是 Cora 类小图安全输出仍没解决。
+- PubMed 全量 InfoNCE 会在 12GB GPU 上 OOM，当前需使用 `--batch-size 4096`；后续所有 PubMed raw-complement/GRACE 公平对照都应固定 batch 协议。
 - 下一步优先实现 validation-based 或 unsupervised-reliable representation selection，决定何时输出 raw+complement、何时退回 graph context；如果不能修复 Cora，则该方法应定位为 heterophily-focused。
 - 完整 C 网格 split0-2：`ego_grace` concat - raw 在 Actor/Cornell/Texas 为正、Wisconsin 为负；`residual_grace` 仅 Actor 稳定正向，Cornell/Texas/Wisconsin 为负。
 - 固定 C=1 的 10 split 快速筛查：ego/residual concat - raw 在 Actor/Cornell/Texas/Wisconsin 均为正，但该证据只能说明存在互补信号，不足以支撑 SOTA claim。

@@ -491,3 +491,39 @@ python select_representation.py --run-dir /tmp/raw_complement_cora_graph/Cora_ra
 ### 工程结论
 
 全量候选、完整 C 网格的 sklearn logistic probe 在 Actor 上明显变慢，已中断两次。`select_representation.py` 当前保留为单 run / 小批量诊断工具；正式大规模汇总应继续使用训练脚本自带 evaluator 或后续实现更快的 torch linear probe。
+
+## 2026-06-28 Homophily graph fallback 补充
+
+新增命令：
+
+```bash
+python train.py --dataset CiteSeer --method raw_complement_gcl --raw-complement-eval-mode graph --seed 0 --epochs 100 --save-dir /tmp/raw_complement_citeseer_graph --overwrite --log-every 100
+python train.py --dataset PubMed --method raw_complement_gcl --raw-complement-eval-mode graph --seed 0 --epochs 100 --batch-size 4096 --save-dir /tmp/raw_complement_pubmed_graph_b4096 --overwrite --log-every 100
+```
+
+PubMed 全量 InfoNCE 首次运行出现 CUDA OOM；使用 `--batch-size 4096` 后完成训练。这说明 PubMed 必须纳入单卡 12GB 约束下的 batched InfoNCE 实验协议，不能默认全量相似度矩阵。
+
+### GRACE vs raw-complement graph fallback
+
+| Dataset | GRACE F1Mi/F1Ma | raw-complement graph F1Mi/F1Ma | Delta F1Mi/F1Ma | 判断 |
+| --- | ---: | ---: | ---: | --- |
+| Cora | 0.822395 / 0.801539 | 0.799699 / 0.765548 | -0.022696 / -0.035991 | 仍明显退化 |
+| CiteSeer | 0.717084 / 0.656260 | 0.723984 / 0.651930 | +0.006900 / -0.004330 | micro 略升，macro 略降 |
+| PubMed | 0.844247 / 0.840378 | 0.839513 / 0.835653 | -0.004734 / -0.004725 | 小幅退化 |
+
+### CiteSeer representation selection
+
+输出：
+
+- `runs/summaries/raw_complement_representation_selection_citeseer_random_seed0_fullc.csv`
+- `runs/summaries/raw_complement_representation_selection_citeseer_random_seed0_fullc_aggregate.csv`
+
+结果：完整 C 网格、3 次随机划分均选择 `saved`/graph-context 表示，F1Mi/F1Ma 为 `0.726749/0.633206`。micro 上 selection 与 train-time graph eval 一致偏正；macro 偏低，说明 graph fallback 修复 anchor 退化，但未稳定改善类别均衡。
+
+### 判断更新
+
+raw-complement 的 homophily safety 风险从“全面失败”收缩为“Cora 明显失败，CiteSeer/PubMed 基本可控”。这让该 idea 仍值得继续，但不能把默认 `anchor` 输出作为最终方法。下一步应实现一个训练期或评估期的安全输出策略：
+
+- 对 heterophily/Actor 类场景，保留 raw+complement 的增量；
+- 对 Cora 类同配小图，自动退回 graph-context 或更接近 GRACE 的表示；
+- 对 PubMed 必须固定使用 batched InfoNCE，保证单卡 12GB 可复现。
