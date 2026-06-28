@@ -1235,3 +1235,15 @@
   - 当前裁决：BPRRNV 降级为失败/弱正则资产，不再作为 active candidate；不继续补多 seed、homophily safety、no-density/no-energy controls，也不再调 `bprrnv_rr_weight`、density threshold 或 energy strength。
   - 已更新文档：`experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md`、`docs/bootstrap_preserving_rrnv_candidate.md` 与本 `AGENTS.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/bprrnv_w01_s0_splits0-9_e50/bprrnv_vs_gcn_mlp_decision_summary.csv && cat runs/bprrnv_w01_chameleon_controls_s0_splits0-9_e50/chameleon_control_aggregate.csv`；随后应换训练目标，优先考虑直接处理 false-negative / negative suppression / downstream separability 的 Natural-View 方法，而不是继续 RRNV auxiliary regularization。
+- 2026-06-29 TNS 放弃与 RAGC 新候选：
+  - 已继续按用户要求自主推进，不再追问；使用 `academic-research-suite` experiment-agent 思路，并结合近期 GCL 文献边界判断：hard negative mining 已有 GRAPE 等强工作，2026 SPGCL 也强调 message passing 对 positive learning 的 pre-alignment 影响，因此不再继续 RRNV 小权重路线。
+  - 已实现 `experiments/topvenue_gcl/train.py --method tns_gcl`，Trusted Negative Suppression GCL：在 Natural-View bootstrap 上加入 raw propagation signature 引导的 sampled negative repulsion，并支持 `--tns-shuffle-weight` / `--tns-uniform-weight` controls。
+  - 已修复 TNS 在 Actor 上的显存问题：raw signature pair similarity 改为分块计算，避免一次性构造 `N x K x D` 大张量。
+  - TNS 裁决：降级为失败/诊断资产。split0 seed0 50 epoch 下，margin=0.9 版本只在 Actor 正向，Texas/Chameleon/Squirrel 均低于 `gcn_mlp_gcl`；不继续调 `tns_margin`、threshold 或 weight。
+  - 已实现 `--method raw_features` 作为强 raw-only 基线，以及 `--method ragc_gcl`，Raw-Anchored Graph Complement GCL：训练目标沿用 `gcn_mlp_gcl`，最终表示拼接 normalized raw features 与 learned Natural-View embedding。
+  - RAGC split0 seed0 50 epoch vs `raw_features`：Texas 0.000000、Actor +0.004605、Chameleon +0.026316、Squirrel +0.012488 F1Mi。
+  - RAGC splits0-2 seed0 50 epoch vs `raw_features`：Actor +0.009649/+0.008234，Chameleon +0.031433/+0.032426，Squirrel +0.013128/+0.020016，Texas -0.009009/-0.057181（F1Mi/F1Ma mean delta）。
+  - 当前裁决：RAGC-GCL 升级为新的 active candidate，但不是最终成功主方法。它支持“raw anchor 保护原始可分性，learned graph branch 提供互补信息”的论文切口；但 Texas/WebKB safety、learned-branch shuffled/random control、10 splits、多 seed 与 homophily safety 尚未完成。
+  - 已新增文档：`experiments/topvenue_gcl/docs/raw_anchored_graph_complement_candidate.md`；已更新 `experiments/topvenue_gcl/README.md`、`experiments/topvenue_gcl/docs/implementation_principles.md`、`train.py`、`configs/default.yaml` 与 `summarize_split_study.py`。
+  - 已验证：`python -m compileall train.py summarize_split_study.py src`、`python train.py --help`、Texas/Actor TNS smoke、Texas raw/RAGC smoke、TNS split0 probes、RAGC split0 与 splits0-2 early gate。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Actor Chameleon Squirrel Texas" METHODS="raw_features ragc_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/ragc_s0_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh`；随后实现 learned-branch shuffled/random control。

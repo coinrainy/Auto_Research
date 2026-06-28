@@ -71,8 +71,11 @@ def parse_args():
                             "rwirrnv_gcl",
                             "eairrnv_gcl",
                             "bprrnv_gcl",
+                            "tns_gcl",
+                            "ragc_gcl",
                             "energy_spgcl",
                             "gcn_mlp_gcl",
+                            "raw_features",
                             "er_residual_gcl",
                             "er_cache_gcl",
                         ])
@@ -200,6 +203,17 @@ def parse_args():
     parser.add_argument("--bprrnv-uniform-gate", action="store_true")
     parser.add_argument("--bprrnv-no-density-gate", action="store_true")
     parser.add_argument("--bprrnv-no-energy-gate", action="store_true")
+    parser.add_argument("--tns-weight", type=float, default=None)
+    parser.add_argument("--tns-num-negatives", type=int, default=None)
+    parser.add_argument("--tns-margin", type=float, default=None)
+    parser.add_argument("--tns-temperature", type=float, default=None)
+    parser.add_argument("--tns-key-threshold", type=float, default=None)
+    parser.add_argument("--tns-key-temperature", type=float, default=None)
+    parser.add_argument("--tns-min-weight", type=float, default=None)
+    parser.add_argument("--tns-shuffle-weight", action="store_true")
+    parser.add_argument("--tns-uniform-weight", action="store_true")
+    parser.add_argument("--ragc-raw-weight", type=float, default=None)
+    parser.add_argument("--ragc-learned-weight", type=float, default=None)
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -452,6 +466,28 @@ def override_config(config, args):
         merged["bprrnv_no_density_gate"] = True
     if args.bprrnv_no_energy_gate:
         merged["bprrnv_no_energy_gate"] = True
+    if args.tns_weight is not None:
+        merged["tns_weight"] = args.tns_weight
+    if args.tns_num_negatives is not None:
+        merged["tns_num_negatives"] = args.tns_num_negatives
+    if args.tns_margin is not None:
+        merged["tns_margin"] = args.tns_margin
+    if args.tns_temperature is not None:
+        merged["tns_temperature"] = args.tns_temperature
+    if args.tns_key_threshold is not None:
+        merged["tns_key_threshold"] = args.tns_key_threshold
+    if args.tns_key_temperature is not None:
+        merged["tns_key_temperature"] = args.tns_key_temperature
+    if args.tns_min_weight is not None:
+        merged["tns_min_weight"] = args.tns_min_weight
+    if args.tns_shuffle_weight:
+        merged["tns_shuffle_weight"] = True
+    if args.tns_uniform_weight:
+        merged["tns_uniform_weight"] = True
+    if args.ragc_raw_weight is not None:
+        merged["ragc_raw_weight"] = args.ragc_raw_weight
+    if args.ragc_learned_weight is not None:
+        merged["ragc_learned_weight"] = args.ragc_learned_weight
     return merged
 
 
@@ -1030,6 +1066,63 @@ def _bprrnv_regularizer_loss(z_ego, z_graph, config, aux_gate):
     }
 
 
+def _tns_negative_weight(cache_keys, neg_idx, config):
+    keys = F.normalize(cache_keys.detach().float(), dim=1)
+    rows = []
+    chunk_size = min(max(1, int(config.get("cache_chunk_size", 256))), 256)
+    for start in range(0, keys.size(0), chunk_size):
+        end = min(start + chunk_size, keys.size(0))
+        chunk_idx = neg_idx[start:end]
+        neg_keys = keys[chunk_idx.reshape(-1)].view(
+            chunk_idx.size(0),
+            chunk_idx.size(1),
+            -1,
+        )
+        key_sim_chunk = (
+            keys[start:end].view(end - start, 1, -1) * neg_keys
+        ).sum(dim=2)
+        rows.append(key_sim_chunk)
+    key_sim = torch.cat(rows, dim=0)
+    temperature = max(float(config["tns_key_temperature"]), 1e-12)
+    threshold = float(config["tns_key_threshold"])
+    min_weight = float(config["tns_min_weight"])
+    weight = torch.sigmoid((threshold - key_sim) / temperature)
+    weight = min_weight + (1.0 - min_weight) * weight
+    if bool(config.get("tns_shuffle_weight", False)):
+        weight = weight.reshape(-1)
+        weight = weight[torch.randperm(weight.numel(), device=weight.device)]
+        weight = weight.view_as(key_sim)
+    if bool(config.get("tns_uniform_weight", False)):
+        weight = torch.ones_like(weight)
+    return weight.detach(), key_sim.detach()
+
+
+def _tns_loss(z, cache_keys, config):
+    neg_idx = _sample_negative_indices(
+        z.size(0),
+        int(config["tns_num_negatives"]),
+        z.device,
+    )
+    weight, key_sim = _tns_negative_weight(cache_keys, neg_idx, config)
+    z = F.normalize(z, dim=1)
+    neg = z[neg_idx.reshape(-1)].view(neg_idx.size(0), neg_idx.size(1), -1)
+    pair_cosine = (z.view(z.size(0), 1, -1) * neg).sum(dim=2)
+    temperature = max(float(config["tns_temperature"]), 1e-12)
+    margin = float(config["tns_margin"])
+    per_pair = F.softplus((pair_cosine - margin) / temperature)
+    loss = (per_pair * weight).sum() / weight.sum().clamp_min(1e-12)
+    return loss, {
+        "tns_loss": loss.detach(),
+        "tns_weight_mean": weight.mean().detach(),
+        "tns_weight_std": weight.std(unbiased=False).detach(),
+        "tns_key_sim_mean": key_sim.mean().detach(),
+        "tns_key_sim_std": key_sim.std(unbiased=False).detach(),
+        "tns_pair_cosine_mean": pair_cosine.detach().mean(),
+        "tns_pair_cosine_std": pair_cosine.detach().std(unbiased=False),
+        "tns_repulsion_active_fraction": (pair_cosine.detach() > margin).float().mean(),
+    }
+
+
 def _dprrnv_shuffle_prob(high_gate, config):
     base = high_gate.pow(float(config["dprrnv_shuffle_power"]))
     min_prob = float(config["dprrnv_min_shuffle_prob"])
@@ -1392,6 +1485,14 @@ def _cache_diagnostics(parts, cache_idx, cache_keys, cache_weight=None):
     }
 
 
+def _ragc_embeddings(raw_x, learned, config):
+    raw = F.normalize(raw_x.detach().float(), dim=1)
+    learned = F.normalize(learned.detach().float(), dim=1)
+    raw = float(config["ragc_raw_weight"]) * raw
+    learned = float(config["ragc_learned_weight"]) * learned
+    return torch.cat([raw, learned], dim=1)
+
+
 def train_er_cache_gcl(model, data, config, args):
     pcnv_gcl = args.method == "pcnv_gcl"
     extra_parameters = []
@@ -1432,6 +1533,8 @@ def train_er_cache_gcl(model, data, config, args):
     rwirrnv_gcl = args.method == "rwirrnv_gcl"
     eairrnv_gcl = args.method == "eairrnv_gcl"
     bprrnv_gcl = args.method == "bprrnv_gcl"
+    tns_gcl = args.method == "tns_gcl"
+    ragc_gcl = args.method == "ragc_gcl"
     residual_only = args.method in {
         "er_residual_gcl",
         "gcn_mlp_gcl",
@@ -1457,6 +1560,8 @@ def train_er_cache_gcl(model, data, config, args):
         "rwirrnv_gcl",
         "eairrnv_gcl",
         "bprrnv_gcl",
+        "tns_gcl",
+        "ragc_gcl",
     }
     graph_target = args.method in {
         "gcn_mlp_gcl",
@@ -1482,6 +1587,8 @@ def train_er_cache_gcl(model, data, config, args):
         "rwirrnv_gcl",
         "eairrnv_gcl",
         "bprrnv_gcl",
+        "tns_gcl",
+        "ragc_gcl",
     }
     topk = 0 if (args.disable_cache or residual_only) else int(config["cache_topk"])
     cache_update = max(1, int(config["cache_update_interval"]))
@@ -1531,6 +1638,7 @@ def train_er_cache_gcl(model, data, config, args):
     for epoch in range(1, int(config["epochs"]) + 1):
         model.train()
         parts = model(data.x, data.edge_index, final_mode=config["final_repr"])
+        tns_stats = None
         target = parts["graph"] if graph_target else parts["high"]
         lcos_gate = None
         lcos_mix = None
@@ -1777,6 +1885,14 @@ def train_er_cache_gcl(model, data, config, args):
             )
             loss_self = loss_base + loss_rr
             loss_cache = parts["final"].new_tensor(0.0)
+        elif tns_gcl:
+            loss_base = 0.5 * (
+                negative_cosine(pred_ego, parts["graph"])
+                + negative_cosine(pred_high, parts["ego"])
+            )
+            loss_tns, tns_stats = _tns_loss(parts["final"], cache_keys, config)
+            loss_self = loss_base + float(config["tns_weight"]) * loss_tns
+            loss_cache = parts["final"].new_tensor(0.0)
         elif darrnv_gcl:
             loss_base = 0.5 * (
                 negative_cosine(pred_ego, parts["graph"])
@@ -1911,6 +2027,9 @@ def train_er_cache_gcl(model, data, config, args):
             "variance_loss": float(var_loss.item()),
             "covariance_loss": float(cov_loss.item()),
         }
+        if tns_stats is not None:
+            row["tns_loss"] = float(tns_stats["tns_loss"].item())
+            row["tns_weight_mean"] = float(tns_stats["tns_weight_mean"].item())
         history.append(row)
         if epoch == 1 or epoch % args.log_every == 0:
             print(
@@ -2353,6 +2472,35 @@ def train_er_cache_gcl(model, data, config, args):
             diagnostics["bprrnv_no_energy_gate"] = bool(
                 config.get("bprrnv_no_energy_gate", False)
             )
+        if tns_gcl:
+            pred_ego = model.pred_ego(parts["ego"])
+            pred_high = model.pred_high(parts["graph"])
+            bootstrap_loss = 0.5 * (
+                negative_cosine(pred_ego, parts["graph"])
+                + negative_cosine(pred_high, parts["ego"])
+            )
+            _, tns_stats = _tns_loss(parts["final"], cache_keys, config)
+            diagnostics["tns_bootstrap_loss"] = float(bootstrap_loss.item())
+            diagnostics["tns_loss"] = float(tns_stats["tns_loss"].item())
+            diagnostics["tns_weight_mean"] = float(tns_stats["tns_weight_mean"].item())
+            diagnostics["tns_weight_std"] = float(tns_stats["tns_weight_std"].item())
+            diagnostics["tns_key_sim_mean"] = float(tns_stats["tns_key_sim_mean"].item())
+            diagnostics["tns_key_sim_std"] = float(tns_stats["tns_key_sim_std"].item())
+            diagnostics["tns_pair_cosine_mean"] = float(
+                tns_stats["tns_pair_cosine_mean"].item()
+            )
+            diagnostics["tns_pair_cosine_std"] = float(
+                tns_stats["tns_pair_cosine_std"].item()
+            )
+            diagnostics["tns_repulsion_active_fraction"] = float(
+                tns_stats["tns_repulsion_active_fraction"].item()
+            )
+            diagnostics["tns_weight"] = float(config["tns_weight"])
+            diagnostics["tns_num_negatives"] = int(config["tns_num_negatives"])
+            diagnostics["tns_margin"] = float(config["tns_margin"])
+            diagnostics["tns_key_threshold"] = float(config["tns_key_threshold"])
+            diagnostics["tns_shuffle_weight"] = bool(config.get("tns_shuffle_weight", False))
+            diagnostics["tns_uniform_weight"] = bool(config.get("tns_uniform_weight", False))
         if darrnv_gcl:
             pred_ego = model.pred_ego(parts["ego"])
             pred_high = model.pred_high(parts["graph"])
@@ -2395,6 +2543,8 @@ def train_er_cache_gcl(model, data, config, args):
         ("rwirrnv_constant_weight" if bool(config.get("rwirrnv_constant_weight", False)) else "rwirrnv_weight_shuffled" if bool(config.get("rwirrnv_shuffle_weight", False)) else "rwirrnv") if rwirrnv_gcl else
         ("eairrnv_shuffled" if bool(config.get("rrnv_shuffle_pairs", False)) else "eairrnv") if eairrnv_gcl else
         ("bprrnv_uniform" if bool(config.get("bprrnv_uniform_gate", False)) else "bprrnv_no_density" if bool(config.get("bprrnv_no_density_gate", False)) else "bprrnv_no_energy" if bool(config.get("bprrnv_no_energy_gate", False)) else "bprrnv_shuffled" if bool(config.get("rrnv_shuffle_pairs", False)) else "bprrnv") if bprrnv_gcl else
+        ("tns_uniform" if bool(config.get("tns_uniform_weight", False)) else "tns_shuffled" if bool(config.get("tns_shuffle_weight", False)) else "tns") if tns_gcl else
+        "ragc_train" if ragc_gcl else
         ("aompnv_shuffled" if bool(config.get("aompnv_shuffle_positives", False)) else "aompnv") if aompnv_gcl else
         ("mpnv_shuffled" if bool(config.get("mpnv_shuffle_positives", False)) else "mpnv") if mpnv_gcl else
         "bspnv" if bspnv_gcl else
@@ -2437,7 +2587,7 @@ def main():
     config = override_config(load_yaml(args.config), args)
     if args.method == "gcn_mlp_gcl" and args.final_repr is None:
         config["final_repr"] = "ego_graph"
-    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl", "srgnv_gcl", "pcnv_gcl", "lcos_gcl", "lcm_gcl", "dsp_gcl", "rrnv_gcl", "darrnv_gcl", "dsrrnv_gcl", "dirrnv_gcl", "dprrnv_gcl", "nprrnv_gcl", "rwirrnv_gcl", "eairrnv_gcl", "bprrnv_gcl"} and args.final_repr is None:
+    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl", "srgnv_gcl", "pcnv_gcl", "lcos_gcl", "lcm_gcl", "dsp_gcl", "rrnv_gcl", "darrnv_gcl", "dsrrnv_gcl", "dirrnv_gcl", "dprrnv_gcl", "nprrnv_gcl", "rwirrnv_gcl", "eairrnv_gcl", "bprrnv_gcl", "tns_gcl", "ragc_gcl"} and args.final_repr is None:
         config["final_repr"] = "ego_graph"
     if args.method == "energy_spgcl" and args.final_repr is None:
         config["final_repr"] = "ego_high"
@@ -2451,7 +2601,14 @@ def main():
 
     stats = graph_stats(dataset, data)
     print(json.dumps({"dataset": args.dataset, **stats}, indent=2, sort_keys=True))
-    if args.method == "grace":
+    if args.method == "raw_features":
+        embeddings = data.x.detach().float()
+        history = []
+        diagnostics = {
+            "cache_control": "raw_features",
+            "raw_feature_dim": int(data.x.size(1)),
+        }
+    elif args.method == "grace":
         model = GraceModel(
             dataset.num_features,
             int(config["hidden_dim"]),
@@ -2469,6 +2626,15 @@ def main():
             float(config["dropout"]),
         ).to(device)
         embeddings, history, diagnostics = train_er_cache_gcl(model, data, config, args)
+        if args.method == "ragc_gcl":
+            learned_dim = int(embeddings.size(1))
+            embeddings = _ragc_embeddings(data.x, embeddings, config)
+            diagnostics["cache_control"] = "ragc_raw_anchor"
+            diagnostics["ragc_raw_weight"] = float(config["ragc_raw_weight"])
+            diagnostics["ragc_learned_weight"] = float(config["ragc_learned_weight"])
+            diagnostics["ragc_raw_dim"] = int(data.x.size(1))
+            diagnostics["ragc_learned_dim"] = learned_dim
+            diagnostics["ragc_output_dim"] = int(embeddings.size(1))
 
     metrics = evaluate_embeddings(
         embeddings,

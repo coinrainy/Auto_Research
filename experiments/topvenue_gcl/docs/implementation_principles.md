@@ -14,6 +14,7 @@
 - 只在一个数据集或一个 split 上报结论；
 - 只靠 dataset-specific 参数让结果成立；
 - 只和弱 GRACE scaffold 比较；
+- 只超过 learned-only GCL 但没有超过 `raw_features`；
 - 继续在 `experiments/grace_idea/` 内堆叠新方法。
 
 ## 参考代码范式
@@ -26,7 +27,11 @@
 
 当前 active foundation 是 `gcn_mlp_gcl`。它是必须击败的 strong control，但不是论文主贡献。
 
-当前没有通过最终复核的 active main idea。`bprrnv_gcl` 已从 active-but-risky candidate 降级为失败/弱正则资产：它把 RRNV 从主目标降级为 bootstrap-preserving auxiliary regularizer，并用 graph density 与 graph/high energy conflict 控制正则强度，但 10 split seed0 只有 overall +0.001398 F1Mi，且 Chameleon targeted controls 不支持干净机制。`rwirrnv_gcl` 已从 active-but-risky candidate 降级为机制线索：10 split seed0 中 Texas/Squirrel/Chameleon 有正向性能信号，但 Chameleon 的 constant-weight control 最好、Squirrel 的 shuffled-weight control 最好，说明当前 per-node reliability 排序不能作为主贡献。`eairrnv_gcl` 已验证 graph-level energy attenuation 有局部收益但不能过 Squirrel safety。下一代候选应换训练目标，不再继续围绕 RRNV auxiliary regularization 调小参数。
+当前 active candidate 是 `ragc_gcl`，Raw-Anchored Graph Complement GCL。它沿用 `gcn_mlp_gcl` 的 Natural-View bootstrap 训练，但最终表示拼接 normalized raw features 与 learned Natural-View embedding；`raw_features` 是必须报告的强基线。splits0-2、seed0、50 epoch 下，RAGC 相对 `raw_features` 在 Actor/Chameleon/Squirrel 的 mean F1Mi delta 分别为 +0.009649、+0.031433、+0.013128，三者均为 3/3 splits 正向；Texas 为 -0.009009，说明 WebKB 小图需要 safety selector。当前状态是 active candidate，不是最终成功方法；下一轮必须加入 learned branch shuffled/random control、10 splits、多 seed 与 homophily safety。
+
+`tns_gcl` 已降级为失败/诊断资产：它尝试在 Natural-View bootstrap 上加入 trusted-negative repulsion，但 split0 seed0 只有 Actor 正向，Texas/Chameleon/Squirrel 均低于 `gcn_mlp_gcl`。该路线不继续调 margin、threshold 或 weight。
+
+`bprrnv_gcl` 已从 active-but-risky candidate 降级为失败/弱正则资产：它把 RRNV 从主目标降级为 bootstrap-preserving auxiliary regularizer，并用 graph density 与 graph/high energy conflict 控制正则强度，但 10 split seed0 只有 overall +0.001398 F1Mi，且 Chameleon targeted controls 不支持干净机制。`rwirrnv_gcl` 已从 active-but-risky candidate 降级为机制线索：10 split seed0 中 Texas/Squirrel/Chameleon 有正向性能信号，但 Chameleon 的 constant-weight control 最好、Squirrel 的 shuffled-weight control 最好，说明当前 per-node reliability 排序不能作为主贡献。`eairrnv_gcl` 已验证 graph-level energy attenuation 有局部收益但不能过 Squirrel safety。后续不再继续围绕 RRNV auxiliary regularization 调小参数。
 
 当前已经停止的主线：
 
@@ -47,6 +52,7 @@
 - `rwirrnv_gcl` 的当前 per-node reliability 排序作为最终主方法。
 - `eairrnv_gcl` 的单一 graph-level energy attenuation 作为最终主方法。
 - `bprrnv_gcl` 作为最终主方法。
+- `tns_gcl` 作为最终主方法。
 
 后续所有新候选必须同时报告：
 
