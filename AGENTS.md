@@ -601,6 +601,12 @@
   - 已执行 Cora seed1/2 表示选择诊断：`python select_representation.py --run-dir /tmp/raw_complement_cora_graph_seed1/Cora_raw_complement_gcl_seed1 --run-dir /tmp/raw_complement_cora_graph_seed2/Cora_raw_complement_gcl_seed2 --selection-eval-mode random --random-repeats 3 --candidate-names raw saved anchor graph --c-min-power -8 --c-max-power 8 --max-iter 3000 --out runs/summaries/raw_complement_representation_selection_cora_random_seeds1-2_fullc.csv --aggregate-out runs/summaries/raw_complement_representation_selection_cora_random_seeds1-2_fullc_aggregate.csv`，6/6 次选择 saved/graph-context，F1Mi/F1Ma=0.815883/0.797750。
   - 当前研究判断：不应放弃 raw-complement 主线，但必须停止把 anchor mode 作为默认最终输出；下一步应实现 self-supervised safety gate 或 graph-context preservation，将 Cora 平均退化压到 0.5 个百分点以内，同时保留 Actor/WebKB 异配收益。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode graph --raw-complement-weight 0.01 --seed 0 --epochs 100 --save-dir /tmp/raw_complement_cora_graph_w001_seed0 --overwrite --log-every 100`。
+- 2026-06-28 ARS novelty gate 初步判断：
+  - 已按 `academic-research-suite` 的 reviewer/devil's advocate 视角评估当前 `raw_complement_gcl` 主线。
+  - 当前方法若表述为“异配图 GCL 中保留 ego/raw feature 或校准 graph propagation”，创新性不足，容易被 HLCL、POLYGCL、HeterGCL、H3GNNs 等已有 heterophily SSL/GCL 工作覆盖或削弱。
+  - 更有潜力的创新表述应收缩为：raw-feature anchored complement learning，即在强 raw-feature baseline 下显式学习 raw 之外的 graph/SSL complement，并配套 label-free output safety selection，说明何时使用 raw、graph、anchor_graph 表示。
+  - 当前证据显示 WebKB/Actor 上 raw baseline 过强，方法贡献更像 safety/diagnostic；Chameleon/Squirrel 上 raw-complement 相对 raw 与 GRACE 均稳定为正，是更适合支撑方法创新性的主战场。
+  - 结论：目前创新性达到 workshop/普通会议或机制型论文雏形，但尚不足以稳妥支撑顶会主会；必须补强 label-free selection、Chameleon/Squirrel 多 seed、与 HLCL/POLYGCL/HeterGCL 等强 baseline 的直接对比。
 - 2026-06-28 raw-complement weight 小消融：
   - 已执行 Cora seed0 `raw_complement_weight=0.01` graph fallback，结果 F1Mi/F1Ma=0.7931/0.7565，低于默认 `0.05` 的 0.7997/0.7655。
   - 已执行 Cora seed0 `raw_complement_weight=0.1` graph fallback，结果 F1Mi/F1Ma=0.8050/0.7725，较默认略好但仍低于 GRACE 0.8224/0.8015。
