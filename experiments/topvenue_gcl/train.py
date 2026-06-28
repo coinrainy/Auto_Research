@@ -54,6 +54,7 @@ def parse_args():
                             "bspnv_gcl",
                             "mpnv_gcl",
                             "aompnv_gcl",
+                            "srgnv_gcl",
                             "energy_spgcl",
                             "gcn_mlp_gcl",
                             "er_residual_gcl",
@@ -106,6 +107,12 @@ def parse_args():
     parser.add_argument("--aompnv-spatial-weight", type=float, default=None)
     parser.add_argument("--aompnv-bootstrap-weight", type=float, default=None)
     parser.add_argument("--aompnv-shuffle-positives", action="store_true")
+    parser.add_argument("--srgnv-base-weight", type=float, default=None)
+    parser.add_argument("--srgnv-residual-weight", type=float, default=None)
+    parser.add_argument("--srgnv-residual-threshold", type=float, default=None)
+    parser.add_argument("--srgnv-residual-temperature", type=float, default=None)
+    parser.add_argument("--srgnv-min-residual-weight", type=float, default=None)
+    parser.add_argument("--srgnv-shuffle-residual", action="store_true")
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -204,6 +211,18 @@ def override_config(config, args):
         merged["aompnv_bootstrap_weight"] = args.aompnv_bootstrap_weight
     if args.aompnv_shuffle_positives:
         merged["aompnv_shuffle_positives"] = True
+    if args.srgnv_base_weight is not None:
+        merged["srgnv_base_weight"] = args.srgnv_base_weight
+    if args.srgnv_residual_weight is not None:
+        merged["srgnv_residual_weight"] = args.srgnv_residual_weight
+    if args.srgnv_residual_threshold is not None:
+        merged["srgnv_residual_threshold"] = args.srgnv_residual_threshold
+    if args.srgnv_residual_temperature is not None:
+        merged["srgnv_residual_temperature"] = args.srgnv_residual_temperature
+    if args.srgnv_min_residual_weight is not None:
+        merged["srgnv_min_residual_weight"] = args.srgnv_min_residual_weight
+    if args.srgnv_shuffle_residual:
+        merged["srgnv_shuffle_residual"] = True
     return merged
 
 
@@ -346,6 +365,30 @@ def _weighted_cosine_abs(z1, z2, weight):
     weight = weight.detach().to(cosine.device, dtype=cosine.dtype)
     weight = weight / weight.mean().clamp_min(1e-12)
     return (cosine * weight).mean()
+
+
+@torch.no_grad()
+def _srgnv_residual_target(data, parts, config):
+    ego = parts["ego"].detach()
+    graph = parts["graph"].detach()
+    ego_unit = F.normalize(ego, dim=1)
+    parallel = (graph * ego_unit).sum(dim=1, keepdim=True) * ego_unit
+    residual = graph - parallel
+    if bool(config.get("srgnv_shuffle_residual", False)):
+        residual = residual[torch.randperm(residual.size(0), device=residual.device)]
+    raw = data.x.detach().float()
+    raw_low = row_normalized_propagate(raw, data.edge_index, add_self=True).float()
+    residual_score = 1.0 - (
+        F.normalize(raw, dim=1)
+        * F.normalize(raw_low, dim=1)
+    ).sum(dim=1)
+    temperature = max(float(config["srgnv_residual_temperature"]), 1e-12)
+    gate = torch.sigmoid(
+        (residual_score - float(config["srgnv_residual_threshold"])) / temperature
+    )
+    min_weight = float(config["srgnv_min_residual_weight"])
+    gate = gate * (1.0 - min_weight) + min_weight
+    return residual, residual_score, gate
 
 
 @torch.no_grad()
@@ -635,6 +678,7 @@ def train_er_cache_gcl(model, data, config, args):
     bspnv_gcl = args.method == "bspnv_gcl"
     mpnv_gcl = args.method == "mpnv_gcl"
     aompnv_gcl = args.method == "aompnv_gcl"
+    srgnv_gcl = args.method == "srgnv_gcl"
     residual_only = args.method in {
         "er_residual_gcl",
         "gcn_mlp_gcl",
@@ -646,6 +690,7 @@ def train_er_cache_gcl(model, data, config, args):
         "bspnv_gcl",
         "mpnv_gcl",
         "aompnv_gcl",
+        "srgnv_gcl",
     }
     graph_target = args.method in {
         "gcn_mlp_gcl",
@@ -657,6 +702,7 @@ def train_er_cache_gcl(model, data, config, args):
         "bspnv_gcl",
         "mpnv_gcl",
         "aompnv_gcl",
+        "srgnv_gcl",
     }
     topk = 0 if (args.disable_cache or residual_only) else int(config["cache_topk"])
     cache_update = max(1, int(config["cache_update_interval"]))
@@ -805,6 +851,23 @@ def train_er_cache_gcl(model, data, config, args):
                 float(config["sspnv_bootstrap_weight"]) * loss_bootstrap
                 + semantic_scale * float(config["sspnv_semantic_weight"]) * loss_semantic
                 + spatial_scale * float(config["sspnv_spatial_weight"]) * loss_spatial
+            )
+            loss_cache = parts["final"].new_tensor(0.0)
+        elif srgnv_gcl:
+            residual_target, _, residual_gate = _srgnv_residual_target(data, parts, config)
+            loss_base = 0.5 * (
+                negative_cosine(pred_ego, parts["graph"])
+                + negative_cosine(pred_high, parts["ego"])
+            )
+            residual_pred = model.pred_high(parts["ego"])
+            loss_residual = weighted_negative_cosine(
+                residual_pred,
+                residual_target,
+                residual_gate,
+            )
+            loss_self = (
+                float(config["srgnv_base_weight"]) * loss_base
+                + float(config["srgnv_residual_weight"]) * loss_residual
             )
             loss_cache = parts["final"].new_tensor(0.0)
         elif aompnv_gcl:
@@ -1039,6 +1102,19 @@ def train_er_cache_gcl(model, data, config, args):
             diagnostics["aompnv_semantic_pos_mean"] = float(semantic_mask.float().sum(dim=1).mean().item())
             diagnostics["aompnv_spatial_pos_mean"] = float(spatial_mask.float().sum(dim=1).mean().item())
             diagnostics["aompnv_shuffle_positives"] = bool(config.get("aompnv_shuffle_positives", False))
+        if srgnv_gcl:
+            residual_target, residual_score, residual_gate = _srgnv_residual_target(data, parts, config)
+            residual_pred = model.pred_high(parts["ego"])
+            residual_cos = (
+                F.normalize(residual_pred, dim=1)
+                * F.normalize(residual_target, dim=1)
+            ).sum(dim=1)
+            diagnostics["srgnv_raw_residual_score_mean"] = float(residual_score.mean().item())
+            diagnostics["srgnv_raw_residual_score_std"] = float(residual_score.std(unbiased=False).item())
+            diagnostics["srgnv_residual_gate_mean"] = float(residual_gate.mean().item())
+            diagnostics["srgnv_residual_gate_std"] = float(residual_gate.std(unbiased=False).item())
+            diagnostics["srgnv_residual_cos_mean"] = float(residual_cos.mean().item())
+            diagnostics["srgnv_shuffle_residual"] = bool(config.get("srgnv_shuffle_residual", False))
         if mpnv_gcl:
             semantic_mask, spatial_mask = mpnv_masks
             diagnostics["mpnv_semantic_pos_mean"] = float(semantic_mask.float().sum(dim=1).mean().item())
@@ -1049,6 +1125,7 @@ def train_er_cache_gcl(model, data, config, args):
     diagnostics["cache_control"] = (
         ("danv_degree" if danv_degree_gcl else "danv") if danv_gcl else
         "fdnv" if fdnv_gcl else
+        ("srgnv_shuffled" if bool(config.get("srgnv_shuffle_residual", False)) else "srgnv") if srgnv_gcl else
         ("aompnv_shuffled" if bool(config.get("aompnv_shuffle_positives", False)) else "aompnv") if aompnv_gcl else
         ("mpnv_shuffled" if bool(config.get("mpnv_shuffle_positives", False)) else "mpnv") if mpnv_gcl else
         "bspnv" if bspnv_gcl else
@@ -1091,7 +1168,7 @@ def main():
     config = override_config(load_yaml(args.config), args)
     if args.method == "gcn_mlp_gcl" and args.final_repr is None:
         config["final_repr"] = "ego_graph"
-    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl"} and args.final_repr is None:
+    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl", "srgnv_gcl"} and args.final_repr is None:
         config["final_repr"] = "ego_graph"
     if args.method == "energy_spgcl" and args.final_repr is None:
         config["final_repr"] = "ego_high"

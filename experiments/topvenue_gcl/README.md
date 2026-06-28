@@ -10,6 +10,8 @@ MPNV-GCL 已降级为失败/条件性消融资产，不再作为 active main ide
 
 Adaptive Objective-Activated MPNV (AOMPNV) 已降级为失败/条件性消融资产，入口仍为 `--method aompnv_gcl`。它在小门控中曾通过 objective activation 改善 full MPNV，但 Texas/Actor/Chameleon/Squirrel × splits0-9 × seeds1-2 × 50 epoch 硬门控未达到主方法门槛：相对 `gcn_mlp_gcl` 的 mean F1Mi delta 分别为 +0.010811、-0.002829、+0.000658、+0.018348；normal-vs-shuffled delta 分别为 +0.008108、+0.007763、-0.011294、+0.013593。只有 Squirrel 信号较清楚，Chameleon shuffled 更强，Actor 低于 baseline，因此不再作为 active candidate。
 
+Structure-Residual Gated Natural-View GCL (SRGNV) 已降级为失败/条件性消融资产，入口仍为 `--method srgnv_gcl`。它将 graph view 中与 ego view 正交的结构残差作为蒸馏目标，并用 raw feature propagation residual 做节点级 gate；但 split0 seed0 early gate 未过：Texas micro 持平但 macro 下降，Actor 仅弱正且 shuffled residual 更强，Chameleon/Squirrel 低于 baseline。因此不进入 splits 0-2 扩展。
+
 新增 `--method afpnv_gcl` 和 `--method bspnv_gcl`：分别对应置信度加权与 semantic/spatial/bootstrap branch selection。二者都已经跑通 Chameleon/Squirrel 10 split，但都没有形成足够强的主线结果。
 
 核心假设：
@@ -21,6 +23,7 @@ Adaptive Objective-Activated MPNV (AOMPNV) 已降级为失败/条件性消融资
 - AFPNV/BSPNV 已尝试解释何时选择 semantic、spatial 或 bootstrap-only objective，但未过升级门槛；
 - MPNV 将 positive construction 从单采样改为 dense multi-positive mask，但 seed1/seed2 复核失败，当前只保留为机制/消融资产；
 - AOMPNV 将 MPNV 的固定 dense objectives 改成 label-free objective activation / node-level fallback，但 10 split 多 seed normal-vs-shuffled 硬门控未过，当前只保留为 regularization/negative-result ablation；
+- SRGNV 尝试蒸馏 graph view 的 structure residual，但 split0 early gate 已失败，当前只保留为 negative result；
 - 当前仍没有可直接包装为 2026 顶会/顶刊主方法的成功 idea；下一代 candidate 必须换机制，而不是继续围绕 semantic/spatial positive mask 或 router 小调参。
 
 最小 smoke：
@@ -62,6 +65,8 @@ python train.py --dataset Texas --method mpnv_gcl --epochs 5 --split-index 0 --s
 python train.py --dataset Texas --method mpnv_gcl --epochs 5 --split-index 0 --seed 0 --mpnv-shuffle-positives
 python train.py --dataset Texas --method aompnv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method aompnv_gcl --epochs 5 --split-index 0 --seed 0 --aompnv-shuffle-positives
+python train.py --dataset Texas --method srgnv_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method srgnv_gcl --epochs 5 --split-index 0 --seed 0 --srgnv-shuffle-residual
 python train.py --dataset Texas --method energy_spgcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_residual_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_cache_gcl --epochs 5 --split-index 0 --seed 0

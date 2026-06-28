@@ -1069,3 +1069,15 @@
   - 当前保留价值：作为 regularization / negative-result ablation，说明 multi-objective dense-positive 正则有时有效，但结构化 positive routing 未被证明是因果机制。
   - 已更新文档：`experiments/topvenue_gcl/docs/adaptive_objective_mpnv_candidate.md`、`experiments/topvenue_gcl/docs/early_gate_summary_2026-06-28.md`、`experiments/topvenue_gcl/docs/implementation_principles.md`、`experiments/topvenue_gcl/README.md` 与本 `AGENTS.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50/aggregate_vs_gcn_mlp.csv` 查看硬门控汇总；随后应换机制设计下一代 candidate，不再继续调 AOMPNV router、branch weight 或 confidence threshold。
+- 2026-06-29 SRGNV-GCL 实现、split0 early gate 与放弃：
+  - 已实现 `experiments/topvenue_gcl/train.py --method srgnv_gcl`，暂名 Structure-Residual Gated Natural-View GCL。
+  - 方法保留 `gcn_mlp_gcl` Natural-View bootstrap，将 graph view 分解为 ego/feature 可解释方向与 orthogonal structure residual，用 raw feature propagation residual score `1 - cos(x, P x)` 做节点级 gate，并把 structure residual 蒸馏给 ego/MLP 分支。
+  - 新增 `--srgnv-shuffle-residual` 作为 no-structure control；新增配置 `srgnv_base_weight`、`srgnv_residual_weight`、`srgnv_residual_threshold`、`srgnv_residual_temperature`、`srgnv_min_residual_weight`。
+  - 已完成 smoke：`python -m py_compile train.py summarize_split_study.py src/*.py`、Texas/Chameleon 的 2 epoch `srgnv_gcl` 可运行，raw residual gate 分布正常，不再退化为全 1。
+  - 已执行 split0 early gate：Texas/Actor/Chameleon/Squirrel × split0 × seed0 × 50 epoch 的 `gcn_mlp_gcl`、SRGNV normal 与 SRGNV shuffled，输出目录 `experiments/topvenue_gcl/runs/srgnv_split0_s0_e50/`。
+  - SRGNV normal vs `gcn_mlp_gcl`：Texas +0.000000/-0.028439，Actor +0.001974/+0.016069，Chameleon -0.041667/-0.076563，Squirrel -0.005764/-0.019545。
+  - SRGNV shuffled vs `gcn_mlp_gcl`：Texas -0.027027/-0.049272，Actor +0.002632/+0.020925，Chameleon -0.021930/-0.019895，Squirrel -0.028818/-0.022141。
+  - 裁决：SRGNV 不进入 splits 0-2 扩展；Chameleon/Squirrel 明显失败，Texas macro 退化，Actor 唯一正向被 shuffled control 超过。
+  - 当前保留价值：作为 negative-result ablation，说明简单蒸馏 graph view 中与 ego view 正交的 residual 会优化 residual alignment，但不稳定带来下游分类收益。
+  - 已新增文档：`experiments/topvenue_gcl/docs/structure_residual_gated_natural_view_candidate.md`，并更新 `README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/srgnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv`；随后下一代 idea 应直接约束或诊断 downstream separability / neighborhood conflict，而不是继续蒸馏 representation residual。

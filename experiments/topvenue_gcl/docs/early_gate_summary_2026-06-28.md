@@ -451,3 +451,34 @@ Aggregate：
 - Chameleon shuffled control 明显强于 normal，直接击穿结构化 positive routing 叙事；
 - AOMPNV 保留为 regularization / negative-result ablation，不再继续调 router、branch weight 或 confidence threshold；
 - 下一代 candidate 必须换机制，继续以 `gcn_mlp_gcl` 为 strong foundation，并保留 shuffled/random/no-structure control。
+
+## 2026-06-29 追加：SRGNV-GCL split0 early gate 与放弃
+
+已实现 `--method srgnv_gcl`：Structure-Residual Gated Natural-View GCL。该方法保留 GCN-MLP bootstrap，将 graph view 中与 ego view 正交的 structure residual 作为额外蒸馏目标，并用 raw feature propagation residual score 做节点级 gate。`--srgnv-shuffle-residual` 用于打乱 residual target，作为 no-structure control。
+
+执行：
+
+```bash
+RUNS_DIR="runs/srgnv_split0_s0_e50"
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="srgnv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="normal" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="srgnv_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="shuffled" EXTRA_ARGS="--srgnv-shuffle-residual" OVERWRITE=1 bash scripts/run_split_study.sh
+python summarize_split_study.py --runs-dir "$RUNS_DIR" --baseline-method gcn_mlp_gcl --out "$RUNS_DIR/runs_vs_gcn_mlp.csv" --aggregate-out "$RUNS_DIR/aggregate_vs_gcn_mlp.csv"
+```
+
+Aggregate vs `gcn_mlp_gcl`：
+
+| Dataset | SRGNV ΔF1Mi | SRGNV ΔF1Ma | Shuffled ΔF1Mi | Shuffled ΔF1Ma | 裁决 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Texas | +0.000000 | -0.028439 | -0.027027 | -0.049272 | micro 持平，macro 退化 |
+| Actor | +0.001974 | +0.016069 | +0.002632 | +0.020925 | shuffled 更强 |
+| Chameleon | -0.041667 | -0.076563 | -0.021930 | -0.019895 | 明显失败 |
+| Squirrel | -0.005764 | -0.019545 | -0.028818 | -0.022141 | 失败 |
+
+裁决：
+
+- SRGNV 不进入 splits 0-2 扩展；
+- graph residual 蒸馏可以提高 residual cosine，但不稳定改善下游节点分类；
+- Actor 的唯一正向被 shuffled residual 超过，机制证据失败；
+- Chameleon 大幅退化，直接触发停止条件；
+- SRGNV 保留为 negative-result ablation，不继续调 residual weight、threshold 或 temperature。

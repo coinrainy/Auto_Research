@@ -26,7 +26,7 @@
 
 当前 active foundation 是 `gcn_mlp_gcl`。它是必须击败的 strong control，但不是论文主贡献。
 
-当前没有通过最终复核的 active main idea。`aompnv_gcl` 是当前唯一 active-but-risky candidate：它把 MPNV 的固定 dense semantic/spatial objectives 改为节点级无标签 objective activation，并允许回退到 `gcn_mlp_gcl` bootstrap。
+当前没有通过最终复核的 active main idea。AOMPNV 已在 10 split × seeds 1/2 硬门控后降级；下一代 candidate 必须换训练机制，不能继续围绕 semantic/spatial positive mask 或 router 小调参。
 
 当前已经停止的主线：
 
@@ -38,6 +38,7 @@
 - `sspnv_gcl` / `afpnv_gcl` / `bspnv_gcl` 作为最终主方法。
 - `mpnv_gcl` 作为最终主方法。
 - `aompnv_gcl` 作为最终主方法。
+- `srgnv_gcl` 作为最终主方法。
 
 后续所有新候选必须同时报告：
 
@@ -153,3 +154,15 @@ AOMPNV 当前裁决：
 - AOMPNV 已降级为 regularization / negative-result ablation，不再作为主线；
 - 后续不再继续调 AOMPNV 的 router temperature、branch weight 或 confidence threshold；
 - 下一代方法必须换训练机制，同时保留 `gcn_mlp_gcl` strong foundation 与 shuffled/random/no-structure control。
+
+SRGNV 当前裁决：
+
+- `srgnv_gcl` 入口为 `--method srgnv_gcl`；
+- 它尝试将 graph view 分解为 ego/feature 可解释部分与 structure residual，并用 raw feature propagation residual score 做节点级 gate；
+- `--srgnv-shuffle-residual` 是必须保留的 no-structure control；
+- Texas/Actor/Chameleon/Squirrel × split0 × seed0 × 50 epoch 中，相对 `gcn_mlp_gcl` 的 ΔF1Mi 分别为 +0.000000、+0.001974、-0.041667、-0.005764；
+- shuffled residual 的 ΔF1Mi 分别为 -0.027027、+0.002632、-0.021930、-0.028818；
+- 当前解释：SRGNV 能优化 residual cosine，但下游分类不稳定受益；Actor 唯一正向还被 shuffled control 超过，Chameleon/Squirrel 明显失败；
+- SRGNV 已降级为 negative-result ablation，不进入 splits 0-2 扩展；
+- 后续不再继续调 residual weight、threshold 或 temperature；
+- 下一代方法必须直接约束或诊断 downstream separability / neighborhood conflict，而不是只蒸馏 representation residual。
