@@ -162,6 +162,41 @@ class GatedEgoGraphEncoder(torch.nn.Module):
         return self.norm(gate * gcn_out + (1.0 - gate) * ego_out)
 
 
+class RawComplementEncoder(torch.nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, activation,
+                 base_model=GCNConv, k: int = 2, detach_raw_anchor: bool = True):
+        super(RawComplementEncoder, self).__init__()
+        self.raw_encoder = EgoEncoder(
+            in_channels,
+            out_channels,
+            activation,
+            k=k,
+        )
+        self.graph_encoder = Encoder(
+            in_channels,
+            out_channels,
+            activation,
+            base_model=base_model,
+            k=k,
+        )
+        self.raw_norm = nn.LayerNorm(out_channels)
+        self.complement_norm = nn.LayerNorm(out_channels)
+        self.detach_raw_anchor = detach_raw_anchor
+        self.last_raw_anchor = None
+        self.last_complement = None
+        self.last_graph_context = None
+
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor):
+        raw_anchor = self.raw_norm(self.raw_encoder(x, edge_index))
+        graph_context = self.graph_encoder(x, edge_index)
+        anchor_for_residual = raw_anchor.detach() if self.detach_raw_anchor else raw_anchor
+        complement = self.complement_norm(graph_context - anchor_for_residual)
+        self.last_raw_anchor = raw_anchor
+        self.last_complement = complement
+        self.last_graph_context = graph_context
+        return torch.cat([raw_anchor, complement], dim=1)
+
+
 class Model(torch.nn.Module):
     def __init__(self, encoder: Encoder, num_hidden: int, num_proj_hidden: int,
                  tau: float = 0.5):

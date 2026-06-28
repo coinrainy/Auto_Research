@@ -27,6 +27,7 @@ from model import (
     Encoder,
     GatedEgoGraphEncoder,
     Model,
+    RawComplementEncoder,
     ResidualEgoEncoder,
     drop_feature,
 )
@@ -58,6 +59,7 @@ def parse_args():
                             'cbr_gcl',
                             'gated_cbr_gcl',
                             'stable_cluster_cbr_gcl',
+                            'raw_complement_gcl',
                         ])
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--epochs', type=int, default=None)
@@ -120,6 +122,12 @@ def parse_args():
     parser.add_argument('--cbr-stability-min-margin', type=float, default=0.05)
     parser.add_argument('--cbr-stability-temperature', type=float, default=0.03)
     parser.add_argument('--cbr-stability-min-scale', type=float, default=0.25)
+    parser.add_argument('--raw-complement-weight', type=float, default=0.05)
+    parser.add_argument('--raw-complement-detach-anchor',
+                        action=argparse.BooleanOptionalAction,
+                        default=True)
+    parser.add_argument('--raw-complement-eval-mode', type=str, default='anchor',
+                        choices=['anchor', 'hidden', 'graph'])
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -253,6 +261,15 @@ def build_model(config, dataset, device, args):
             k=config['num_layers'],
             gate_init=args.ego_gate_init,
         ).to(device)
+    elif args.method == 'raw_complement_gcl':
+        encoder = RawComplementEncoder(
+            dataset.num_features,
+            config['num_hidden'],
+            activation,
+            base_model=base_model,
+            k=config['num_layers'],
+            detach_raw_anchor=args.raw_complement_detach_anchor,
+        ).to(device)
     else:
         encoder = Encoder(
             dataset.num_features,
@@ -261,9 +278,14 @@ def build_model(config, dataset, device, args):
             base_model=base_model,
             k=config['num_layers'],
         ).to(device)
+    model_hidden = (
+        config['num_hidden'] * 2
+        if args.method == 'raw_complement_gcl'
+        else config['num_hidden']
+    )
     return Model(
         encoder,
-        config['num_hidden'],
+        model_hidden,
         config['num_proj_hidden'],
         config['tau'],
     ).to(device)
@@ -860,13 +882,33 @@ def cluster_balanced_redundancy_reduction_objective(
     return loss, diagnostics
 
 
+def raw_complement_objective(raw1, comp1, raw2, comp2):
+    raw = torch.cat([raw1, raw2], dim=0)
+    comp = torch.cat([comp1, comp2], dim=0)
+    raw = (raw - raw.mean(0)) / raw.std(0, unbiased=False).clamp_min(1e-4)
+    comp = (comp - comp.mean(0)) / comp.std(0, unbiased=False).clamp_min(1e-4)
+    cross_correlation = torch.mm(raw.t(), comp) / raw.size(0)
+    loss = cross_correlation.pow(2).mean()
+    diagnostics = {
+        'raw_complement_corr_mean_abs': cross_correlation.abs().mean().item(),
+        'raw_complement_corr_max_abs': cross_correlation.abs().max().item(),
+        'raw_complement_raw_norm': raw.norm(dim=1).mean().item(),
+        'raw_complement_comp_norm': comp.norm(dim=1).mean().item(),
+    }
+    return loss, diagnostics
+
+
 def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     model.train()
     optimizer.zero_grad()
 
     x_1, edge_index_1, x_2, edge_index_2 = make_views(data, config, args)
     z1 = model(x_1, edge_index_1)
+    raw_anchor_1 = getattr(model.encoder, 'last_raw_anchor', None)
+    complement_1 = getattr(model.encoder, 'last_complement', None)
     z2 = model(x_2, edge_index_2)
+    raw_anchor_2 = getattr(model.encoder, 'last_raw_anchor', None)
+    complement_2 = getattr(model.encoder, 'last_complement', None)
 
     weights = None
     raw_weights = None
@@ -945,7 +987,9 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     attraction_loss = z1.new_tensor(0.0)
     prototype_consistency_loss = z1.new_tensor(0.0)
     prototype_balance_loss = z1.new_tensor(0.0)
+    raw_complement_loss = z1.new_tensor(0.0)
     prototype_diagnostics = {}
+    raw_complement_diagnostics = {}
     if (
         args.method == 'sgfn'
         and use_weighting
@@ -958,6 +1002,13 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
             prototype_balance_loss,
             prototype_diagnostics,
         ) = prototype_consistency_objective(z1, z2, args, epoch)
+    if args.method == 'raw_complement_gcl':
+        raw_complement_loss, raw_complement_diagnostics = raw_complement_objective(
+            raw_anchor_1,
+            complement_1,
+            raw_anchor_2,
+            complement_2,
+        )
     loss = (
         contrastive_loss
         + args.hybrid_rr_weight * rr_loss
@@ -965,6 +1016,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         + args.fn_attraction_weight * attraction_loss
         + args.pccl_consistency_weight * prototype_consistency_loss
         + args.pccl_balance_weight * prototype_balance_loss
+        + args.raw_complement_weight * raw_complement_loss
     )
 
     loss.backward()
@@ -999,9 +1051,12 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         'fn_attraction_loss': attraction_loss.item(),
         'prototype_consistency_loss': prototype_consistency_loss.item(),
         'prototype_balance_loss': prototype_balance_loss.item(),
+        'raw_complement_loss': raw_complement_loss.item(),
         'stage': stage,
         'weight_control': weight_control_name(args),
     }
+    if args.method == 'raw_complement_gcl':
+        log['stage'] = 'raw_complement'
     if hasattr(model.encoder, 'ego_gate'):
         log['ego_gate'] = model.encoder.ego_gate.item()
     if getattr(model.encoder, 'last_graph_gate', None) is not None:
@@ -1013,6 +1068,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
             'graph_gate_max': graph_gate.max().item(),
         })
     log.update(prototype_diagnostics)
+    log.update(raw_complement_diagnostics)
     log.update(rr_diagnostics)
     if weights is not None:
         log.update({
@@ -1043,9 +1099,23 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
 
 
 @torch.no_grad()
-def encode(model, data):
+def encode(model, data, args=None):
     model.eval()
-    return model(data.x, data.edge_index)
+    embeddings = model(data.x, data.edge_index)
+    complement = getattr(model.encoder, 'last_complement', None)
+    if complement is not None:
+        mode = 'anchor' if args is None else args.raw_complement_eval_mode
+        if mode == 'hidden':
+            return embeddings
+        if mode == 'graph':
+            graph_context = getattr(model.encoder, 'last_graph_context', None)
+            if graph_context is not None:
+                return graph_context
+            return embeddings
+        raw_anchor = F.normalize(data.x.detach(), dim=1)
+        complement = F.normalize(complement.detach(), dim=1)
+        return torch.cat([raw_anchor, complement], dim=1)
+    return embeddings
 
 
 def prepare_save_dir(args, seed):
@@ -1099,11 +1169,16 @@ def append_train_log(run_dir, row):
         'fn_attraction_loss',
         'prototype_consistency_loss',
         'prototype_balance_loss',
+        'raw_complement_loss',
         'ego_gate',
         'graph_gate_mean',
         'graph_gate_std',
         'graph_gate_min',
         'graph_gate_max',
+        'raw_complement_corr_mean_abs',
+        'raw_complement_corr_max_abs',
+        'raw_complement_raw_norm',
+        'raw_complement_comp_norm',
         'prototype_usage_entropy',
         'prototype_usage_max',
         'prototype_usage_min',
@@ -1279,6 +1354,9 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'cbr_stability_min_margin': args.cbr_stability_min_margin,
         'cbr_stability_temperature': args.cbr_stability_temperature,
         'cbr_stability_min_scale': args.cbr_stability_min_scale,
+        'raw_complement_weight': args.raw_complement_weight,
+        'raw_complement_detach_anchor': args.raw_complement_detach_anchor,
+        'raw_complement_eval_mode': args.raw_complement_eval_mode,
         'pair_shuffle_mode': args.pair_shuffle_mode,
         'pair_normalization': args.pair_normalization,
         'pair_reallocation_alpha': args.pair_reallocation_alpha,
@@ -1310,6 +1388,18 @@ def save_artifacts(run_dir, model, data, embeddings, final_weights, final_raw_we
         ),
         'final_context_gate': (
             None if final_context_gate is None else final_context_gate.detach().cpu()
+        ),
+        'final_raw_anchor': (
+            None if getattr(model.encoder, 'last_raw_anchor', None) is None
+            else model.encoder.last_raw_anchor.detach().cpu()
+        ),
+        'final_complement': (
+            None if getattr(model.encoder, 'last_complement', None) is None
+            else model.encoder.last_complement.detach().cpu()
+        ),
+        'final_graph_context': (
+            None if getattr(model.encoder, 'last_graph_context', None) is None
+            else model.encoder.last_graph_context.detach().cpu()
         ),
         'weight_control': weight_control_name(args),
         'model_state_dict': model.state_dict(),
@@ -1436,6 +1526,12 @@ def main():
             f'graph_gate_min={args.graph_gate_min}, '
             f'graph_gate_max={args.graph_gate_max}'
         )
+    if args.method == 'raw_complement_gcl':
+        print(
+            f'(I) | raw_complement_weight={args.raw_complement_weight}, '
+            f'raw_complement_detach_anchor={args.raw_complement_detach_anchor}, '
+            f'raw_complement_eval_mode={args.raw_complement_eval_mode}'
+        )
 
     start = t()
     prev = start
@@ -1485,7 +1581,7 @@ def main():
         prev = now
 
     print('=== Final ===')
-    embeddings = encode(model, data)
+    embeddings = encode(model, data, args)
     eval_stats = None
     if not args.skip_eval:
         if should_use_mask_eval(args, data):

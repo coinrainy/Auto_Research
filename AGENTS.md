@@ -564,3 +564,16 @@
   - 放弃/暂停事项：不把 `ego_grace` 或 `residual_grace` 单独包装成 SOTA encoder；不继续手调 `gated_ego_graph_grace` 的 `graph_gate_min/max`；不把 post-hoc concat 当主方法。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python evaluate_feature_fusion.py --runs-dir runs/ego_grace_splits0-9_seed0_e100 --include-methods ego_grace --solver lbfgs --c-min-power 0 --c-max-power 1 --out runs/summaries/feature_fusion_ego_splits0-9_fast_runs.csv --aggregate-out runs/summaries/feature_fusion_ego_splits0-9_fast_aggregate.csv`。
   - 下一步研发建议：实现显式 raw-anchored residual/complement objective 或 light-validation fusion，使 SSL 通道学习 raw feature 之外的补充信息，而不是只在评估时拼接。
+- 2026-06-28 Raw-Anchored Complement GCL 原型：
+  - 已新增 `--method raw_complement_gcl`，encoder 训练 hidden `[raw_anchor, complement]`；`raw_anchor` 来自 ego MLP，`graph_context` 来自 GCN encoder，`complement = LayerNorm(graph_context - stop_gradient(raw_anchor))`。
+  - 训练损失为 GRACE InfoNCE + `raw_complement_weight * corr(raw_anchor, complement)^2`；默认 `--raw-complement-weight 0.05`。
+  - final representation 默认 `--raw-complement-eval-mode anchor`，输出 `[normalized raw features, normalized learned complement]`；另支持 `hidden` 与 `graph` 模式用于 safety/fallback 消融。
+  - 已更新 `model.py`、`train.py`、`summarize_runs.py`，并保存 `final_raw_anchor`、`final_complement`、`final_graph_context` 到 artifacts。
+  - smoke 验证：`python train.py --dataset Texas --method raw_complement_gcl --seed 0 --split-index 0 --epochs 3 --save-dir /tmp/raw_complement_smoke_v2 --overwrite --log-every 1`，3 epoch 即得到 Texas split0 F1Mi/F1Ma 0.7838/0.6147。
+  - 异配 split0-2 完成：`runs/summaries/raw_complement_anchor_splits0-2_seed0_e100_aggregate.csv`。相对 GRACE：Actor +0.072807/+0.094350，Cornell +0.297297/+0.331202，Texas +0.252252/+0.376704，Wisconsin +0.300654/+0.416371，全部 3/3 split 正向。
+  - 异配 split0-9 完成：`runs/summaries/raw_complement_anchor_vs_grace_raw_splits0-9_seed0_e100_aggregate.csv`。相对 GRACE：Actor +0.074737/+0.106628，Cornell +0.237838/+0.211600，Texas +0.221622/+0.360388，Wisconsin +0.298039/+0.353723，全部 10/10 split 正向。
+  - 相对 raw feature full-C baseline：Actor +0.011118/+0.006394；Cornell -0.008108/-0.003500；Texas +0.002703/-0.020844；Wisconsin +0.003922/+0.009123。当前结论是基本持平到小幅互有胜负，已明显优于“只赢 GRACE 但输 raw”的前一版。
+  - Homophily safety 暴露风险：Cora GRACE 0.8224/0.8015，`anchor` mode 0.6524/0.6047，严重退化；CiteSeer GRACE 0.7171/0.6563，`anchor` mode 0.6897/0.6401，小幅退化；PubMed 旧 run 在 GRACE 后中断，未完成 raw_complement。
+  - Cora `--raw-complement-eval-mode graph` fallback 结果为 0.7997/0.7655，明显修复 anchor 退化但仍低于 GRACE。
+  - 当前判断：这是目前最强 active candidate，但只能暂定为 heterophily-focused；下一步必须实现 validation-based 或更可靠的 representation selection，决定何时使用 raw+complement、何时退回 graph context。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode graph --seed 0 --epochs 100 --save-dir /tmp/raw_complement_cora_graph --overwrite --log-every 100`。

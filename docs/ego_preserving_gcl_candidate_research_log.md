@@ -350,3 +350,89 @@ python evaluate_feature_fusion.py --runs-dir runs/ego_grace_splits0-9_seed0_e100
 - 放弃继续手调 `gated_ego_graph_grace` 的 local agreement gate；
 - 保留 ego/residual 作为机制证据：GCN-based GRACE 损害异配图上的 raw-feature separability，ego preservation 能恢复部分语义；
 - 下一步应实现显式 residual-complement 训练或融合，而不是只做后验 concat。
+
+## 2026-06-28 Raw-Anchored Complement GCL 原型
+
+新增方法：
+
+- `--method raw_complement_gcl`
+- encoder 输出 hidden `[raw_anchor, complement]`；
+- `raw_anchor` 来自 ego MLP；
+- `graph_context` 来自 GCN encoder；
+- `complement = LayerNorm(graph_context - stop_gradient(raw_anchor))`；
+- 训练损失为 GRACE InfoNCE + `raw_complement_weight * corr(raw_anchor, complement)^2`；
+- final representation 的默认 `anchor` 模式为 `[normalized raw features, normalized learned complement]`。
+
+新增参数：
+
+- `--raw-complement-weight`，默认 `0.05`；
+- `--raw-complement-detach-anchor / --no-raw-complement-detach-anchor`；
+- `--raw-complement-eval-mode anchor|hidden|graph`，用于测试 raw-anchor、hidden concat 与 graph fallback。
+
+### 异配 split0-2 初筛
+
+输出：
+
+- `runs/summaries/raw_complement_anchor_splits0-2_seed0_e100_aggregate.csv`
+- `runs/summaries/raw_complement_anchor_vs_raw_splits0-2_seed0_e100_aggregate.csv`
+
+相对 GRACE：
+
+| Dataset | F1Mi delta | F1Ma delta | positive splits |
+| --- | ---: | ---: | --- |
+| Actor | +0.072807 | +0.094350 | 3/3 |
+| Cornell | +0.297297 | +0.331202 | 3/3 |
+| Texas | +0.252252 | +0.376704 | 3/3 |
+| Wisconsin | +0.300654 | +0.416371 | 3/3 |
+
+相对 raw feature full-C baseline：
+
+| Dataset | F1Mi delta | F1Ma delta | note |
+| --- | ---: | ---: | --- |
+| Actor | +0.014035 | +0.006336 | 小幅正向 |
+| Cornell | ~0.000000 | -0.008090 | 基本持平 |
+| Texas | +0.009009 | -0.044913 | micro 持平/略正，macro 仍低 |
+| Wisconsin | -0.006536 | -0.003619 | 基本持平/略负 |
+
+### 异配 split0-9 扩展
+
+输出：
+
+- `runs/summaries/raw_complement_anchor_vs_grace_raw_splits0-9_seed0_e100.csv`
+- `runs/summaries/raw_complement_anchor_vs_grace_raw_splits0-9_seed0_e100_aggregate.csv`
+
+相对 GRACE：
+
+| Dataset | F1Mi delta | F1Ma delta | positive splits |
+| --- | ---: | ---: | --- |
+| Actor | +0.074737 | +0.106628 | 10/10 |
+| Cornell | +0.237838 | +0.211600 | 10/10 |
+| Texas | +0.221622 | +0.360388 | 10/10 |
+| Wisconsin | +0.298039 | +0.353723 | 10/10 |
+
+相对 raw feature full-C baseline：
+
+| Dataset | F1Mi delta | F1Mi pos/zero/neg | F1Ma delta | F1Ma pos/zero/neg |
+| --- | ---: | --- | ---: | --- |
+| Actor | +0.011118 | 8/0/2 | +0.006394 | 8/0/2 |
+| Cornell | -0.008108 | 3/5/2 | -0.003500 | 6/2/2 |
+| Texas | +0.002703 | 4/3/3 | -0.020844 | 4/2/4 |
+| Wisconsin | +0.003922 | 3/4/3 | +0.009123 | 4/3/3 |
+
+判断：这是目前最强的异配方法信号。它在 4 个异配数据集上相对 GRACE 全 split 正向，并且相对强 raw baseline 基本持平到小幅正向；但它仍不能被称为全面 SOTA，因为 WebKB raw features 本身极强，方法主要贡献应表述为“在不牺牲 raw baseline 的前提下修复 GCN-GRACE 的类别覆盖失败”。
+
+### Homophily safety
+
+输出：
+
+- `runs/raw_complement_anchor_homophily_seed0_e100`
+- `/tmp/raw_complement_cora_graph`
+
+结果：
+
+- Cora: GRACE 0.8224/0.8015；`anchor` mode 0.6524/0.6047，灾难性退化；
+- CiteSeer: GRACE 0.7171/0.6563；`anchor` mode 0.6897/0.6401，小幅退化；
+- PubMed: 本轮旧 `anchor` run 在 GRACE 后中断，尚未补跑；
+- Cora `graph` fallback: 0.7997/0.7655，明显修复 anchor 退化，但仍低于 GRACE。
+
+判断：当前原型只能作为 heterophily-focused active candidate，不能声称 homophily non-degradation。下一步应实现 validation-based 或更可靠的 graph/raw representation selection；如果无法修复 Cora 退化，论文定位必须收缩为异配图专门方法。
