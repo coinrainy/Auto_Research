@@ -31,6 +31,7 @@
 - `--method residual_grace`：GCN branch + ego MLP branch 的 residual encoder，是当前最稳的 encoder-level diagnostic candidate；但同样未越过 WebKB raw-feature baseline。
 - `--method gated_ego_graph_grace`：基于 local feature-neighborhood agreement 的节点级 graph usage gate；异配强，但当前 v1 与 `--graph-gate-min 0.5` 同配退化严重，不能作为最终主方法。
 - `--method raw_complement_gcl`：Raw-Anchored Complement GCL 原型，训练 hidden `[raw_anchor, complement]`，final representation 默认使用 `[normalized raw features, normalized learned complement]`；当前异配 10 split 相对 GRACE 全正向，但 homophily safety 尚未解决。当前最新机制消融显示，收益更准确地来自 raw-relative graph complement，而不是普通 graph context 或简单 raw+graph 拼接。
+- `--method pgsp_gcl`：Propagation-Guided Single-Pass GCL 原型。该方法已实现 single-pass encoder、tree/square anchor sampling、多跳传播签名 pseudo-positive 排序与 SP-like objective；当前早筛结果明显弱于 official SP-GCL，已降级为失败原型/后续 scaffold。
 - `select_representation.py`：raw-complement 的表示选择诊断工具，可从 `artifacts.pt` 中比较 `raw/saved/anchor/graph/complement/hidden`，用验证集选择候选表示；当前发现 Cora 可通过 graph/saved fallback 避免 anchor 崩溃，但仍低于 GRACE，Actor 上 saved 表示有清楚增量，WebKB 三小图多数 split 仍由 raw feature 主导。
 
 `es_weighted` 的设计边界：
@@ -213,6 +214,15 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - 虽然 SP-GCL accuracy 与 Raw-Complement F1 指标不完全等价，但在同一批 benchmark splits 上，SP-GCL 已足够明显地超过 Raw-Complement。
 - 当前裁决：Raw-Complement 降级为机制诊断/负结果/后续组件资产，不再作为 2026 顶会/顶刊主方法 active candidate。后续不要继续围绕它做小参数微调，除非新设计能正面解释并超过 SP-GCL/PolyGCL/HLCL 级强基线。
 
+`pgsp_gcl` 当前研究判断：
+
+- 设计动机：吸收 SP-GCL 的 single-pass / augmentation-free 优势，同时尝试用多跳 propagation signature 为 pseudo-positive 排序提供无标签语义约束。
+- 已实现 `SinglePassEncoder`、`--pgsp-anchor-sampling tree`、`--pgsp-square-sample`、`--pgsp-target-blend`、`--pgsp-hidden` 等核心控制。
+- Chameleon/Squirrel split0 seed0 50 epoch 早筛：最好的 tree/square SP-like 版本为 Chameleon 0.4430/0.4409、Squirrel 0.2882/0.2531；propagation blend=0.3 为 Chameleon 0.4276/0.4252、Squirrel 0.2959/0.2790。
+- 对照：official SP-GCL embedding 在当前 split0 mask probe 中达到 Chameleon 0.6382/0.6408、Squirrel 0.4428/0.4400；official SP-GCL + raw concat 反而低于 SP-GCL embedding。
+- 当前裁决：PGSP v1 不继续作为 active candidate；保留为 single-pass scaffold 与负结果。后续若继续 single-pass 路线，必须先复现 official SP-GCL embedding quality，再引入真正增益模块。
+- 详细记录见 `docs/pgsp_candidate_status_memo.md`。
+
 ## 当前实验入口能力
 
 - 支持 Planetoid/CitationFull：`Cora`、`CiteSeer`、`PubMed`、`DBLP`。
@@ -238,6 +248,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `residual_grace` 支持 `--ego-gate-init`，并记录 `ego_gate`。
 - `gated_ego_graph_grace` 支持 `--graph-gate-temperature`、`--graph-gate-threshold`、`--graph-gate-min`、`--graph-gate-max`，并记录 `graph_gate_*`。
 - `raw_complement_gcl` 支持 `--raw-complement-weight`、`--raw-complement-detach-anchor/--no-raw-complement-detach-anchor`、`--raw-complement-eval-mode anchor|hidden|graph|anchor_graph|raw_graph`，并记录 raw/complement correlation diagnostics；当前 `--raw-complement-weight` 默认值已改为 `0.0`，`0.05` 仅作为附录消融/robustness check。
+- `pgsp_gcl` 支持 `--pgsp-hops`、`--pgsp-topk`、`--pgsp-neg-topk`、`--pgsp-max-size`、`--pgsp-target-blend`、`--pgsp-neg-selection`、`--pgsp-anchor-sampling`、`--pgsp-seed-num`、`--pgsp-anchor-hops`、`--pgsp-square-sample`、`--pgsp-hidden`、`--pgsp-dropout`、`--pgsp-use-bn`。
 - `evaluate_raw_features.py` 支持对原始 `data.x` 使用当前同一套 mask/random linear evaluation 协议，作为 ego/residual/GRACE 的 feature-only 硬 baseline。
 - `evaluate_feature_fusion.py` 支持递归读取 `artifacts.pt`，在同一 split 下评估 `raw`、`ssl`、`raw+ssl concat`，并输出 concat 相对 raw/ssl 的 paired delta 与 aggregate summary。
 - `select_representation.py` 支持读取 `artifacts.pt` 并用验证集选择 raw/saved/anchor/graph/complement/hidden 候选表示；当前定位为单 run / 小批量诊断工具，全候选完整 C 网格在 Actor 上过慢，不作为正式大规模评估主入口。

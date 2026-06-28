@@ -35,6 +35,7 @@ from model import (
     Model,
     RawComplementEncoder,
     ResidualEgoEncoder,
+    SinglePassEncoder,
     drop_feature,
 )
 
@@ -76,6 +77,7 @@ def parse_args():
                             'gated_cbr_gcl',
                             'stable_cluster_cbr_gcl',
                             'raw_complement_gcl',
+                            'pgsp_gcl',
                         ])
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--epochs', type=int, default=None)
@@ -151,6 +153,31 @@ def parse_args():
                             'anchor_graph',
                             'raw_graph',
                         ])
+    parser.add_argument('--pgsp-hops', type=int, default=2)
+    parser.add_argument('--pgsp-topk', type=int, default=10)
+    parser.add_argument('--pgsp-neg-topk', type=int, default=10)
+    parser.add_argument('--pgsp-max-size', type=int, default=512)
+    parser.add_argument('--pgsp-target-blend', type=float, default=0.7)
+    parser.add_argument('--pgsp-neg-selection', type=str, default='random',
+                        choices=['random', 'low_target', 'low_embedding'])
+    parser.add_argument('--pgsp-anchor-sampling', type=str, default='tree',
+                        choices=['random', 'tree'])
+    parser.add_argument('--pgsp-seed-num', type=int, default=32)
+    parser.add_argument('--pgsp-anchor-hops', type=int, default=2)
+    parser.add_argument('--pgsp-square-sample',
+                        action=argparse.BooleanOptionalAction,
+                        default=True)
+    parser.add_argument('--pgsp-include-self-positive',
+                        action=argparse.BooleanOptionalAction,
+                        default=False)
+    parser.add_argument('--pgsp-include-residuals',
+                        action=argparse.BooleanOptionalAction,
+                        default=True)
+    parser.add_argument('--pgsp-hidden', type=int, default=0)
+    parser.add_argument('--pgsp-dropout', type=float, default=0.5)
+    parser.add_argument('--pgsp-use-bn',
+                        action=argparse.BooleanOptionalAction,
+                        default=True)
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -299,6 +326,17 @@ def build_model(config, dataset, device, args):
             k=config['num_layers'],
             detach_raw_anchor=args.raw_complement_detach_anchor,
         ).to(device)
+    elif args.method == 'pgsp_gcl':
+        pgsp_hidden = args.pgsp_hidden if args.pgsp_hidden > 0 else config['num_hidden']
+        encoder = SinglePassEncoder(
+            dataset.num_features,
+            pgsp_hidden,
+            activation,
+            base_model=base_model,
+            k=config['num_layers'],
+            dropout=args.pgsp_dropout,
+            use_batch_norm=args.pgsp_use_bn,
+        ).to(device)
     else:
         encoder = Encoder(
             dataset.num_features,
@@ -307,11 +345,12 @@ def build_model(config, dataset, device, args):
             base_model=base_model,
             k=config['num_layers'],
         ).to(device)
-    model_hidden = (
-        config['num_hidden'] * 2
-        if args.method == 'raw_complement_gcl'
-        else config['num_hidden']
-    )
+    if args.method == 'raw_complement_gcl':
+        model_hidden = config['num_hidden'] * 2
+    elif args.method == 'pgsp_gcl' and args.pgsp_hidden > 0:
+        model_hidden = args.pgsp_hidden
+    else:
+        model_hidden = config['num_hidden']
     return Model(
         encoder,
         model_hidden,
@@ -332,6 +371,61 @@ def neighbor_mean_features(x, edge_index):
     degree.index_add_(0, target, torch.ones_like(target, dtype=x.dtype))
     neighbor_mean = aggregate / degree.clamp_min(1.0).view(-1, 1)
     return torch.where(degree.view(-1, 1) > 0, neighbor_mean, x)
+
+
+@torch.no_grad()
+def row_normalized_propagate(x, edge_index, add_self=True):
+    source, target = edge_index
+    aggregate = torch.zeros_like(x)
+    degree = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
+    aggregate.index_add_(0, target, x[source])
+    degree.index_add_(0, target, torch.ones_like(target, dtype=x.dtype))
+    if add_self:
+        aggregate = aggregate + x
+        degree = degree + 1.0
+    return aggregate / degree.clamp_min(1.0).view(-1, 1)
+
+
+@torch.no_grad()
+def pgsp_propagation_signature(data, args):
+    current = data.x.detach().float()
+    blocks = [F.normalize(current, dim=1)]
+    for _ in range(max(0, args.pgsp_hops)):
+        propagated = row_normalized_propagate(current, data.edge_index)
+        blocks.append(F.normalize(propagated, dim=1))
+        if args.pgsp_include_residuals:
+            blocks.append(F.normalize(current - propagated, dim=1))
+        current = propagated
+    signature = torch.cat(blocks, dim=1)
+    return F.normalize(signature, dim=1)
+
+
+@torch.no_grad()
+def pgsp_sample_anchor_index(data, args):
+    num_nodes = data.x.size(0)
+    max_size = min(max(1, args.pgsp_max_size), num_nodes)
+    if args.pgsp_anchor_sampling == 'random':
+        return torch.randperm(num_nodes, device=data.x.device)[:max_size]
+
+    seed_count = min(max(1, args.pgsp_seed_num), num_nodes)
+    seeds = torch.randperm(num_nodes, device=data.x.device)[:seed_count]
+    selected = torch.zeros(num_nodes, device=data.x.device, dtype=torch.bool)
+    frontier = seeds
+    source, target = data.edge_index
+    for _ in range(max(0, args.pgsp_anchor_hops) + 1):
+        selected[frontier] = True
+        source_hit = torch.isin(source, frontier)
+        target_hit = torch.isin(target, frontier)
+        frontier = torch.cat([target[source_hit], source[target_hit], frontier]).unique()
+        if selected.sum().item() >= max_size:
+            break
+    anchor_index = torch.where(selected)[0]
+    if anchor_index.numel() == 0:
+        anchor_index = seeds
+    if anchor_index.numel() > max_size:
+        permutation = torch.randperm(anchor_index.numel(), device=data.x.device)[:max_size]
+        anchor_index = anchor_index[permutation]
+    return anchor_index
 
 
 @torch.no_grad()
@@ -943,9 +1037,116 @@ def raw_complement_graph_context_objective(model, graph1, graph2, batch_size):
     return loss, diagnostics
 
 
+def propagation_guided_single_pass_objective(model, z, data, args):
+    embeddings = F.normalize(model.projection(z), dim=1)
+    num_nodes = embeddings.size(0)
+    anchor_index = pgsp_sample_anchor_index(data, args).to(embeddings.device)
+    sample_size = anchor_index.numel()
+
+    candidate_index = anchor_index if args.pgsp_square_sample else torch.arange(
+        num_nodes,
+        device=embeddings.device,
+    )
+    embedding_sim = torch.mm(embeddings[anchor_index], embeddings[candidate_index].t())
+    with torch.no_grad():
+        signature = pgsp_propagation_signature(data, args).to(
+            embeddings.device,
+            dtype=embeddings.dtype,
+        )
+        guide_sim = torch.mm(signature[anchor_index], signature[candidate_index].t())
+        blend = min(max(args.pgsp_target_blend, 0.0), 1.0)
+        target_sim = blend * guide_sim + (1.0 - blend) * embedding_sim.detach()
+        if not args.pgsp_include_self_positive and candidate_index.numel() > 1:
+            target_sim = target_sim.clone()
+            if args.pgsp_square_sample:
+                self_columns = torch.arange(
+                    sample_size,
+                    device=target_sim.device,
+                    dtype=torch.long,
+                ).view(-1, 1)
+            else:
+                self_columns = anchor_index.view(-1, 1)
+            target_sim.scatter_(
+                1,
+                self_columns,
+                torch.full(
+                    (sample_size, 1),
+                    -float('inf'),
+                    device=target_sim.device,
+                    dtype=target_sim.dtype,
+                ),
+            )
+
+    num_candidates = candidate_index.numel()
+    max_positive = (
+        num_candidates
+        if args.pgsp_include_self_positive
+        else max(num_candidates - 1, 1)
+    )
+    positive_k = min(max(1, args.pgsp_topk), max_positive)
+    positive_index = torch.topk(target_sim, positive_k, dim=1).indices
+    positive_score = embedding_sim.gather(1, positive_index).mean(1)
+
+    negative_k = min(max(1, args.pgsp_neg_topk), num_candidates)
+    if args.pgsp_neg_selection == 'low_target':
+        negative_index = torch.topk(-target_sim, negative_k, dim=1).indices
+    elif args.pgsp_neg_selection == 'low_embedding':
+        negative_index = torch.topk(-embedding_sim.detach(), negative_k, dim=1).indices
+    else:
+        negative_index = torch.randint(
+            0,
+            num_candidates,
+            (sample_size, negative_k),
+            device=embeddings.device,
+        )
+    negative_score = embedding_sim.gather(1, negative_index).pow(2).mean(1)
+
+    per_anchor_loss = -2.0 * positive_score + negative_score
+    loss = per_anchor_loss.mean()
+    diagnostics = {
+        'pgsp_positive_score_mean': positive_score.mean().item(),
+        'pgsp_positive_score_std': positive_score.std(unbiased=False).item(),
+        'pgsp_negative_score_mean': negative_score.mean().item(),
+        'pgsp_negative_score_std': negative_score.std(unbiased=False).item(),
+        'pgsp_target_sim_mean': torch.nan_to_num(target_sim).mean().item(),
+        'pgsp_target_sim_std': torch.nan_to_num(target_sim).std(unbiased=False).item(),
+        'pgsp_sample_size': float(sample_size),
+        'pgsp_candidate_size': float(num_candidates),
+        'pgsp_positive_k': float(positive_k),
+        'pgsp_negative_k': float(negative_k),
+    }
+    return loss, diagnostics
+
+
 def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     model.train()
     optimizer.zero_grad()
+
+    if args.method == 'pgsp_gcl':
+        z = model(data.x, data.edge_index)
+        loss, pgsp_diagnostics = propagation_guided_single_pass_objective(
+            model,
+            z,
+            data,
+            args,
+        )
+        loss.backward()
+        optimizer.step()
+        log = {
+            'loss': loss.item(),
+            'contrastive_loss': loss.item(),
+            'rr_loss': 0.0,
+            'cbr_rr_loss': 0.0,
+            'fn_attraction_loss': 0.0,
+            'prototype_consistency_loss': 0.0,
+            'prototype_balance_loss': 0.0,
+            'raw_complement_loss': 0.0,
+            'raw_complement_graph_loss': 0.0,
+            'stage': 'propagation_guided_single_pass',
+            'weight_control': weight_control_name(args),
+        }
+        log.update(pgsp_diagnostics)
+        return log, None, None, None
 
     x_1, edge_index_1, x_2, edge_index_2 = make_views(data, config, args)
     z1 = model(x_1, edge_index_1)
@@ -1253,6 +1454,16 @@ def append_train_log(run_dir, row):
         'raw_complement_raw_norm',
         'raw_complement_comp_norm',
         'graph_context_view_cosine',
+        'pgsp_positive_score_mean',
+        'pgsp_positive_score_std',
+        'pgsp_negative_score_mean',
+        'pgsp_negative_score_std',
+        'pgsp_target_sim_mean',
+        'pgsp_target_sim_std',
+        'pgsp_sample_size',
+        'pgsp_candidate_size',
+        'pgsp_positive_k',
+        'pgsp_negative_k',
         'prototype_usage_entropy',
         'prototype_usage_max',
         'prototype_usage_min',
@@ -1432,6 +1643,21 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'raw_complement_graph_loss_weight': args.raw_complement_graph_loss_weight,
         'raw_complement_detach_anchor': args.raw_complement_detach_anchor,
         'raw_complement_eval_mode': args.raw_complement_eval_mode,
+        'pgsp_hops': args.pgsp_hops,
+        'pgsp_topk': args.pgsp_topk,
+        'pgsp_neg_topk': args.pgsp_neg_topk,
+        'pgsp_max_size': args.pgsp_max_size,
+        'pgsp_target_blend': args.pgsp_target_blend,
+        'pgsp_neg_selection': args.pgsp_neg_selection,
+        'pgsp_anchor_sampling': args.pgsp_anchor_sampling,
+        'pgsp_seed_num': args.pgsp_seed_num,
+        'pgsp_anchor_hops': args.pgsp_anchor_hops,
+        'pgsp_square_sample': args.pgsp_square_sample,
+        'pgsp_include_self_positive': args.pgsp_include_self_positive,
+        'pgsp_include_residuals': args.pgsp_include_residuals,
+        'pgsp_hidden': args.pgsp_hidden,
+        'pgsp_dropout': args.pgsp_dropout,
+        'pgsp_use_bn': args.pgsp_use_bn,
         'pair_shuffle_mode': args.pair_shuffle_mode,
         'pair_normalization': args.pair_normalization,
         'pair_reallocation_alpha': args.pair_reallocation_alpha,
@@ -1608,6 +1834,23 @@ def main():
             f'{args.raw_complement_graph_loss_weight}, '
             f'raw_complement_detach_anchor={args.raw_complement_detach_anchor}, '
             f'raw_complement_eval_mode={args.raw_complement_eval_mode}'
+        )
+    if args.method == 'pgsp_gcl':
+        print(
+            f'(I) | pgsp_hops={args.pgsp_hops}, pgsp_topk={args.pgsp_topk}, '
+            f'pgsp_neg_topk={args.pgsp_neg_topk}, '
+            f'pgsp_max_size={args.pgsp_max_size}, '
+            f'pgsp_target_blend={args.pgsp_target_blend}, '
+            f'pgsp_neg_selection={args.pgsp_neg_selection}, '
+            f'pgsp_anchor_sampling={args.pgsp_anchor_sampling}, '
+            f'pgsp_seed_num={args.pgsp_seed_num}, '
+            f'pgsp_anchor_hops={args.pgsp_anchor_hops}, '
+            f'pgsp_square_sample={args.pgsp_square_sample}, '
+            f'pgsp_include_self_positive={args.pgsp_include_self_positive}, '
+            f'pgsp_include_residuals={args.pgsp_include_residuals}, '
+            f'pgsp_hidden={args.pgsp_hidden}, '
+            f'pgsp_dropout={args.pgsp_dropout}, '
+            f'pgsp_use_bn={args.pgsp_use_bn}'
         )
 
     start = t()

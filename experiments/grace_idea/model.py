@@ -45,6 +45,36 @@ class Encoder(torch.nn.Module):
         return x
 
 
+class SinglePassEncoder(torch.nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, activation,
+                 base_model=GCNConv, k: int = 2, dropout: float = 0.5,
+                 use_batch_norm: bool = True):
+        super(SinglePassEncoder, self).__init__()
+        assert k >= 1
+        self.k = k
+        self.dropout = float(dropout)
+        self.activation = activation
+        self.use_batch_norm = use_batch_norm
+        self.convs = []
+        self.batch_norms = []
+        for layer_idx in range(k):
+            in_dim = in_channels if layer_idx == 0 else out_channels
+            self.convs.append(base_model(in_dim, out_channels))
+            if use_batch_norm:
+                self.batch_norms.append(nn.BatchNorm1d(out_channels))
+        self.convs = nn.ModuleList(self.convs)
+        self.batch_norms = nn.ModuleList(self.batch_norms)
+
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor):
+        for layer_idx, conv in enumerate(self.convs):
+            x = conv(x, edge_index)
+            if self.use_batch_norm:
+                x = self.batch_norms[layer_idx](x)
+            x = self.activation(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+        return x
+
+
 class EgoEncoder(torch.nn.Module):
     def __init__(self, in_channels: int, out_channels: int, activation,
                  k: int = 2):

@@ -757,3 +757,19 @@
   - 当前裁决：Raw-Complement 未通过 strong baseline gate，降级为机制诊断/负结果/后续组件资产，不再作为 2026 顶会/顶刊主方法 active candidate。
   - 已更新 `docs/raw_complement_candidate_status_memo.md`、`docs/spgcl_baseline_integration_note.md` 与 `experiments/grace_idea/IDEA_NOTES.md`。
   - 下一步建议：停止继续微调 Raw-Complement；进入下一轮 idea 搜索，优先寻找能正面超过 SP-GCL/PolyGCL/HLCL 的图对比学习机制。
+- 2026-06-28 PGSP-GCL single-pass 新候选实现与早筛：
+  - 已按下一轮 idea 搜索实现 `--method pgsp_gcl`，全称 Propagation-Guided Single-Pass GCL。
+  - 新增 `SinglePassEncoder`：GCNConv + optional BatchNorm + dropout，支持 `--pgsp-hidden` 控制 hidden dim。
+  - 新增 PGSP 训练机制：多跳 propagation signature、tree/random anchor sampling、square-sample 内部 top-k positive、random/low-sim negative、`--pgsp-target-blend` 控制 embedding 自举与 propagation guide 的混合。
+  - 已验证 smoke：`python -m py_compile train.py model.py`；`python train.py --dataset Cora --method pgsp_gcl --epochs 2 --skip-eval ...`；`python train.py --dataset Chameleon --method pgsp_gcl --split-index 0 --epochs 2 ...`。
+  - Chameleon/Squirrel split0 seed0 50 epoch 早筛结果：
+    - PGSP v1 propagation target blend=0.7 full candidates：Chameleon 0.4057/0.4019，Squirrel 0.2632/0.2198。
+    - SP-like embedding target full candidates：Chameleon 0.3947/0.3913，Squirrel 0.2988/0.2526。
+    - SP-like + BN/dropout/hidden256 full candidates：Chameleon 0.3728/0.3709，Squirrel 0.3007/0.2899。
+    - SP-like + BN/dropout/hidden256 + tree/square sample：Chameleon 0.4430/0.4409，Squirrel 0.2882/0.2531。
+    - tree/square sample + propagation blend=0.3：Chameleon 0.4276/0.4252，Squirrel 0.2959/0.2790。
+  - 已用本地 ignored SP-GCL 克隆导出 official SP-GCL embedding，并用当前项目 mask probe 评估：Chameleon 0.6382/0.6408，Squirrel 0.4428/0.4400。
+  - Official SP-GCL + raw concat 低于 SP-GCL embedding：Chameleon 0.6031/0.6012，Squirrel 0.4217/0.4129，说明简单 raw-preserving concat 不是有效创新点。
+  - 当前裁决：PGSP-GCL v1 明显弱于 official SP-GCL，降级为失败原型/后续 scaffold，不作为 active top-venue candidate 继续推进。
+  - 已新增备忘录：`docs/pgsp_candidate_status_memo.md`。
+  - 下一步建议：停止调 `pgsp-target-blend/topk/hidden` 小参数；下一轮应转向 learnable propagation-depth selection、official SP-GCL 质量复现后的增益模块，或重新搜索非 single-pass pseudo-positive 的机制。
