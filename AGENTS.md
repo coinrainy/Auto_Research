@@ -986,3 +986,9 @@
   - 当前裁决：SSPNV 升级为 active candidate，但还不是 SOTA 结论；Actor 是边界数据集，下一步必须做 semantic-only、spatial-only、random semantic/spatial positive control、homophily safety 与强基线同协议对齐。
   - 已新增文档：`experiments/topvenue_gcl/docs/semantic_spatial_positive_natural_view_candidate.md`；并更新 `early_gate_summary_2026-06-28.md`、`implementation_principles.md` 与 `README.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Texas Chameleon Squirrel Actor" METHODS="gcn_mlp_gcl sspnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/split_study_sspnv_s1-2_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh`，随后实现 semantic-only/spatial-only/random-positive controls。
+- 2026-06-28 当前 idea 汇报整理：
+  - 本轮按用户要求整理当前 active idea 与阶段性成果，重点不再放在早期 reliability-weighted GCL，而是聚焦 `experiments/topvenue_gcl/` 中的 Natural-View GCL foundation 与 SSPNV-GCL。
+  - 当前主 idea：Semantic-Spatial Positive Natural-View GCL，在 GCN/graph view 与 MLP/ego view 的天然双视图基础上，将 raw propagation signature KNN 语义正样本监督 high-pass target，将一跳空间正样本监督 low-pass target，并保留 GCN-MLP bootstrap。
+  - 当前主要成果：`gcn_mlp_gcl` 已作为 strong foundation 稳定超过 GRACE；SSPNV 在 Texas/Actor/Chameleon/Squirrel 的 10 split seed0 early gate 中相对 `gcn_mlp_gcl` 的 mean micro/macro 均为正，Chameleon 10/10 split micro 正向，Squirrel 9/10 split micro 正向。
+  - 当前风险：仍未完成多 model seed、semantic/spatial/random-positive 消融、homophily safety 与 SP-GCL/S3GCL/PolyGCL/GraphECL 等强基线同协议对齐，因此不能声称 SOTA。
+  - 下一步建议：优先补 SSPNV 消融与多 seed，而不是继续新增复杂模块。
