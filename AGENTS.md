@@ -794,3 +794,12 @@
   - 结论：SPARC-GCL 的 Squirrel 信号通过更可信 C-grid 复核，Chameleon 小幅正向但不稳定；当前仍值得继续推进，但不能声称全面 SOTA。
   - 已新增 `experiments/grace_idea/scripts/run_spgcl_embedding_export.sh`：自动导出 Geom-GCN 数据、为本地 ignored SP-GCL 克隆注入 embedding 保存钩子、运行 official SP-GCL，并转换为当前评估脚本可读的 `artifacts.pt`。
   - 下一步建议：用该脚本重新生成非 `/tmp` 的 official SP-GCL artifacts，然后跑多 seed / 多 mode / class-degree-local homophily 诊断。
+- 2026-06-28 SPARC-GCL 项目内 artifacts 复核：
+  - 已执行项目内 official SP-GCL embedding 导出：`DATASETS="Chameleon Squirrel" OUT_DIR="runs/spgcl_official_embeddings_seed42_e100" RESET_EPOCHS=100 LINEAR_EPOCHS=10 RESET_HIDDEN=256 RESET_SEED_NUM=32 RESET_MAX_SIZE=512 RESET_SUBG_NUM_HOPS=2 SEED=42 bash scripts/run_spgcl_embedding_export.sh`。
+  - 输出 artifacts：`runs/spgcl_official_embeddings_seed42_e100/artifacts/Chameleon_spgcl_official_seed42_split0/artifacts.pt` 与 `runs/spgcl_official_embeddings_seed42_e100/artifacts/Squirrel_spgcl_official_seed42_split0/artifacts.pt`。
+  - 已在项目内 artifacts 上复跑 C-grid：`C={4,16,64}`、`max_iter=500`、Chameleon/Squirrel × splits0-9 × modes `ssl/ssl_prop1/ssl_prop2/ssl_resid1/ssl_resid2`。
+  - 输出文件：`runs/summaries/sparc_seed42_cgrid.csv` 与 `runs/summaries/sparc_seed42_cgrid_aggregate.csv`。
+  - Chameleon：`ssl` 为 0.631798/0.632267；`ssl_prop2` 为 0.640570/0.641855（+0.008772/+0.009588，8/10 micro 正）；`ssl_resid1` 为 0.639254/0.639301（+0.007456/+0.007034，6/10 micro 正）。
+  - Squirrel：`ssl` 为 0.450817/0.445798；`ssl_resid1` 为 0.488953/0.485416（+0.038136/+0.039618，10/10 micro 正）；`ssl_prop2` 为 0.480307/0.476469（+0.029491/+0.030670，10/10 micro 正）。
+  - 当前判断：SPARC 的 Squirrel 结果已经通过项目内可复现 artifacts 复核；Chameleon 有正均值但 best mode 更偏 `ssl_prop2`，说明下一步必须做无标签 mode selection，而不是固定单一 residual 模式。
+  - 下一步建议：实现 class/degree/local-homophily bucket 诊断，确认 Squirrel 的提升来自哪些节点；随后跑不同 SP-GCL seed 或更长 epoch artifacts。

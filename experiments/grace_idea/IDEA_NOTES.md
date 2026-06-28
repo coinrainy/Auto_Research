@@ -231,8 +231,9 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - official SP-GCL embedding 的 10 split fast gate：Squirrel `ssl_resid1` 相对 `ssl` F1Mi/F1Ma +0.028434/+0.029695，10/10 split micro 为正；Chameleon `ssl_resid1` +0.008991/+0.008465，7/10 正、2/10 负、1/10 持平。
 - `ssl_prop2` 也有正向：Squirrel +0.019116/+0.020091，Chameleon +0.002193/+0.002739。
 - C-grid 复核（`C={4,16,64}`、10 splits）：Squirrel `ssl_resid1` 相对 `ssl` F1Mi/F1Ma +0.034294/+0.035169，10/10 split micro 为正；Chameleon `ssl_resid1` +0.008333/+0.007952，`ssl_prop2` +0.005263/+0.005584。
+- 项目内 artifacts 复核（`runs/spgcl_official_embeddings_seed42_e100/artifacts`）：Squirrel `ssl_resid1` 相对 `ssl` +0.038136/+0.039618，10/10 split micro 为正；Chameleon `ssl_prop2` +0.008772/+0.009588，8/10 split micro 为正。
 - 简单 raw concat 在 split0 上低于 SP-GCL embedding，说明新信号不是 raw-preserving concat，而是 propagation residual / calibrated propagation。
-- 当前裁决：SPARC-GCL 是下一轮最值得继续的 active candidate，但仍需多 seed、完整 C grid、mode selection 与机制诊断后才可能进入论文主线。
+- 当前裁决：SPARC-GCL 是下一轮最值得继续的 active candidate；Squirrel 信号已较稳，Chameleon 需要 mode selection 和更多 seed 验证。
 - 详细记录见 `docs/spgcl_propagation_calibration_candidate_memo.md`。
 
 ## 当前实验入口能力

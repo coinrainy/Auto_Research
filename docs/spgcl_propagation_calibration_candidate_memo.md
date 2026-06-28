@@ -125,6 +125,55 @@ python evaluate_propagation_calibration.py \
 
 C-grid 复核后，Squirrel 的提升幅度更强且 10/10 split 稳定为正；Chameleon 仍是小幅正向，`ssl_resid1/2` 与 `ssl_prop2` 均高于原始 SSL embedding。
 
+## 项目内可复现 artifacts 复核
+
+已使用 `scripts/run_spgcl_embedding_export.sh` 重新生成项目内 artifacts：
+
+```bash
+DATASETS="Chameleon Squirrel" \
+OUT_DIR="runs/spgcl_official_embeddings_seed42_e100" \
+RESET_EPOCHS=100 \
+LINEAR_EPOCHS=10 \
+RESET_HIDDEN=256 \
+RESET_SEED_NUM=32 \
+RESET_MAX_SIZE=512 \
+RESET_SUBG_NUM_HOPS=2 \
+SEED=42 \
+bash scripts/run_spgcl_embedding_export.sh
+```
+
+随后在新 artifacts 上复跑同一 C-grid：
+
+```bash
+python evaluate_propagation_calibration.py \
+  --runs-dir runs/spgcl_official_embeddings_seed42_e100/artifacts \
+  --include-methods spgcl_official \
+  --modes ssl ssl_prop1 ssl_prop2 ssl_resid1 ssl_resid2 \
+  --max-hop 2 \
+  --split-indices 0 1 2 3 4 5 6 7 8 9 \
+  --c-values 4 16 64 \
+  --max-iter 500 \
+  --out runs/summaries/sparc_seed42_cgrid.csv \
+  --aggregate-out runs/summaries/sparc_seed42_cgrid_aggregate.csv
+```
+
+结果：
+
+| Dataset | Mode | F1Mi mean | F1Ma mean | Delta vs SSL F1Mi | Delta vs SSL F1Ma | Positive/Negative F1Mi |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Chameleon | ssl | 0.631798 | 0.632267 | 0.000000 | 0.000000 | - |
+| Chameleon | ssl_prop1 | 0.637500 | 0.638438 | +0.005702 | +0.006171 | 7/3 |
+| Chameleon | ssl_prop2 | 0.640570 | 0.641855 | +0.008772 | +0.009588 | 8/2 |
+| Chameleon | ssl_resid1 | 0.639254 | 0.639301 | +0.007456 | +0.007034 | 6/4 |
+| Chameleon | ssl_resid2 | 0.634211 | 0.634237 | +0.002412 | +0.001969 | 4/6 |
+| Squirrel | ssl | 0.450817 | 0.445798 | 0.000000 | 0.000000 | - |
+| Squirrel | ssl_prop1 | 0.474832 | 0.471390 | +0.024015 | +0.025592 | 10/0 |
+| Squirrel | ssl_prop2 | 0.480307 | 0.476469 | +0.029491 | +0.030670 | 10/0 |
+| Squirrel | ssl_resid1 | 0.488953 | 0.485416 | +0.038136 | +0.039618 | 10/0 |
+| Squirrel | ssl_resid2 | 0.474736 | 0.471220 | +0.023919 | +0.025421 | 10/0 |
+
+该结果将 SPARC-GCL 的证据从 `/tmp` 临时 artifacts 推进到项目内可复现 artifacts。当前最强模式仍是 Squirrel 上的 `ssl_resid1`，Chameleon 上更偏向 `ssl_prop2`。
+
 ## 研究假设
 
 SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embedding 仍混合了两类信息：
@@ -168,6 +217,6 @@ SPARC-GCL 是当前最值得继续的 active candidate。
 主要风险：
 
 - 当前只是 post-hoc representation calibration；
-- Chameleon 增益小；
+- Chameleon 增益小且 best mode 可能不同于 Squirrel；
 - 需要证明不是 validation/C-grid 偶然；
 - 需要扩展到更多数据集和更多 seed。
