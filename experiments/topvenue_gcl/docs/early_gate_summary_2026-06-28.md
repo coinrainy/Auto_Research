@@ -844,8 +844,20 @@ Texas/Chameleon/Squirrel/Actor × splits0-2 × seed0 × 50 epoch：
 | Variant | Texas ΔF1Mi | Chameleon ΔF1Mi | Squirrel ΔF1Mi | Actor ΔF1Mi | Overall ΔF1Mi | 裁决 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | BPRRNV `w=0.25` | -0.018018 | -0.002924 | -0.005443 | +0.002632 | -0.005938 | 强正则失败 |
-| BPRRNV `w=0.1` | +0.027027 | +0.003655 | +0.000640 | +0.005044 | +0.009092 | active-but-risky |
+| BPRRNV `w=0.1` | +0.027027 | +0.003655 | +0.000640 | +0.005044 | +0.009092 | 初筛通过，待硬门槛 |
 | Uniform gate `w=0.1` | +0.000000 | +0.006579 | -0.005123 | +0.002632 | +0.001022 | selector 有价值但 Chameleon 反例 |
 | Shuffled pair `w=0.1` | -0.027027 | -0.010234 | -0.007365 | -0.001754 | -0.011595 | pair correspondence control 支持 normal |
 
-裁决：BPRRNV 升级为 active-but-risky candidate，但不是成功主方法。下一步必须扩展到 splits0-9、多 seed、homophily safety，并补 `--bprrnv-no-density-gate` 与 `--bprrnv-no-energy-gate`。
+后续硬门槛结果：
+
+| Dataset | splits0-9 normal ΔF1Mi | macro delta | 正/平/负 split | 裁决 |
+| --- | ---: | ---: | --- | --- |
+| Texas | +0.000000 | -0.004765 | 2/4/4 | 均值不成立 |
+| Chameleon | +0.005044 | +0.006057 | 7/1/2 | 小正但需 control |
+| Squirrel | -0.000768 | -0.003631 | 6/0/4 | safety 失败 |
+| Actor | +0.001316 | -0.001021 | 6/0/4 | 噪声级 |
+| Overall | +0.001398 | -0.000840 | 21/5/14 | 不达主方法门槛 |
+
+Chameleon targeted controls：normal +0.005044、shuffled +0.003728、uniform +0.001974 vs `gcn_mlp_gcl`；normal-vs-shuffled mean 只有 +0.001316，且 normal 只在 3/10 split 高于 shuffled、5/10 低于 shuffled。
+
+裁决：BPRRNV 降级为失败/弱正则资产，不再作为 active candidate；后续不再调 `bprrnv_rr_weight`、density threshold、energy strength 或 no-density/no-energy gates。

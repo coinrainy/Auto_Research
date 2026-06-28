@@ -61,42 +61,53 @@ python train.py --dataset Texas --method bprrnv_gcl --epochs 50 --split-index 0 
 - `runs/bprrnv_w01_candidate_comparison_s0_splits0-2_e50.csv`
 - `runs/bprrnv_w01_candidate_aggregate_s0_splits0-2_e50.csv`
 
+## 10 split 复核
+
+已执行 Texas/Chameleon/Squirrel/Actor × splits 0-9 × model seed 0 × 50 epoch。
+
+normal vs `gcn_mlp_gcl`：
+
+| dataset | normal - GCN-MLP | macro delta | 正/平/负 split | aux gate |
+| --- | ---: | ---: | --- | ---: |
+| Texas | +0.000000 | -0.004765 | 2/4/4 | 0.883961 |
+| Chameleon | +0.005044 | +0.006057 | 7/1/2 | 0.526719 |
+| Squirrel | -0.000768 | -0.003631 | 6/0/4 | 0.194958 |
+| Actor | +0.001316 | -0.001021 | 6/0/4 | 0.686506 |
+| Overall | +0.001398 | -0.000840 | 21/5/14 | 0.573036 |
+
+输出文件：
+
+- `runs/bprrnv_w01_s0_splits0-9_e50/runs_vs_gcn_mlp.csv`
+- `runs/bprrnv_w01_s0_splits0-9_e50/aggregate_vs_gcn_mlp.csv`
+- `runs/bprrnv_w01_s0_splits0-9_e50/bprrnv_vs_gcn_mlp_decision_summary.csv`
+
+## Chameleon targeted controls
+
+由于 Chameleon 是唯一有相对清楚小正均值的数据集，补跑 Chameleon splits0-9 的 shuffled pair 与 uniform gate controls。
+
+| variant | mean acc | delta vs GCN-MLP | 正/负 vs GCN-MLP | delta vs normal |
+| --- | ---: | ---: | --- | ---: |
+| normal | 0.419737 | +0.005044 | 7/2 | 0.000000 |
+| shuffled | 0.418421 | +0.003728 | 6/3 | -0.001316 |
+| uniform | 0.416667 | +0.001974 | 4/3 | -0.003070 |
+
+normal-vs-shuffled mean 只有 +0.001316，且 normal 只在 3/10 split 高于 shuffled、5/10 低于 shuffled。这个结果不足以支撑 pair correspondence 机制。
+
+输出文件：
+
+- `runs/bprrnv_w01_chameleon_controls_s0_splits0-9_e50/chameleon_control_comparison.csv`
+- `runs/bprrnv_w01_chameleon_controls_s0_splits0-9_e50/chameleon_control_aggregate.csv`
+
 ## 当前裁决
 
-BPRRNV 暂时升级为 active-but-risky candidate，但不是成功主方法。
+BPRRNV 降级为失败/弱正则资产，不再作为 active candidate。
 
-支持点：
+原因：
 
-- normal 整体优于 `gcn_mlp_gcl`、uniform gate 和 shuffled pair；
-- Texas 的 normal-vs-shuffled 差距最大，机制最干净；
-- Squirrel 上低 aux gate 避免了 EAIRRNV/RRNV 式过度施加，safety 有改善。
+- 10 split overall micro 只有 +0.001398，macro 为负；
+- Texas 均值基本 0，Squirrel 为负，Actor 只有噪声级小正；
+- Chameleon 虽有 +0.005044，但 shuffled control 过近，normal-vs-shuffled split 级别不干净；
+- density/energy selector 没有显示出足够机制优势，uniform gate 与 shuffled pair 都能接近部分收益；
+- 继续补多 seed、homophily safety 或 no-density/no-energy controls 的收益不高。
 
-风险：
-
-- Chameleon 上 uniform gate 高于 normal，说明 selector 不是全局最优；
-- Actor 的 normal/shuffled 差距很小；
-- 当前只跑了 splits0-2 seed0，不能外推到论文级结论；
-- 仍需证明 homophily non-degradation。
-
-## 下一步硬门槛
-
-扩展前必须保持以下停止规则：
-
-- 若 splits0-9 后 normal 不稳定优于 shuffled pair，放弃 pair-correspondence 机制叙事；
-- 若 normal 不优于 uniform gate，降级为普通轻量 RR regularizer；
-- 若 homophily 数据集出现超过 1 个百分点的稳定退化，必须加入 safety fallback 或放弃；
-- 若 no-density 或 no-energy control 接近完整方法，删除无效模块，不保留复杂叙事。
-
-建议下一步命令：
-
-```bash
-cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl
-DATASETS="Texas Chameleon Squirrel Actor" METHODS="gcn_mlp_gcl bprrnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/bprrnv_w01_s0_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh
-```
-
-随后补：
-
-```bash
-DATASETS="Texas Chameleon Squirrel Actor" METHODS="bprrnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/bprrnv_w01_shuffled_s0_splits0-9_e50" EXTRA_ARGS="--rrnv-shuffle-pairs" RUN_TAG="shuffled" OVERWRITE=1 bash scripts/run_split_study.sh
-DATASETS="Texas Chameleon Squirrel Actor" METHODS="bprrnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/bprrnv_w01_uniform_s0_splits0-9_e50" EXTRA_ARGS="--bprrnv-uniform-gate" RUN_TAG="uniform" OVERWRITE=1 bash scripts/run_split_study.sh
-```
+后续不再继续调 `bprrnv_rr_weight`、density threshold、energy strength 或 no-density/no-energy gates。若继续 Natural-View foundation，应转向直接处理 false-negative / negative suppression / downstream separability 的训练目标。
