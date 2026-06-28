@@ -83,7 +83,7 @@ FDNV 第一版裁决：
 - 后续若继续 filter 方向，必须改 objective，而不是继续调 route weight；
 - 下一步优先考虑 semantic/spatial positive split 或 high/low branch complementarity。
 
-SSPNV / AFPNV 当前裁决：
+SSPNV / AFPNV / BSPNV 当前裁决：
 
 - `sspnv_gcl` 的固定完整版本保留为机制原型，但不再作为最终主方法包装，入口为 `--method sspnv_gcl`；
 - 方法使用 semantic positives 监督 high-pass target，spatial positives 监督 low-pass target，并保留 GCN-MLP Natural-View bootstrap；
@@ -94,4 +94,7 @@ SSPNV / AFPNV 当前裁决：
 - Chameleon 上 semantic-only、spatial-only 与 random semantic 均接近或超过完整 SSPNV，说明固定 semantic-spatial 双分支同权相加不是必要机制；
 - Squirrel 上 random semantic / random spatial 失败，说明结构化 positives 有条件性价值，但 full SSPNV 增益仍偏小；
 - `afpnv_gcl` 已实现为置信度加权版本，入口为 `--method afpnv_gcl`；它在 Chameleon/Squirrel 上均未超过对应最强 SSPNV 变体，当前只保留为 ablation；
-- 下一代若继续该家族，必须学习 branch/objective selection，并以 Chameleon semantic-only 与 Squirrel full SSPNV 作为最低门槛；若不能同时超过，应放弃 SSPNV 家族主线。
+- `bspnv_gcl` 已实现为 semantic / spatial / bootstrap branch selection，入口为 `--method bspnv_gcl`；它强于 AFPNV，但仍未同时超过 Chameleon semantic-only 与 Squirrel full SSPNV；
+- SSPNV 家族已触发停止条件，全部降级为失败/条件性消融资产；
+- 不再继续调 SSPNV/AFPNV/BSPNV 的 threshold、temperature、branch bias；
+- 下一代 active idea 必须换训练目标或参考范式，继续保留 `gcn_mlp_gcl` 作为 strong foundation，但不要再把 filter-specific positives 的小变体包装成主线。

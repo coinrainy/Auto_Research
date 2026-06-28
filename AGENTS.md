@@ -1004,3 +1004,14 @@
   - AFPNV 已实现但未超过 full SSPNV 或 Chameleon semantic-only，因此当前只保留为 ablation，不升级为 active main idea。
   - 已更新文档：`experiments/topvenue_gcl/docs/semantic_spatial_positive_natural_view_candidate.md`、`docs/early_gate_summary_2026-06-28.md`、`docs/implementation_principles.md` 与 `experiments/topvenue_gcl/README.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Chameleon Squirrel" METHODS="gcn_mlp_gcl sspnv_gcl afpnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1" EPOCHS=50 RUNS_DIR="runs/afpnv_s1_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh`；若 AFPNV seed1 仍弱于 full SSPNV 或 semantic-only，应停止置信度加权路线，转向更明确的 branch/objective selection 或放弃 SSPNV 家族。
+- 2026-06-28 BSPNV branch selection 实现与 SSPNV 家族放弃：
+  - 已实现 `--method bspnv_gcl`：在 SSPNV positive objective 上加入 semantic / spatial / bootstrap 三分支竞争选择。
+  - 新增配置：`bspnv_branch_temperature=0.1` 与 `bspnv_bootstrap_bias=0.25`。
+  - BSPNV 选择器诊断：Chameleon semantic/spatial/bootstrap prob mean=0.488484/0.186126/0.325391，win fraction=0.483092/0.112868/0.404040；Squirrel prob mean=0.464119/0.212066/0.323815，win fraction=0.512209/0.138627/0.349164。
+  - 已验证：`python -m py_compile train.py summarize_split_study.py src/*.py`、`bash -n scripts/run_split_study.sh && bash -n scripts/run_smoke.sh`、Chameleon/Squirrel 的 `bspnv_gcl` 2 epoch smoke。
+  - 已执行 Chameleon/Squirrel × splits 0-9 × seed0 × 50 epoch BSPNV 小门控，并并入 `experiments/topvenue_gcl/runs/sspnv_controls_wiki_s0_splits0-9_e50/aggregate_vs_gcn_mlp.csv`。
+  - BSPNV vs `gcn_mlp_gcl`：Chameleon +0.032456/+0.032602，9/1 split micro 正/负；Squirrel +0.006436/+0.000592，6/4 split micro 正/负。
+  - 对照裁决：BSPNV 强于 AFPNV，也强于 Chameleon full SSPNV/random semantic 与 Squirrel semantic-only/random controls，但弱于 Chameleon semantic-only/spatial-only 与 Squirrel full SSPNV。
+  - 当前裁决：BSPNV 未达到预设升级门槛，SSPNV / AFPNV / BSPNV 家族全部降级为 ablation assets；不再继续调 threshold、temperature 或 branch bias。
+  - 已更新文档：`experiments/topvenue_gcl/docs/semantic_spatial_positive_natural_view_candidate.md`、`docs/early_gate_summary_2026-06-28.md`、`docs/implementation_principles.md` 与 `experiments/topvenue_gcl/README.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && rg -n "semantic|spatial|high|low|mlp|inference|contrast|positive" ../../third_party_baselines/reference_gcl/S3GCL ../../third_party_baselines/reference_gcl/GraphECL ../../third_party_baselines/reference_gcl/PolyGCL -g '*.py' -g '*.md'`，转向新的训练目标或 top-venue reference pattern，不再微调 SSPNV 家族。

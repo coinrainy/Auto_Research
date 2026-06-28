@@ -275,3 +275,37 @@ Aggregate vs `gcn_mlp_gcl`：
 - Squirrel 上 random positives 失败，说明结构化 positives 仍有条件性价值；
 - AFPNV 已实现但未通过升级门槛，保留为 ablation，不作为 active main idea；
 - 下一阶段若继续 SSPNV 家族，必须做 branch/objective selection，而不是固定同权相加或简单置信度加权。
+
+## 2026-06-28 追加：BSPNV branch selection 裁决
+
+已实现 `--method bspnv_gcl`：在 SSPNV positive objective 上加入 semantic / spatial / bootstrap 三分支竞争选择。
+
+默认配置：
+
+- `bspnv_branch_temperature=0.1`；
+- `bspnv_bootstrap_bias=0.25`；
+- 继续使用 `sspnv_semantic_weight=0.1`、`sspnv_spatial_weight=0.1`、`sspnv_bootstrap_weight=1.0`。
+
+已执行 Chameleon/Squirrel × splits 0-9 × seed0 × 50 epoch，并并入 `runs/sspnv_controls_wiki_s0_splits0-9_e50/aggregate_vs_gcn_mlp.csv`。
+
+Aggregate vs `gcn_mlp_gcl`：
+
+| Dataset | BSPNV ΔF1Mi | BSPNV ΔF1Ma | Positive/Negative F1Mi | 对照裁决 |
+| --- | ---: | ---: | --- | --- |
+| Chameleon | +0.032456 | +0.032602 | 9/1 | 强于 full SSPNV、AFPNV、random semantic；弱于 semantic-only 与 spatial-only |
+| Squirrel | +0.006436 | +0.000592 | 6/4 | 强于 AFPNV/semantic-only/spatial-only/random controls；弱于 full SSPNV |
+
+Branch diagnostics：
+
+| Dataset | semantic prob | spatial prob | bootstrap prob | semantic win | spatial win | bootstrap win |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Chameleon | 0.488484 | 0.186126 | 0.325391 | 0.483092 | 0.112868 | 0.404040 |
+| Squirrel | 0.464119 | 0.212066 | 0.323815 | 0.512209 | 0.138627 | 0.349164 |
+
+裁决：
+
+- BSPNV 比 AFPNV 更合理，但未达到升级门槛；
+- 预设停止条件是同时超过 Chameleon semantic-only 与 Squirrel full SSPNV，BSPNV 没做到；
+- SSPNV / AFPNV / BSPNV 家族全部降级为 ablation assets；
+- 不再继续调该家族的 threshold、temperature、branch bias；
+- 下一代方法应回到 S3GCL / GraphECL / PolyGCL 级参考范式，寻找不同训练目标，而不是继续做 SSPNV 小变体。

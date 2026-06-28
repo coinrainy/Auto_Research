@@ -42,6 +42,12 @@ def read_run_json(path):
         "afpnv_spatial_weight_mean": diagnostics.get("afpnv_spatial_weight_mean"),
         "afpnv_semantic_conf_mean": diagnostics.get("afpnv_semantic_conf_mean"),
         "afpnv_spatial_conf_mean": diagnostics.get("afpnv_spatial_conf_mean"),
+        "bspnv_semantic_prob_mean": diagnostics.get("bspnv_semantic_prob_mean"),
+        "bspnv_spatial_prob_mean": diagnostics.get("bspnv_spatial_prob_mean"),
+        "bspnv_bootstrap_prob_mean": diagnostics.get("bspnv_bootstrap_prob_mean"),
+        "bspnv_semantic_win_fraction": diagnostics.get("bspnv_semantic_win_fraction"),
+        "bspnv_spatial_win_fraction": diagnostics.get("bspnv_spatial_win_fraction"),
+        "bspnv_bootstrap_win_fraction": diagnostics.get("bspnv_bootstrap_win_fraction"),
     }
 
 
