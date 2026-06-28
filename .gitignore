@@ -15,3 +15,5 @@ results/figures/*
 !results/diagnostics/.gitkeep
 !results/figures/.gitkeep
 experiments/grace_idea/runs/
+third_party_baselines/*
+!third_party_baselines/README.md

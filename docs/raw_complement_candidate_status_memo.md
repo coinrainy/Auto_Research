@@ -104,6 +104,7 @@ Cora seeds0-2：
 1. 强 baseline gate：
    - 至少补一个 heterophily-specific GCL baseline：HLCL、PolyGCL 或 SP-GCL；
    - 若无法复现官方实现，则至少写清楚不可比原因，并补公开表格/同协议近似对照。
+   - 当前进展：SP-GCL 官方实现已在本地 smoke 跑通，见 `docs/spgcl_baseline_integration_note.md`。
 
 2. Safety gate：
    - 不继续围绕 `raw_complement_graph_loss_weight` 做大网格；

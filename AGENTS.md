@@ -739,3 +739,12 @@
   - 已新增备忘录：`docs/raw_complement_candidate_status_memo.md`，记录当前证据、已放弃模块、Cora safety 风险、文献边界与下一步硬门槛。
   - 文献边界判断：HLCL、PolyGCL、SP-GCL 等已经覆盖 heterophily GCL 的高低频/滤波式叙事，Raw-Complement 不能包装成泛化 heterophily GCL；当前创新点必须聚焦 raw-feature anchored complement learning。
   - 当前裁决：继续保留 Raw-Complement 作为 active candidate，但进入强 baseline 与机制诊断阶段；若无法超过 HLCL/PolyGCL/SP-GCL 等 heterophily-specific GCL，应放弃顶会主方法路线，转为机制诊断或负结果路线。
+- 2026-06-28 SP-GCL baseline 接入 smoke：
+  - 已在当前项目内本地克隆官方 SP-GCL：`third_party_baselines/SPGCL`；同时克隆 PolyGCL 用于后续审查。第三方源码已通过 `.gitignore` 排除，不提交进主仓库。
+  - 已新增 `third_party_baselines/README.md`，记录第三方 baseline 工作区策略。
+  - 已新增 `experiments/grace_idea/export_spgcl_geom_data.py`，可从当前 PyG `WikipediaNetwork` 缓存导出 SP-GCL 官方 loader 需要的 `chameleon.mat`、`squirrel.mat` 与 `splits/*.npy`。
+  - 已新增 `experiments/grace_idea/scripts/run_spgcl_smoke.sh`，用于一键导出数据并运行 Chameleon SP-GCL short smoke。
+  - 本地兼容补丁：SP-GCL 官方代码中的 `np.int` 在 NumPy 1.24+ 会报错，已在本地克隆中将 `third_party_baselines/SPGCL/data_loader_src/dataset.py` 的 `np.int` 替换为 `int`；该补丁不提交主仓库，需在重新 clone 后重做。
+  - Smoke runner 已跑通：Chameleon、`--reset_epochs 1`、`--linear_epochs 10`、`--reset_hidden 64`、`--reset_seed_num 4`、`--reset_max_size 64`、`--reset_subg_num_hops 2`；最新输出 `[Test] Acc Mean=0.2083333284`，仅证明官方实现可运行，不作为正式性能。
+  - 已新增接入记录：`docs/spgcl_baseline_integration_note.md`。
+  - 下一步建议：写正式 SP-GCL runner 并跑 Chameleon/Squirrel seed0 的半正式/正式配置；若 SP-GCL 强于 Raw-Complement，则必须降级当前 idea。
