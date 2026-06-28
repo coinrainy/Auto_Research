@@ -1178,3 +1178,50 @@ python summarize_raw_complement_probe.py --datasets Chameleon Squirrel --splits 
 - 补 no-penalty 的 homophily safety（Cora/CiteSeer/PubMed）与 WebKB/Actor raw-dominated 边界；
 - 对 Chameleon/Squirrel 增加强 baseline 对照，而不是继续优化 penalty；
 - 实现 per-class / degree / local homophily 诊断，证明 complement 对弱类或高异配区域的实际帮助。
+
+## 2026-06-28 No-Penalty Homophily Safety 检查
+
+目标：检查简化后的 no-penalty raw-relative complement 是否会损伤常规同配图，尤其是此前暴露风险最大的 Cora。
+
+命令：
+
+```bash
+DATASETS="Cora CiteSeer PubMed" SPLITS="0" SEEDS="0" METHODS="raw_complement_gcl" EPOCHS=100 BATCH_SIZE=4096 SAVE_DIR="runs/raw_complement_graph_w0_homophily_seed0_e100" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode graph --raw-complement-weight 0" LOG_EVERY=100 scripts/run_split_study.sh
+DATASETS="Cora" SPLITS="0" SEEDS="1 2" METHODS="raw_complement_gcl" EPOCHS=100 BATCH_SIZE=4096 SAVE_DIR="runs/raw_complement_graph_w0_cora_seeds1-2_e100" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode graph --raw-complement-weight 0" LOG_EVERY=100 scripts/run_split_study.sh
+```
+
+Seed0 homophily 对照：
+
+| Dataset | GRACE F1Mi/F1Ma | old penalty graph | no-penalty graph | no-penalty - GRACE |
+| --- | ---: | ---: | ---: | ---: |
+| Cora | 0.822395 / 0.801539 | 0.799699 / 0.765548 | 0.798332 / 0.769157 | -0.024063 / -0.032382 |
+| CiteSeer | 0.717084 / 0.656260 | 0.723984 / 0.651930 | 0.722983 / 0.646212 | +0.005899 / -0.010048 |
+| PubMed | 0.844247 / 0.840378 | 0.839513 / 0.835653 | 0.841467 / 0.837738 | -0.002780 / -0.002640 |
+
+Cora seeds0-2 对照：
+
+| Seed | GRACE F1Mi/F1Ma | no-penalty graph | Delta |
+| ---: | ---: | ---: | ---: |
+| 0 | 0.828275 / 0.808149 | 0.798332 / 0.769157 | -0.029943 / -0.038992 |
+| 1 | 0.814055 / 0.802638 | 0.819661 / 0.798023 | +0.005606 / -0.004615 |
+| 2 | 0.832513 / 0.819223 | 0.819798 / 0.805944 | -0.012715 / -0.013279 |
+| mean | - | - | -0.012351 / -0.018962 |
+
+Cora output selection 诊断：
+
+- no-penalty Cora seeds0-2 的 label-based selected 表示均值为 F1Mi/F1Ma = 0.812372 / 0.791086；
+- selected choices 主要为 `graph`，少量为 `anchor_graph`；
+- 该选择仍低于 GRACE seeds0-2 均值，不能作为 Cora safety 解决方案。
+
+判断：
+
+- No-penalty 简化没有修复 Cora，同配 safety 仍是当前最大风险；
+- CiteSeer 与 PubMed 基本可控，问题集中在 Cora 类小同配图；
+- 当前方法不能声称 homophily non-degradation；论文叙事必须明确：主收益来自 WikipediaNetwork-style heterophily graphs，homophily 需要 safety gate 或 fallback；
+- 下一步应停止继续调 `raw_complement_weight`，转向无标签/轻标签 safety selection、dataset-level gate，或在主实验中明确报告 Cora 风险边界。
+
+下一步建议：
+
+- 设计 Cora safety gate：在无标签条件下判断何时使用 GRACE graph representation、raw-complement graph fallback 或 raw/anchor_graph；
+- 复核 no-penalty 在 WebKB/Actor 上是否仍主要退回 raw baseline；
+- 若 safety gate 无法改善 Cora，应把论文定位从“通用 GCL 方法”收缩为“heterophily-conditioned raw-complement GCL + failure boundary analysis”。

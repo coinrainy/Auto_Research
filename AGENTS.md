@@ -702,3 +702,10 @@
   - Squirrel no-penalty 相对 raw 仍有少量非正例：split3 seed1 与 split9 seed0 为负，split4 seed0/1 micro 持平但 macro 为正。结论是 penalty 不必要，而不是 no-penalty 在每个 pair 上都更强。
   - 已将 `experiments/grace_idea/train.py` 的 `--raw-complement-weight` 默认值改为 `0.0`。`0.05` 版本只保留为 optional regularizer / appendix ablation。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode graph --raw-complement-weight 0 --seed 0 --epochs 100 --save-dir /tmp/raw_complement_cora_graph_w0_seed0 --overwrite --log-every 100`，用于补 no-penalty homophily safety。
+- 2026-06-28 No-Penalty Homophily Safety 检查：
+  - 已执行 no-penalty graph fallback：Cora/CiteSeer/PubMed seed0 × 100 epochs，输出在 `runs/raw_complement_graph_w0_homophily_seed0_e100`；另补 Cora seeds1-2，输出在 `runs/raw_complement_graph_w0_cora_seeds1-2_e100`。
+  - Seed0 对照：Cora no-penalty graph 相对 GRACE 为 -0.024063/-0.032382；CiteSeer 为 +0.005899/-0.010048；PubMed 为 -0.002780/-0.002640。
+  - Cora seeds0-2 对照：no-penalty graph 相对 GRACE 均值为 F1Mi/F1Ma -0.012351/-0.018962；seed1 接近 GRACE，但 seed0 明显退化，seed2 小退化。
+  - Cora no-penalty output selection 诊断：label-based selected 表示 seeds0-2 均值为 0.812372/0.791086，仍低于 GRACE，不能作为 safety 解决方案。
+  - 当前判断：No-penalty 简化不伤 Chameleon/Squirrel 主收益，但没有解决 Cora homophily safety。当前方法不能声称 homophily non-degradation；必须设计 safety gate，或把论文定位收缩为 heterophily-conditioned raw-complement GCL。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python select_representation_proxy.py --run-dir runs/raw_complement_graph_w0_homophily_seed0_e100/Cora_raw_complement_gcl_seed0 --run-dir runs/raw_complement_graph_w0_cora_seeds1-2_e100/Cora_raw_complement_gcl_seed1 --run-dir runs/raw_complement_graph_w0_cora_seeds1-2_e100/Cora_raw_complement_gcl_seed2 --selection-eval-mode random --random-selection-repeats 5 --candidate-names raw graph anchor_graph --c-min-power -8 --c-max-power 8 --max-iter 3000 --out runs/summaries/raw_complement_w0_cora_proxy_selection_s0-2.csv --aggregate-out runs/summaries/raw_complement_w0_cora_proxy_selection_s0-2_aggregate.csv`。
