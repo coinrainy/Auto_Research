@@ -138,7 +138,7 @@ def parse_args():
     parser.add_argument('--cbr-stability-min-margin', type=float, default=0.05)
     parser.add_argument('--cbr-stability-temperature', type=float, default=0.03)
     parser.add_argument('--cbr-stability-min-scale', type=float, default=0.25)
-    parser.add_argument('--raw-complement-weight', type=float, default=0.05)
+    parser.add_argument('--raw-complement-weight', type=float, default=0.0)
     parser.add_argument('--raw-complement-detach-anchor',
                         action=argparse.BooleanOptionalAction,
                         default=True)

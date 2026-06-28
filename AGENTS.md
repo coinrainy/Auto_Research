@@ -696,3 +696,9 @@
   - 机制结论：简单 `[raw, graph_context]` 无法解释 Raw-Complement 在 Squirrel 上超过 raw 的收益；raw-relative complement 机制在完整 10 split 上仍成立。`raw_complement_weight=0.05` correlation penalty 不应保留为主方法核心，因为 no-penalty 版本持平甚至略高。
   - 当前默认策略调整：下一阶段优先使用 `--raw-complement-weight 0` 做 Chameleon/Squirrel splits0-9 × seeds1-2 复核；若稳定，正式把 correlation penalty 从主方法移除。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Chameleon Squirrel" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" METHODS="raw_complement_gcl" EPOCHS=50 BATCH_SIZE=4096 SAVE_DIR="runs/wiki_ablation_anchor_graph_w0_splits0-9_seeds1-2_e50" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode anchor_graph --raw-complement-weight 0" LOG_EVERY=50 scripts/run_split_study.sh`。
+- 2026-06-28 No-Penalty seeds0-2 完整复核与默认值切换：
+  - 已执行 no-penalty `anchor_graph` 的 Chameleon/Squirrel splits0-9 × seeds1-2 × 50 epoch；结合 seed0 生成 `runs/summaries/raw_complement_wiki_ablation_anchor_graph_w0_e50_splits0-9_seeds0-2_aggregate.csv`。
+  - No-penalty vs early penalty0.05：Chameleon RC-raw F1Mi/F1Ma 为 +0.036769/+0.036744 vs +0.037208/+0.037554；Squirrel 为 +0.010471/+0.012456 vs +0.010086/+0.010904；两者相对 GRACE 均保持 30/30 为正。
+  - Squirrel no-penalty 相对 raw 仍有少量非正例：split3 seed1 与 split9 seed0 为负，split4 seed0/1 micro 持平但 macro 为正。结论是 penalty 不必要，而不是 no-penalty 在每个 pair 上都更强。
+  - 已将 `experiments/grace_idea/train.py` 的 `--raw-complement-weight` 默认值改为 `0.0`。`0.05` 版本只保留为 optional regularizer / appendix ablation。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode graph --raw-complement-weight 0 --seed 0 --epochs 100 --save-dir /tmp/raw_complement_cora_graph_w0_seed0 --overwrite --log-every 100`，用于补 no-penalty homophily safety。

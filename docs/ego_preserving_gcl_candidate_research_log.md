@@ -365,7 +365,7 @@ python evaluate_feature_fusion.py --runs-dir runs/ego_grace_splits0-9_seed0_e100
 
 新增参数：
 
-- `--raw-complement-weight`，默认 `0.05`；
+- `--raw-complement-weight`，当前默认 `0.0`；早期实验使用 `0.05`，后续消融显示该 penalty 不是主贡献；
 - `--raw-complement-detach-anchor / --no-raw-complement-detach-anchor`；
 - `--raw-complement-eval-mode anchor|hidden|graph`，用于测试 raw-anchor、hidden concat 与 graph fallback。
 
@@ -1139,3 +1139,42 @@ DATASETS="Chameleon Squirrel" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="ra
 - 跑 no-penalty `anchor_graph` 的 Chameleon/Squirrel splits0-9 × seeds1-2，对齐此前默认 seeds0-2；
 - 若 no-penalty 多 seed 仍稳定，正式把 correlation penalty 从方法主干移除；
 - 继续补强机制诊断：比较 `raw_graph`、`anchor_only`、`anchor_graph_weight0` 的 per-class F1 与 low-degree/high-degree 节点表现。
+
+## 2026-06-28 No-Penalty seeds0-2 完整复核与默认值切换
+
+目标：验证 no-penalty `anchor_graph` 是否在 Chameleon/Squirrel splits0-9 × seeds0-2 上与早期 `raw_complement_weight=0.05` 版本持平，从而决定是否把 penalty 移出主方法。
+
+命令：
+
+```bash
+DATASETS="Chameleon Squirrel" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" METHODS="raw_complement_gcl" EPOCHS=50 BATCH_SIZE=4096 SAVE_DIR="runs/wiki_ablation_anchor_graph_w0_splits0-9_seeds1-2_e50" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode anchor_graph --raw-complement-weight 0" LOG_EVERY=50 scripts/run_split_study.sh
+python summarize_raw_complement_probe.py --datasets Chameleon Squirrel --splits 0 1 2 3 4 5 6 7 8 9 --seeds 0 1 2 --raw-dir runs/raw_feature_smoke --grace-dir /tmp/grace_chameleon_e50 --grace-dir /tmp/grace_squirrel_e50 --grace-dir runs/wiki_splits0-9_seeds1-2_e50 --raw-complement-dir runs/wiki_ablation_anchor_graph_w0_splits0-9_seed0_e50 --raw-complement-dir runs/wiki_ablation_anchor_graph_w0_splits0-9_seeds1-2_e50 --paired-out runs/summaries/raw_complement_wiki_ablation_anchor_graph_w0_e50_splits0-9_seeds0-2_paired.csv --aggregate-out runs/summaries/raw_complement_wiki_ablation_anchor_graph_w0_e50_splits0-9_seeds0-2_aggregate.csv
+```
+
+对比结果（Chameleon/Squirrel × splits0-9 × seeds0-2）：
+
+| Variant | Dataset | RC - raw F1Mi | pos/neg | RC - GRACE F1Mi | pos/neg | RC - raw F1Ma | RC - GRACE F1Ma |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| penalty0.05 | Chameleon | +0.037208 | 30/0 | +0.073319 | 30/0 | +0.037554 | +0.078816 |
+| penalty0.05 | Squirrel | +0.010086 | 28/2 | +0.062184 | 30/0 | +0.010904 | +0.078077 |
+| no_penalty | Chameleon | +0.036769 | 30/0 | +0.072880 | 30/0 | +0.036744 | +0.078006 |
+| no_penalty | Squirrel | +0.010471 | 26/2 | +0.062568 | 30/0 | +0.012456 | +0.079629 |
+
+细节：
+
+- No-penalty 在 Chameleon 上与 penalty0.05 基本持平，30/30 pair 仍同时超过 raw 与 GRACE；
+- No-penalty 在 Squirrel 上相对 GRACE 仍 30/30 为正，且 F1Mi/F1Ma 均值略高于 penalty0.05；
+- Squirrel 相对 raw 仍有少量非正例：split3 seed1 为 -0.004803/-0.020369，split9 seed0 为 -0.002882/-0.003898；split4 seed0/1 的 micro 与 raw 持平但 macro 为正；
+- 结论不是“no-penalty 全面更强”，而是“penalty 不提供必要收益，移除后性能不降且方法更简单”。
+
+当前决策：
+
+- 已将 `train.py` 的 `--raw-complement-weight` 默认值改为 `0.0`；
+- 主方法表述应为 no-penalty raw-relative graph complement；
+- `raw_complement_weight=0.05` 仅作为附录消融或 robustness check，不再作为方法主干。
+
+下一步建议：
+
+- 补 no-penalty 的 homophily safety（Cora/CiteSeer/PubMed）与 WebKB/Actor raw-dominated 边界；
+- 对 Chameleon/Squirrel 增加强 baseline 对照，而不是继续优化 penalty；
+- 实现 per-class / degree / local homophily 诊断，证明 complement 对弱类或高异配区域的实际帮助。

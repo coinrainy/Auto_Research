@@ -229,7 +229,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `ego_grace` 支持纯 MLP ego encoder。
 - `residual_grace` 支持 `--ego-gate-init`，并记录 `ego_gate`。
 - `gated_ego_graph_grace` 支持 `--graph-gate-temperature`、`--graph-gate-threshold`、`--graph-gate-min`、`--graph-gate-max`，并记录 `graph_gate_*`。
-- `raw_complement_gcl` 支持 `--raw-complement-weight`、`--raw-complement-detach-anchor/--no-raw-complement-detach-anchor`、`--raw-complement-eval-mode anchor|hidden|graph|anchor_graph|raw_graph`，并记录 raw/complement correlation diagnostics。
+- `raw_complement_gcl` 支持 `--raw-complement-weight`、`--raw-complement-detach-anchor/--no-raw-complement-detach-anchor`、`--raw-complement-eval-mode anchor|hidden|graph|anchor_graph|raw_graph`，并记录 raw/complement correlation diagnostics；当前 `--raw-complement-weight` 默认值已改为 `0.0`，`0.05` 仅作为附录消融/robustness check。
 - `evaluate_raw_features.py` 支持对原始 `data.x` 使用当前同一套 mask/random linear evaluation 协议，作为 ego/residual/GRACE 的 feature-only 硬 baseline。
 - `evaluate_feature_fusion.py` 支持递归读取 `artifacts.pt`，在同一 split 下评估 `raw`、`ssl`、`raw+ssl concat`，并输出 concat 相对 raw/ssl 的 paired delta 与 aggregate summary。
 - `select_representation.py` 支持读取 `artifacts.pt` 并用验证集选择 raw/saved/anchor/graph/complement/hidden 候选表示；当前定位为单 run / 小批量诊断工具，全候选完整 C 网格在 Actor 上过慢，不作为正式大规模评估主入口。
@@ -279,7 +279,8 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - Chameleon/Squirrel splits0-9 × seeds0-2 的 50 epoch 多 seed 复核已经完成：Chameleon 相对 raw 为 +0.037208/+0.037554，30/30 pair 为正；相对 GRACE 为 +0.073319/+0.078816，30/30 pair 为正。Squirrel 相对 raw 为 +0.010086/+0.010904，28/30 pair 为正；相对 GRACE 为 +0.062184/+0.078077，30/30 pair 为正。
 - Chameleon/Squirrel splits0-2 × seeds0-2 机制消融显示：`graph_only` 相对 raw 全负；`raw_graph=[raw, graph_context]` 明显弱于 residual complement，Squirrel 相对 raw F1Mi 变为 -0.006084；`anchor_only=[raw, complement]` 保留大部分收益但 Squirrel 有 2/9 个相对 raw 负例；`anchor_graph_weight0` 与默认几乎持平。
 - Chameleon/Squirrel 完整 10 split seed0 复核显示：`raw_graph` 在 Chameleon 上 RC-raw F1Mi/F1Ma 为 +0.014035/+0.015452，但低于默认 +0.033772/+0.033688；在 Squirrel 上 RC-raw F1Mi/F1Ma 为 -0.006340/-0.000734，0/9 split 为正。`anchor_graph_weight0` 与默认持平甚至略高：Chameleon +0.034868/+0.035164，Squirrel +0.009702/+0.013379。
-- 当前决策：Raw-Complement 在 WebKB/Actor 上降级为机制诊断与 output safety selection 资产，但在 Chameleon/Squirrel 上重新成为当前 active candidate。它不是通用 heterophily SOTA claim，而是 raw-feature anchored complement learning 在 WikipediaNetwork-style heterophily graphs 上的条件性强候选。当前主贡献应收缩为 raw-relative graph complement parameterization；correlation penalty 不是核心贡献，应从主方法移出，作为 optional regularizer / appendix ablation。下一步默认使用 `--raw-complement-weight 0` 做 Chameleon/Squirrel 多 seed 复核，并准备强 baseline 对照。
+- No-penalty Chameleon/Squirrel splits0-9 × seeds0-2 复核已经完成：no-penalty 在 Chameleon 上 RC-raw F1Mi/F1Ma 为 +0.036769/+0.036744，30/30 pair 为正；Squirrel 为 +0.010471/+0.012456，相对 GRACE 30/30 为正。与早期 `0.05` 版本基本持平，且 Squirrel macro 略高。
+- 当前决策：Raw-Complement 在 WebKB/Actor 上降级为机制诊断与 output safety selection 资产，但在 Chameleon/Squirrel 上重新成为当前 active candidate。它不是通用 heterophily SOTA claim，而是 raw-feature anchored complement learning 在 WikipediaNetwork-style heterophily graphs 上的条件性强候选。当前主贡献应收缩为 no-penalty raw-relative graph complement parameterization；correlation penalty 已从主方法移出，作为 optional regularizer / appendix ablation。下一步补 homophily safety、WebKB/Actor 边界与强 baseline 对照。
 - 完整 C 网格 split0-2：`ego_grace` concat - raw 在 Actor/Cornell/Texas 为正、Wisconsin 为负；`residual_grace` 仅 Actor 稳定正向，Cornell/Texas/Wisconsin 为负。
 - 固定 C=1 的 10 split 快速筛查：ego/residual concat - raw 在 Actor/Cornell/Texas/Wisconsin 均为正，但该证据只能说明存在互补信号，不足以支撑 SOTA claim。
 - 下一步应实现显式 raw-anchored residual/complement objective 或 light-validation fusion，而不是继续把 `ego_grace` / `residual_grace` 单独包装为方法。
