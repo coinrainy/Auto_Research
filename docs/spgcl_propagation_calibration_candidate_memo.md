@@ -240,6 +240,69 @@ class 级关键发现：
 - Chameleon 的收益更像局部条件性收益：residual branch 能帮助低/中 local-homophily 区域，但会损害高 local-homophily 区域；propagation branch 更平滑、更稳。
 - 因此下一步不应简单固定 `ssl_resid1`，而应设计 label-free mode selection 或 node/dataset-level gate，在 `ssl`、`ssl_prop2` 与 `ssl_resid1` 之间自适应选择。
 
+## Label-free mode selection v1
+
+已新增脚本：
+
+- `experiments/grace_idea/select_sparc_mode_proxy.py`
+
+该脚本评估 SPARC 候选模式，并输出：
+
+- 每个 candidate mode 的 mask linear probe 结果；
+- 无标签 balanced proxy selector；
+- 无标签 edge-contrast selector；
+- 无标签 effective-rank / low-anisotropy selector；
+- 新增 feature-adaptive selector；
+- validation selector 与 oracle selector 只作为诊断上界，不作为无标签方法。
+
+运行命令：
+
+```bash
+cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
+python select_sparc_mode_proxy.py \
+  --runs-dir runs/spgcl_official_embeddings_seed42_e100/artifacts \
+  --include-methods spgcl_official \
+  --split-indices 0 1 2 3 4 5 6 7 8 9 \
+  --c-values 4 16 64 \
+  --max-iter 500 \
+  --out runs/summaries/sparc_mode_proxy_seed42.csv \
+  --aggregate-out runs/summaries/sparc_mode_proxy_seed42_aggregate.csv
+```
+
+`feature-adaptive` 的当前规则：
+
+- 先计算原始特征 `data.x` 的 edge-random contrast；
+- 若 `feature_edge_random_contrast < 0`，说明边上原始特征比随机节点对更不相似，图呈现 feature-disassortative 状态，选择 effective-rank / residual route；
+- 否则选择 edge-contrast / propagation route。
+
+项目内 official SP-GCL seed42 artifacts 上的早筛结果：
+
+| Dataset | Feature edge-random contrast | Selector | Selected mode | F1Mi | F1Ma |
+| --- | ---: | --- | --- | ---: | ---: |
+| Chameleon | +0.008638 | `selected_feature_adaptive` | `ssl_prop2` | 0.640570 | 0.641855 |
+| Chameleon | +0.008638 | `selected_ssl` | `ssl` | 0.631798 | 0.632267 |
+| Chameleon | +0.008638 | `selected_oracle` | mixed | 0.652412 | 0.652424 |
+| Squirrel | -0.001591 | `selected_feature_adaptive` | `ssl_resid1` | 0.488953 | 0.485416 |
+| Squirrel | -0.001591 | `selected_ssl` | `ssl` | 0.450817 | 0.445798 |
+| Squirrel | -0.001591 | `selected_oracle` | mostly `ssl_resid1` | 0.491162 | 0.487506 |
+
+对照结果：
+
+- balanced proxy v1 固定选择 `ssl_prop1`，在两个数据集上都超过 `ssl`，但低于 feature-adaptive；因此不作为当前主 selector。
+- edge-contrast selector 固定选择 `ssl_prop2`，在 Chameleon 最强，在 Squirrel 低于 `ssl_resid1`。
+- effective-rank / low-anisotropy selector 固定选择 `ssl_resid1`，在 Squirrel 最强，在 Chameleon 接近但略低于 `ssl_prop2`。
+- validation selector 在当前设置中反而低于 feature-adaptive，说明简单用少量 val label 选 mode 不一定稳定。
+
+当前方法化假设更新：
+
+> Feature-disassortativity Adaptive SPARC: 当原始特征在图边上呈现正 edge-random contrast 时，传播分支 `P^k z` 更可能补充平滑邻域信息；当原始特征 edge-random contrast 为负时，残差分支 `z - Pz` 更可能保留被传播抹平的判别信号。
+
+保守裁决：
+
+- 该 selector 是 SPARC 从 post-hoc analysis 走向 label-free method 的第一个正向证据。
+- 目前只覆盖 Chameleon/Squirrel 与一个 official SP-GCL seed42 embedding；不能宣称最终 SOTA。
+- 下一步必须补不同 SP-GCL seed / epoch artifacts，并尝试把该 gate 扩展到更多 heterophily 数据集或至少补足同配图 safety。
+
 ## 研究假设
 
 SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embedding 仍混合了两类信息：
