@@ -4,7 +4,7 @@
 
 当前 active foundation：**GCN-MLP Natural View GCL**。它在 Texas/Actor/Chameleon/Squirrel 的轻量 split sanity 中稳定超过 GRACE，但本身不够创新；后续 candidate 必须在它之上给出新机制和增益。`ER-Cache`、`ER-Residual`、`Energy-SPGCL`、`DANV` 与 `FDNV` 均已降级为失败/条件性消融。
 
-当前 active-but-risky candidate：**DS-RRNV-GCL / Density-Safe Redundancy-Reduced Natural-View GCL**，入口为 `--method dsrrnv_gcl`。它保留 RRNV 的 VICReg/CCA 风格 redundancy reduction 训练目标，但在 final representation 中用图平均度 gate 混合 graph/high residual view。Texas 在 splits 0-2 上强正，Chameleon 小正且 normal-vs-shuffled 较干净，Squirrel 均值由 RRNV 的负向转为小正；但 Squirrel shuffled 仍明显强于 normal，因此 DS-RRNV 不是最终成功方法，只是当前最值得继续机制诊断的候选。
+当前 active-but-risky candidate：**RWIRRNV / Reliability-Weighted Invariance RRNV**，入口为 `--method rwirrnv_gcl`。它保留 RRNV 的 VICReg/CCA 风格 redundancy reduction 训练目标和 DS-RRNV final representation，但用节点级 reliability 降低不可靠节点的 invariance 权重。split0 seed0 中 Texas/Chameleon 强正且 shuffled-weight control 支持，Actor 小正但 control 不干净，Squirrel 失败；因此 RWIRRNV 不是最终成功方法，只是当前最值得进入 splits 0-2 和 Squirrel failure analysis 的候选。
 
 Density-Perturbed RRNV (DPRRNV) 已作为高密度扰动配对诊断实现，入口为 `--method dprrnv_gcl`。它在 Squirrel split0 上修复明显，但 Actor/Chameleon 的 full-shuffled control 更强，因此只保留为机制线索，不升级为主方法。
 
@@ -42,7 +42,7 @@ Density-adaptive Invariance RRNV (DIRRNV) 已降级为失败 safety 变体，入
 - SRGNV 尝试蒸馏 graph view 的 structure residual，但 split0 early gate 已失败，当前只保留为 negative result；
 - PCNV 尝试用 prototype-level natural-view assignment consistency 缓解 instance-level positive/negative 噪声，但 shuffled control、Squirrel 失败与 prototype collapse 仍未过，当前只保留为条件性/诊断资产；
 - LCOS/LCM 尝试节点级局部冲突 objective selection 与 final-only representation mix，但 Texas micro 失败且 shuffled control 不干净，当前只保留诊断线索；
-- 当前仍没有可直接包装为 2026 顶会/顶刊主方法的成功 idea；DS-RRNV 是当前最值得保留的 active-but-risky candidate。DPRRNV/NPRRNV 只保留为高密度图机制线索。下一代工作应围绕 DS-RRNV 的 Squirrel 机制反证与强基线同协议复现展开，而不是继续调 DSP、PCNV、LCOS、LCM、DARRNV、DIRRNV、图级 DPRRNV 或节点级 target perturbation。
+- 当前仍没有可直接包装为 2026 顶会/顶刊主方法的成功 idea；RWIRRNV 是当前最值得保留的 active-but-risky candidate。DPRRNV/NPRRNV 只保留为高密度图机制线索。下一代工作应围绕 RWIRRNV 的 splits 0-2 复核、Squirrel failure analysis 与强基线同协议复现展开，而不是继续调 DSP、PCNV、LCOS、LCM、DARRNV、DIRRNV、图级 DPRRNV 或节点级 target perturbation。
 
 最小 smoke：
 
@@ -103,6 +103,8 @@ python train.py --dataset Texas --method dprrnv_gcl --epochs 5 --split-index 0 -
 python train.py --dataset Texas --method dprrnv_gcl --epochs 5 --split-index 0 --seed 0 --rrnv-shuffle-pairs
 python train.py --dataset Texas --method nprrnv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method nprrnv_gcl --epochs 5 --split-index 0 --seed 0 --nprrnv-shuffle-gate
+python train.py --dataset Texas --method rwirrnv_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method rwirrnv_gcl --epochs 5 --split-index 0 --seed 0 --rwirrnv-shuffle-weight
 python train.py --dataset Texas --method energy_spgcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_residual_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_cache_gcl --epochs 5 --split-index 0 --seed 0

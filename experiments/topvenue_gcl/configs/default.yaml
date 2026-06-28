@@ -111,6 +111,9 @@ nprrnv_residual_weight: 0.5
 nprrnv_agreement_weight: 0.5
 nprrnv_view_weight: 0.5
 nprrnv_shuffle_gate: false
+rwirrnv_min_reliability: 0.1
+rwirrnv_weight_power: 1.0
+rwirrnv_shuffle_weight: false
 variance_loss_weight: 1.0
 covariance_loss_weight: 0.01
 eval_mode: auto

@@ -1181,3 +1181,11 @@
   - 已执行 strict `--nprrnv-min-local-scale 0.0` 的 Chameleon/Squirrel gate，输出目录 `experiments/topvenue_gcl/runs/nprrnv_strict_split0_s0_e50/`；normal vs `gcn_mlp_gcl`：Chameleon -0.013158、Squirrel +0.028818。
   - 当前裁决：NPRRNV 对 Squirrel 有正信号，但默认与 strict 都无法避免 Chameleon 退化；不升级为主方法，不进入 splits 0-2，不继续调 `nprrnv_min_local_scale`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/nprrnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv && cat runs/nprrnv_strict_split0_s0_e50/aggregate_vs_gcn_mlp.csv` 查看 NPRRNV 失败边界；随后应转向 reliability-weighted invariance / filtering，而不是继续扰动 graph target。
+- 2026-06-29 RWIRRNV reliability-weighted invariance：
+  - 已实现 `experiments/topvenue_gcl/train.py --method rwirrnv_gcl`，Reliability-Weighted Invariance RRNV：复用 NPRRNV 的节点级不可靠性估计，但不扰动 graph target，只对 RRNV invariance MSE 做 per-node reliability weighting；variance/covariance 仍保持全局约束。
+  - 已新增配置/CLI：`rwirrnv_min_reliability`、`rwirrnv_weight_power`、`rwirrnv_shuffle_weight`；`--rwirrnv-shuffle-weight` 作为 reliability 排序 control。
+  - 已完成 smoke：`python -m py_compile train.py summarize_split_study.py src/*.py`、`python train.py --help | rg "rwirrnv|nprrnv|method"`、Texas/Squirrel RWIRRNV 2 epoch smoke；Texas reliability mean 约 0.999961，Squirrel 约 0.527888。
+  - 已执行 RWIRRNV split0 seed0 50 epoch normal，输出目录 `experiments/topvenue_gcl/runs/rwirrnv_split0_s0_e50/`；normal vs `gcn_mlp_gcl`：Texas +0.081081、Actor +0.009211、Chameleon +0.043860、Squirrel -0.008646。
+  - 已执行 `--rwirrnv-shuffle-weight` control（Texas/Chameleon/Actor）：normal-vs-shuffled-weight 分别为 Texas +0.108108、Chameleon +0.028509、Actor -0.003289。
+  - 当前裁决：RWIRRNV 升级为 active-but-risky candidate。Texas/Chameleon 是强证据且 control 支持；Actor 弱且 control 不干净；Squirrel 仍失败，不能声称成功。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/rwirrnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv` 查看 RWIRRNV 边界；随后跑 splits 0-2 复核并做 Squirrel failure analysis。

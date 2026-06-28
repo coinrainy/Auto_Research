@@ -794,3 +794,18 @@ strict `min_local_scale=0.0` 只跑 Chameleon/Squirrel：
 | Squirrel | +0.028818 | 0.329999 | 正向但不足以保留主线 |
 
 裁决：NPRRNV 不进入 splits 0-2，也不继续调参。节点级 target perturbation 能给 Squirrel 正信号，但仍会伤害 Chameleon；后续应改为 reliability-weighted invariance 或 filtering，而不是继续扰动 graph target。
+
+## 2026-06-29 追加：RWIRRNV reliability-weighted invariance
+
+已实现 `--method rwirrnv_gcl`，暂名 Reliability-Weighted Invariance RRNV。它复用 NPRRNV 的节点级不可靠性估计，但不再扰动 graph target，而是只对不可靠节点降低 RRNV invariance MSE 权重，variance/covariance 仍保持全局约束。新增 `--rwirrnv-shuffle-weight` 作为 reliability 排序 control。
+
+split0 seed0：
+
+| Dataset | ΔF1Mi vs GCN-MLP | normal - shuffled-weight | reliability mean | 裁决 |
+| --- | ---: | ---: | ---: | --- |
+| Texas | +0.081081 | +0.108108 | 0.999961 | 强正且 control 支持 |
+| Actor | +0.009211 | -0.003289 | 0.999606 | 小正但 control 不干净 |
+| Chameleon | +0.043860 | +0.028509 | 0.952180 | 强正且 control 支持 |
+| Squirrel | -0.008646 | 未跑 | 0.533684 | 失败 |
+
+裁决：RWIRRNV 升级为新的 active-but-risky candidate，但不能声称成功。它解决了 NPRRNV 伤害 Chameleon 的问题，并在 Texas/Chameleon 给出比 DS-RRNV 更强的单 split 信号；但 Squirrel 仍失败，Actor control 不干净。下一步必须做 splits 0-2 复核与 Squirrel failure fix。
