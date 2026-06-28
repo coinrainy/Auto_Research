@@ -670,3 +670,53 @@ python summarize_split_study.py --runs-dir "$RUNS_DIR" --baseline-method gcn_mlp
 - Texas shuffled final mix 大幅超过 normal，说明当前 local-conflict gate 不是稳健机制；
 - Actor/Chameleon 的小幅正向不足以支撑主方法；
 - 后续不再围绕 local-conflict graph/high mix 调参。
+
+## 2026-06-29 追加：DSP-GCL 与 RRNV-GCL
+
+已实现 `--method dsp_gcl`，暂名 Downstream Separability Proxy GCL。它用 ego+graph representation 的 kNN density margin 与 ego/graph view consistency 估计节点级 loss weight，并用 `--dsp-shuffle-weight` 做机制 control。
+
+DSP split0 seed0 early gate：
+
+| Dataset | ΔF1Mi vs GCN-MLP | normal - shuffled | 裁决 |
+| --- | ---: | ---: | --- |
+| Texas | +0.000000 | -0.027027 | shuffled 反超 |
+| Actor | +0.005921 | +0.014474 | 小正 |
+| Chameleon | -0.010965 | +0.002193 | baseline 失败 |
+| Squirrel | -0.013449 | +0.011527 | baseline 失败 |
+
+裁决：DSP-GCL 降级为失败/诊断资产；separability proxy 的排序有方差，但不能稳定带来下游收益。
+
+已实现 `--method rrnv_gcl`，暂名 Redundancy-Reduced Natural-View GCL。它保留 `gcn_mlp_gcl` 的 MLP ego view 与 GCN graph view，但用 VICReg/CCA 风格 redundancy reduction 替换 BYOL 式 bootstrap；`--rrnv-shuffle-pairs` 是机制 control。
+
+RRNV split0 seed0 early gate：
+
+| Dataset | ΔF1Mi vs GCN-MLP | normal - shuffled | 裁决 |
+| --- | ---: | ---: | --- |
+| Texas | +0.081081 | +0.081081 | 强正 |
+| Actor | +0.019079 | +0.003289 | 小正，control 弱 |
+| Chameleon | +0.026316 | +0.024123 | 正向且 control 较干净 |
+| Squirrel | -0.021134 | -0.003842 | 失败 |
+
+RRNV splits 0-2 seed0 复核：
+
+| Dataset | mean ΔF1Mi vs GCN-MLP | ΔF1Mi by split | mean normal - shuffled | 裁决 |
+| --- | ---: | --- | ---: | --- |
+| Texas | +0.099099 | +0.081081,+0.135135,+0.081081 | +0.054054 | 当前最强证据 |
+| Actor | +0.002412 | +0.006579,+0.001316,-0.000658 | +0.006360 | 仅弱正 |
+| Chameleon | +0.008041 | +0.017544,+0.010965,-0.004386 | +0.007310 | 小正，split2 风险 |
+| Squirrel | -0.008325 | -0.025937,+0.006724,-0.005764 | +0.002241 | 均值失败 |
+
+当前裁决：RRNV 升级为 active-but-risky candidate，但不能声称成功。它的 Texas 强信号和 Chameleon control 值得继续，Squirrel 退化是 major risk。
+
+## 2026-06-29 追加：DARRNV safety 变体失败
+
+已实现 `--method darrnv_gcl`，暂名 Density-Aware RRNV。它用图平均度 gate 将 RRNV 作为 Natural-View BYOL 的辅助目标，希望在高密度图上降低 RRNV 对 Squirrel 的伤害。
+
+运行到 Texas/Actor split0 seed0 后触发停止条件并中止：
+
+| Dataset | ΔF1Mi vs GCN-MLP | 裁决 |
+| --- | ---: | --- |
+| Texas | -0.054054 | 丢失 RRNV 主信号 |
+| Actor | -0.005921 | 低于 baseline |
+
+裁决：DARRNV 降级为失败 safety 变体，不继续跑 Chameleon/Squirrel。后续若做 RRNV safety，应考虑 representation-level fallback 或 graph-view reliability，而不是简单把 RRNV 变成小权重辅助项。

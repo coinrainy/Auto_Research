@@ -1138,3 +1138,16 @@
   - 后续不再围绕 local-conflict graph/high final mix 调参；下一代应转向 downstream separability proxy 或 loss reliability，而不是继续改 graph/high mix。
   - 已更新文档：`experiments/topvenue_gcl/docs/local_conflict_objective_selection_candidate.md`、`experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/lcm_split0_s0_e50/runs_vs_gcn_mlp.csv` 查看 LCM 逐数据集边界；随后应实现 downstream separability proxy 或 loss reliability 新候选。
+- 2026-06-29 RRNV-GCL 新候选与裁决：
+  - 已继续使用 `academic-research-suite` experiment-agent 路线自动探索图对比学习节点分类候选，不向用户追问，按 early gate 自行裁决。
+  - 已实现 `experiments/topvenue_gcl/train.py --method dsp_gcl`，Downstream Separability Proxy GCL：用 ego+graph kNN density margin 与 view consistency 估计节点级 loss weight，并提供 `--dsp-shuffle-weight` control。
+  - DSP split0 seed0 50 epoch 结果：Texas ΔF1Mi vs `gcn_mlp_gcl` +0.000000 且 normal-shuffled -0.027027；Actor +0.005921/+0.014474；Chameleon -0.010965/+0.002193；Squirrel -0.013449/+0.011527。裁决：DSP 降级为失败/诊断资产。
+  - 已实现 `--method rrnv_gcl`，Redundancy-Reduced Natural-View GCL：在 MLP ego view 与 GCN graph view 的 predictor 输出上执行 VICReg/CCA 风格 redundancy reduction，`--rrnv-shuffle-pairs` 为机制 control。
+  - RRNV split0 seed0 结果：Texas ΔF1Mi +0.081081、normal-shuffled +0.081081；Actor +0.019079/+0.003289；Chameleon +0.026316/+0.024123；Squirrel -0.021134/-0.003842。
+  - RRNV splits 0-2 seed0 复核：Texas mean ΔF1Mi vs `gcn_mlp_gcl` +0.099099，normal-shuffled +0.054054；Actor +0.002412/+0.006360；Chameleon +0.008041/+0.007310；Squirrel -0.008325/+0.002241。
+  - 当前裁决：RRNV 升级为 active-but-risky candidate，但不是成功主方法。Texas 是最强证据，Chameleon 有小正与较干净 shuffled control，Actor 弱正，Squirrel 均值负向是 major risk。
+  - 已实现 `--method darrnv_gcl`，Density-Aware RRNV safety 变体：用图平均度 gate 将 RRNV 作为 Natural-View BYOL 的辅助目标；运行到 Texas/Actor split0 后触发停止条件并中止，Texas ΔF1Mi -0.054054，Actor -0.005921。裁决：DARRNV 失败，不继续扩展。
+  - 已新增文档：`experiments/topvenue_gcl/docs/redundancy_reduced_natural_view_candidate.md`。
+  - 已更新：`experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
+  - 已验证：`python -m py_compile train.py summarize_split_study.py src/*.py`；`python train.py --help | rg "rrnv|darrnv|method"`；Texas RRNV normal/shuffled 2 epoch smoke；RRNV split0 与 splits 0-2 normal/shuffled gate。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/rrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv` 查看 RRNV 当前汇总；随后实现新的 RRNV safety / graph-view reliability 版本，不再继续调 DSP、DARRNV、PCNV、LCOS 或 LCM。
