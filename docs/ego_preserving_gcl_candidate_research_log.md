@@ -1225,3 +1225,45 @@ Cora output selection 诊断：
 - 设计 Cora safety gate：在无标签条件下判断何时使用 GRACE graph representation、raw-complement graph fallback 或 raw/anchor_graph；
 - 复核 no-penalty 在 WebKB/Actor 上是否仍主要退回 raw baseline；
 - 若 safety gate 无法改善 Cora，应把论文定位从“通用 GCL 方法”收缩为“heterophily-conditioned raw-complement GCL + failure boundary analysis”。
+
+## 2026-06-28 No-Penalty Cora 无标签 Proxy Safety Gate 复核
+
+目标：检验已有 label-free output safety proxy v1 能否在 no-penalty Raw-Complement 的 Cora seeds0-2 上解决同配图安全问题。
+
+命令：
+
+```bash
+python select_representation_proxy.py \
+  --run-dir runs/raw_complement_graph_w0_homophily_seed0_e100/Cora_raw_complement_gcl_seed0 \
+  --run-dir runs/raw_complement_graph_w0_cora_seeds1-2_e100/Cora_raw_complement_gcl_seed1 \
+  --run-dir runs/raw_complement_graph_w0_cora_seeds1-2_e100/Cora_raw_complement_gcl_seed2 \
+  --selection-eval-mode random \
+  --random-selection-repeats 5 \
+  --candidate-names raw graph anchor_graph \
+  --c-min-power -8 --c-max-power 8 \
+  --max-iter 3000 \
+  --out runs/summaries/raw_complement_w0_cora_proxy_selection_s0-2.csv \
+  --aggregate-out runs/summaries/raw_complement_w0_cora_proxy_selection_s0-2_aggregate.csv
+```
+
+结果：
+
+| Selection | Runs | Selected counts | F1Mi | F1Ma |
+| --- | ---: | --- | ---: | ---: |
+| proxy | 9 | graph:9 | 0.814473 | 0.794776 |
+| validation | 9 | anchor_graph:1; graph:8 | 0.812372 | 0.791086 |
+| random | 45 | anchor_graph:19; graph:17; raw:9 | 0.774426 | 0.744026 |
+
+判断：
+
+- 无标签 proxy 在 Cora 上明显优于 random candidate selection，并且略高于此前 label-based validation selection；
+- 但它仍低于同 seed Cora GRACE 均值约 0.824948 / 0.810003，不能把 Cora safety 拉回 non-degradation；
+- 当前 proxy 只能作为 output selection 机制诊断，不能作为同配安全阀写进主方法；
+- Raw-Complement 当前最强叙事必须限定为 WikipediaNetwork-style heterophily graphs 上的 no-penalty raw-relative graph complement，而不是通用 Graph SSL / GCL SOTA；
+- 下一步如果继续方法路线，应优先找能同时保留 Cora GRACE 表示与 Chameleon/Squirrel complement 增益的结构性机制；否则应收缩为 heterophily-conditioned 方法 + failure boundary analysis。
+
+下一步建议：
+
+- 暂停继续调当前 proxy 公式；
+- 优先做强 baseline 对齐与 Chameleon/Squirrel 更强证据，或设计新的 graph-context preservation / dataset-level fallback 机制；
+- 任何 2026 顶会/顶刊版本都必须把 Cora safety 作为主要 reviewer attack 面提前处理。

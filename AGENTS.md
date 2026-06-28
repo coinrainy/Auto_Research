@@ -709,3 +709,10 @@
   - Cora no-penalty output selection 诊断：label-based selected 表示 seeds0-2 均值为 0.812372/0.791086，仍低于 GRACE，不能作为 safety 解决方案。
   - 当前判断：No-penalty 简化不伤 Chameleon/Squirrel 主收益，但没有解决 Cora homophily safety。当前方法不能声称 homophily non-degradation；必须设计 safety gate，或把论文定位收缩为 heterophily-conditioned raw-complement GCL。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python select_representation_proxy.py --run-dir runs/raw_complement_graph_w0_homophily_seed0_e100/Cora_raw_complement_gcl_seed0 --run-dir runs/raw_complement_graph_w0_cora_seeds1-2_e100/Cora_raw_complement_gcl_seed1 --run-dir runs/raw_complement_graph_w0_cora_seeds1-2_e100/Cora_raw_complement_gcl_seed2 --selection-eval-mode random --random-selection-repeats 5 --candidate-names raw graph anchor_graph --c-min-power -8 --c-max-power 8 --max-iter 3000 --out runs/summaries/raw_complement_w0_cora_proxy_selection_s0-2.csv --aggregate-out runs/summaries/raw_complement_w0_cora_proxy_selection_s0-2_aggregate.csv`。
+- 2026-06-28 No-Penalty Cora 无标签 proxy safety gate 复核：
+  - 已执行 Cora seeds0-2 的 no-penalty label-free proxy selection：`raw/graph/anchor_graph` 候选，随机 probe 评估，5 次 random selection control。
+  - 输出文件：`experiments/grace_idea/runs/summaries/raw_complement_w0_cora_proxy_selection_s0-2.csv` 与 `experiments/grace_idea/runs/summaries/raw_complement_w0_cora_proxy_selection_s0-2_aggregate.csv`。
+  - proxy 9/9 选择 `graph`，F1Mi/F1Ma=0.814473/0.794776；random selection 为 0.774426/0.744026；label-based validation selection 为 0.812372/0.791086。
+  - 结论：proxy 明显优于 random 且略高于 validation selection，但仍低于 Cora GRACE seeds0-2 均值约 0.824948/0.810003，不能解决 homophily safety。
+  - 当前研究判断：现有 Raw-Complement 仍只能作为 WikipediaNetwork-style heterophily 条件性候选；不能声称通用 GCL SOTA 或 homophily non-degradation。Cora safety 仍是最大 reviewer attack 面。
+  - 下一步建议：暂停调当前 proxy 公式；优先设计 graph-context preservation / dataset-level fallback 等结构性机制，或把论文收缩为 heterophily-conditioned raw-complement GCL + failure boundary analysis。
