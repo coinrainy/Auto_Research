@@ -709,6 +709,70 @@ seed0 C-grid 结果：
 - 但该结果目前只有 seed0，不能据此声称 SOTA 或稳定改进；
 - 下一步硬门槛是补 seed1/seed7/seed42 patched official SP-GCL，并与原 official SP-GCL、post-hoc residual、prop2 artifact 做同 C-grid 对齐。
 
+### Four-seed patched residual branch hard gate
+
+已补齐 seed1/seed7/seed42 的 patched official SP-GCL residual branch，并用同一套 C-grid linear probe 评估：
+
+```bash
+DATASETS="Chameleon Squirrel" \
+OUT_DIR="runs/spgcl_sparc_residual_seed1_e100" \
+RESET_EPOCHS=100 LINEAR_EPOCHS=10 RESET_HIDDEN=256 \
+RESET_SEED_NUM=32 RESET_MAX_SIZE=512 RESET_SUBG_NUM_HOPS=2 \
+SEED=1 SPARC_RESIDUAL_WEIGHT=0.1 SPARC_EMBED_MODE=hidden_resid \
+bash scripts/run_spgcl_sparc_residual_export.sh
+
+python evaluate_propagation_calibration.py \
+  --runs-dir runs/spgcl_sparc_residual_seed1_e100/artifacts \
+  --include-methods spgcl_sparc_residual \
+  --modes ssl \
+  --max-hop 1 \
+  --split-indices 0 1 2 3 4 5 6 7 8 9 \
+  --c-values 4 16 64 \
+  --max-iter 500 \
+  --out runs/summaries/spgcl_sparc_residual_seed1_e100_cgrid.csv \
+  --aggregate-out runs/summaries/spgcl_sparc_residual_seed1_e100_cgrid_aggregate.csv
+```
+
+seed7 与 seed42 使用相同命令，仅替换 `OUT_DIR` 与 `SEED`。
+
+新增汇总脚本：
+
+```bash
+python summarize_spgcl_sparc_residual.py \
+  --patched-aggregate runs/summaries/spgcl_sparc_residual_seed0_e100_cgrid_aggregate.csv --seed-label seed0 \
+  --patched-aggregate runs/summaries/spgcl_sparc_residual_seed1_e100_cgrid_aggregate.csv --seed-label seed1 \
+  --patched-aggregate runs/summaries/spgcl_sparc_residual_seed7_e100_cgrid_aggregate.csv --seed-label seed7 \
+  --patched-aggregate runs/summaries/spgcl_sparc_residual_seed42_e100_cgrid_aggregate.csv --seed-label seed42 \
+  --posthoc-summary runs/summaries/sparc_selector_seed42_seed7_seed0_seed1.csv \
+  --posthoc-selector resid1 \
+  --out runs/summaries/spgcl_sparc_residual_vs_posthoc_seed0_seed1_seed7_seed42.csv \
+  --aggregate-out runs/summaries/spgcl_sparc_residual_vs_posthoc_seed0_seed1_seed7_seed42_aggregate.csv
+```
+
+Four-seed patched branch vs post-hoc `ssl_resid1`：
+
+| Dataset | Patched residual branch | Post-hoc `ssl_resid1` | Patched - post-hoc | Positive seeds |
+| --- | ---: | ---: | ---: | ---: |
+| Chameleon | 0.659978 / 0.660842 | 0.640132 / 0.640153 | +0.019846 / +0.020689 | 4/4 |
+| Squirrel | 0.486287 / 0.481697 | 0.483381 / 0.479678 | +0.002906 / +0.002019 | 3/4 |
+| ALL | 0.573133 / 0.571269 | 0.561756 / 0.559915 | +0.011376 / +0.011354 | 7/8 |
+
+Four-seed patched branch vs original official SP-GCL `ssl`：
+
+| Dataset | Patched residual branch | Official SP-GCL `ssl` | Patched - official | Positive seeds |
+| --- | ---: | ---: | ---: | ---: |
+| Chameleon | 0.659978 / 0.660842 | 0.630976 / 0.631380 | +0.029002 / +0.029461 | 4/4 |
+| Squirrel | 0.486287 / 0.481697 | 0.450144 / 0.444903 | +0.036143 / +0.036794 | 4/4 |
+| ALL | 0.573133 / 0.571269 | 0.540560 / 0.538142 | +0.032573 / +0.033128 | 8/8 |
+
+当前解释：
+
+- 训练时 residual branch 已明显强于原始 official SP-GCL embedding，四 seed × 两数据集全部为正；
+- 相对 post-hoc `ssl_resid1`，Chameleon 出现稳定大幅增益，Squirrel 平均小幅正但 seed42 为负；
+- 这说明 residual branch 不只是把 `z-Pz` 拼到下游表征，而是在 strong SP-GCL training 中改变了 encoder/projector 的可分性；
+- 但当前只覆盖 Chameleon/Squirrel，且只测试 `SPARC_RESIDUAL_WEIGHT=0.1` 与 `hidden_resid`，不能声称通用 SOTA；
+- 下一步应先做 ablation：`hidden` vs `resid` vs `hidden_resid`，`weight=0` vs `0.05/0.1/0.2`，再扩展 homophily safety 与更多 heterophily 数据集。
+
 ## 研究假设
 
 SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embedding 仍混合了两类信息：
@@ -732,7 +796,8 @@ SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embeddin
 
 3. 方法化：
    - `sparc_gcl` 在当前 GRACE scaffold 上的训练时原型 early gate 失败，不应继续小调；
-   - official SP-GCL 内部 residual branch seed0 early gate 已正向，下一步应补多 seed 复核；
+   - official SP-GCL 内部 residual branch 已通过 seed0/1/7/42 的 Chameleon/Squirrel 硬门控；
+   - 下一步应补 residual weight / embed mode ablation，确认增益来自 residual auxiliary objective 还是只来自 hidden-resid 输出拼接；
    - 若继续做 selection/gate，应优先做 node-level local-homophily/degree proxy，避免 Chameleon high-local-homophily 区域被 residual branch 伤害。
 
 4. 强基线：
@@ -749,15 +814,15 @@ SPARC-GCL 是当前最值得继续的 active candidate。
 - 在 Squirrel 的 four official seeds × 10 split 上有稳定正向信号；
 - 在 Chameleon 的 four official seeds 上均为正均值，但 split-level 稳定性弱于 Squirrel；
 - 已有 artifact-level method 入口 `spgcl_official_sparc_resid1`，不再只依赖临时 evaluation mode；
-- 已有 official SP-GCL 内部 residual branch patch/runner，seed0 early gate 强于 post-hoc residual；
+- 已有 official SP-GCL 内部 residual branch patch/runner，四 seed 上整体强于 original official SP-GCL 与 post-hoc residual；
 - 创新点更清楚：不是再做 augmentation，也不是简单 high/low-pass filter，而是 strong GCL embedding 的 propagation residual calibration；
 - 算力友好，适合 RTX 3060。
 
 主要风险：
 
-- 当前只是 post-hoc representation calibration；
+- 当前仍需证明训练时 residual auxiliary objective 本身有效，而不是主要来自 `hidden_resid` 输出拼接或线性评估维度扩大；
 - 当前 GRACE scaffold 上的训练时 `sparc_gcl` 原型早筛失败，不能作为主结果；
-- official SP-GCL 内部 residual branch 目前只有 seed0 正向证据，需要多 seed 复核；
+- official SP-GCL 内部 residual branch 目前只覆盖 Chameleon/Squirrel，需要更多数据集与 ablation 复核；
 - Chameleon 增益小且 best mode 可能不同于 Squirrel；
 - 需要证明不是 validation/C-grid 偶然；
 - 需要扩展到更多数据集和更多 seed。

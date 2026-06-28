@@ -288,7 +288,8 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `evaluate_propagation_calibration.py` 支持 `--max-hop`、`--modes`、`--split-indices`、`--c-values` 与 `--max-iter`，用于 SPARC-GCL 的 post-hoc propagation calibration gate。
 - `build_sparc_artifacts.py` 可把已有 SSL `artifacts.pt` 转换为 artifact-level SPARC method，例如 `spgcl_official_sparc_resid1`，便于主表把 SPARC 当作独立方法而不是临时 eval mode。
 - `scripts/run_spgcl_embedding_export.sh` 可导出 Geom-GCN 数据、运行本地 official SP-GCL、保存 embedding，并转换为 `evaluate_propagation_calibration.py` 可读的 `artifacts.pt`。
-- `patch_spgcl_sparc.py` 与 `scripts/run_spgcl_sparc_residual_export.sh` 可复现地 patch/run official SP-GCL residual branch；当前 seed0 early gate 正向，但未完成多 seed 复核。
+- `patch_spgcl_sparc.py` 与 `scripts/run_spgcl_sparc_residual_export.sh` 可复现地 patch/run official SP-GCL residual branch；当前 seed0/1/7/42 的 Chameleon/Squirrel 硬门控已完成，patched branch 相对 original official SP-GCL 在 8/8 seed-dataset pair 上为正。
+- `summarize_spgcl_sparc_residual.py` 可汇总 patched official SP-GCL residual branch 与 post-hoc `ssl_resid1` 或原始 official `ssl` 的逐 seed/dataset 对照。
 - `select_sparc_mode_proxy.py` 支持 `--modes`、`--split-indices`、`--c-values`、`--proxy-*` 与 `--adaptive-feature-contrast-threshold`，用于比较 SPARC 的无标签 mode selection 策略。
 - `summarize_sparc_selectors.py` 支持多个 `--cgrid/--seed-label` 输入，输出 selector 逐 seed/dataset 表与跨 seed aggregate。
 - `evaluate_raw_features.py` 支持对原始 `data.x` 使用当前同一套 mask/random linear evaluation 协议，作为 ego/residual/GRACE 的 feature-only 硬 baseline。
