@@ -655,3 +655,10 @@
   - 当前决策：Raw-Complement 降级为机制诊断与 output safety selection 资产，不再作为“足以冲 2026 顶会/顶刊 SOTA 方法”的 active candidate；它能保护 raw baseline，但没有在 WebKB/Actor 上证明 learned complement 稳定超过 raw。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python -m py_compile train.py model.py summarize_runs.py select_representation.py select_representation_proxy.py summarize_selection_controls.py evaluate_raw_features.py evaluate_feature_fusion.py && bash -n scripts/run_split_study.sh`。
   - 下一步研发建议：不要继续调 Raw-Complement proxy 参数；优先扩展 Chameleon/Squirrel loader 与 raw baseline 诊断，或重新设计能真正超过 raw 的训练目标。
+- 2026-06-28 Chameleon/Squirrel loader 与 Raw-Complement 条件性复活：
+  - 已在 `experiments/grace_idea/train.py` 中接入 PyG `WikipediaNetwork`，支持 `Chameleon` 与 `Squirrel`，并把二者加入异配 mask eval 与 split run name 逻辑。
+  - 已在 `experiments/grace_idea/config.yaml` 中新增 Chameleon/Squirrel 默认配置。
+  - loader smoke：Chameleon 节点 2277、边 36101、特征 2325、类别 5、split0 mask 1092/729/456；Squirrel 节点 5201、边 217073、特征 2089、类别 5、split0 mask 2496/1664/1041。
+  - split0-2 50 epoch sanity：Raw-Complement `anchor_graph` 在 Chameleon/Squirrel 上全部同时超过 raw baseline 与 GRACE。Chameleon RC-raw F1Mi 为 +0.032895、+0.010965、+0.059211；Squirrel RC-raw F1Mi 为 +0.018252、+0.012488、+0.014409。
+  - 当前判断：Raw-Complement 不能作为 WebKB/Actor 通用 SOTA，但在 WikipediaNetwork-style heterophily graphs 上重新成为条件性 active candidate；下一步必须做 Chameleon/Squirrel splits0-9 对照验证。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && for split in 3 4 5 6 7 8 9; do python evaluate_raw_features.py --dataset Chameleon --split-index ${split} --eval-mode auto --out-dir runs/raw_feature_smoke/Chameleon_split${split}; done && for split in 3 4 5 6 7 8 9; do python evaluate_raw_features.py --dataset Squirrel --split-index ${split} --eval-mode auto --out-dir runs/raw_feature_smoke/Squirrel_split${split}; done`。

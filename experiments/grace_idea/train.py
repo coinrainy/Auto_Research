@@ -17,7 +17,13 @@ import torch.nn.functional as F
 import torch_geometric
 import torch_geometric.transforms as T
 import yaml
-from torch_geometric.datasets import Actor, CitationFull, Planetoid, WebKB
+from torch_geometric.datasets import (
+    Actor,
+    CitationFull,
+    Planetoid,
+    WebKB,
+    WikipediaNetwork,
+)
 from torch_geometric.nn import GCNConv
 from yaml import SafeLoader
 
@@ -36,6 +42,16 @@ try:
     from torch_geometric.utils import dropout_edge
 except ImportError:
     from torch_geometric.utils import dropout_adj as dropout_edge
+
+
+HETEROPHILY_DATASETS = [
+    'Texas',
+    'Cornell',
+    'Wisconsin',
+    'Actor',
+    'Chameleon',
+    'Squirrel',
+]
 
 
 def parse_args():
@@ -196,6 +212,12 @@ def get_dataset(path, name):
         return WebKB(path, name, transform=T.NormalizeFeatures())
     if name == 'Actor':
         return Actor(path, transform=T.NormalizeFeatures())
+    if name in ['Chameleon', 'Squirrel']:
+        return WikipediaNetwork(
+            path,
+            name.lower(),
+            transform=T.NormalizeFeatures(),
+        )
     raise ValueError(f'Unsupported dataset: {name}')
 
 
@@ -226,7 +248,7 @@ def should_use_mask_eval(args, data):
     if args.eval_mode == 'random':
         return False
     has_masks = all(hasattr(data, attr) for attr in ['train_mask', 'val_mask', 'test_mask'])
-    heterophily_dataset = args.dataset in ['Texas', 'Cornell', 'Wisconsin', 'Actor']
+    heterophily_dataset = args.dataset in HETEROPHILY_DATASETS
     return args.eval_mode == 'mask' or (args.eval_mode == 'auto' and has_masks and heterophily_dataset)
 
 
@@ -1128,7 +1150,7 @@ def prepare_save_dir(args, seed):
         return None
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
-    split_dataset = args.dataset in ['Texas', 'Cornell', 'Wisconsin', 'Actor']
+    split_dataset = args.dataset in HETEROPHILY_DATASETS
     split_suffix = f'_split{args.split_index}' if args.eval_mode == 'mask' or split_dataset else ''
     control = weight_control_name(args)
     control_suffix = (

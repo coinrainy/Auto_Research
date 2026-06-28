@@ -921,3 +921,46 @@ python select_representation_proxy.py --runs-dir runs/raw_complement_anchor_spli
 - 下一步必须换研究主线：优先扩展当前 loader 到 Chameleon/Squirrel，并寻找 raw feature 不完全支配、graph SSL 确有互补空间的数据集/任务；或重新设计训练目标，使 complement 在 WebKB 上真正超过 raw，而不是只 fallback 到 raw。
 
 下一步建议：不要继续调 Raw-Complement proxy 参数；应进入新 idea 搜索/实现阶段，先补 Chameleon/Squirrel loader 与 raw baseline 诊断，再决定新方法是否值得实现。
+
+## 2026-06-28 Chameleon/Squirrel loader 与 Raw-Complement 条件性复活
+
+目标：Raw-Complement 在 WebKB/Actor 上被 raw baseline 证伪后，检查 WikipediaNetwork 异配图是否存在 raw feature 不完全支配、graph SSL complement 有真实增量的场景。
+
+代码更新：
+
+- `train.py` 新增 `WikipediaNetwork` loader；
+- 新增支持数据集：`Chameleon`、`Squirrel`；
+- `HETEROPHILY_DATASETS` 统一包含 `Texas/Cornell/Wisconsin/Actor/Chameleon/Squirrel`；
+- `should_use_mask_eval` 与保存目录 split suffix 支持 Chameleon/Squirrel；
+- `config.yaml` 新增 Chameleon/Squirrel 默认 GRACE 配置。
+
+loader smoke：
+
+| Dataset | Nodes | Edges | Features | Classes | split0 train/val/test |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Chameleon | 2277 | 36101 | 2325 | 5 | 1092 / 729 / 456 |
+| Squirrel | 5201 | 217073 | 2089 | 5 | 2496 / 1664 / 1041 |
+
+split0-2 sanity 结果（50 epoch，seed0，固定 mask）：
+
+| Dataset | Split | raw F1Mi/F1Ma | GRACE F1Mi/F1Ma | Raw-Complement F1Mi/F1Ma | RC - raw | RC - GRACE |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Chameleon | 0 | 0.445175 / 0.440876 | 0.416667 / 0.414567 | 0.478070 / 0.473734 | +0.032895 / +0.032858 | +0.061404 / +0.059168 |
+| Chameleon | 1 | 0.458333 / 0.448956 | 0.456140 / 0.450202 | 0.469298 / 0.464984 | +0.010965 / +0.016028 | +0.013158 / +0.014781 |
+| Chameleon | 2 | 0.438596 / 0.424598 | 0.399123 / 0.380545 | 0.497807 / 0.482805 | +0.059211 / +0.058208 | +0.098684 / +0.102260 |
+| Squirrel | 0 | 0.341979 / 0.333551 | 0.267051 / 0.241113 | 0.360231 / 0.354828 | +0.018252 / +0.021277 | +0.093180 / +0.113715 |
+| Squirrel | 1 | 0.331412 / 0.314300 | 0.296830 / 0.276499 | 0.343900 / 0.329136 | +0.012488 / +0.014836 | +0.047070 / +0.052637 |
+| Squirrel | 2 | 0.301633 / 0.290426 | 0.257445 / 0.240195 | 0.316042 / 0.310823 | +0.014409 / +0.020396 | +0.058598 / +0.070628 |
+
+判断：
+
+- Raw-Complement 在 Chameleon/Squirrel split0-2 上全部同时超过 raw baseline 与 GRACE；
+- 这与 WebKB/Actor 的“raw 100% 被 selection 选中”形成清晰差异，说明 Raw-Complement 不是完全失败，而是条件性有效；
+- 当前更准确的主线应改为：Raw-feature anchored complement learning 在 WikipediaNetwork-style heterophily graph 上可能提供 raw 与 GCN-GRACE 之外的互补信号；
+- 这仍不是 SOTA 结论：目前只有 2 个数据集、3 个 split、1 个 seed、50 epoch，没有与 heterophily GCL/MLP baselines 做正式公平对照。
+
+下一步：
+
+- 跑 Chameleon/Squirrel splits0-9 的 raw、GRACE、Raw-Complement 50 epoch 对照；
+- 若 10 split 均值仍稳定正向，再扩展到 100/200 epoch 与多 seed；
+- 同时必须保留 WebKB/Actor 负结果，论文叙事不能声称通用 heterophily SOTA，只能声称“条件性 raw-anchored complement gains”。
