@@ -111,7 +111,14 @@ def candidate_features(data, artifact):
         ], dim=1)
         candidates['complement'] = complement
     if graph_context is not None:
-        candidates['graph'] = graph_context.detach().cpu()
+        graph_context = graph_context.detach().cpu()
+        candidates['graph'] = graph_context
+        if complement is not None:
+            candidates['anchor_graph'] = torch.cat([
+                F.normalize(data.x.detach().cpu(), dim=1),
+                F.normalize(complement, dim=1),
+                F.normalize(graph_context, dim=1),
+            ], dim=1)
     if raw_anchor is not None and complement is not None:
         candidates['hidden'] = torch.cat([
             raw_anchor.detach().cpu(),
@@ -250,6 +257,7 @@ def row_prefix(artifact_path, dataset_name, method, seed, split_index,
 
 def candidate_priority(name):
     priority = {
+        'anchor_graph': 6,
         'saved': 5,
         'anchor': 4,
         'graph': 3,

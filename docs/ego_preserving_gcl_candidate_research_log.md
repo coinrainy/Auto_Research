@@ -625,3 +625,38 @@ python train.py --dataset Texas --method raw_complement_gcl --raw-complement-eva
 - 停止沿 detach/no-detach 小改继续推进。
 
 下一步应进入真正的结构设计：例如基于无标签图级/节点级信号的 output safety gate，或在训练中显式加入 graph-context preservation，使 homophily 图保持 GRACE-like graph 表示，而 heterophily/Actor 场景启用 raw+complement。
+
+## 2026-06-28 anchor_graph 并联输出消融
+
+目标：检查直接并联安全图上下文与 raw-complement 增量通道是否可行。若 `[raw features, complement, graph_context]` 能同时接近 Cora graph fallback 且保留 Actor/Texas 收益，则可以作为简单输出策略；若失败，则说明必须做显式 gate/selection，而不是简单拼接。
+
+代码更新：
+
+- `train.py --raw-complement-eval-mode` 新增 `anchor_graph`；
+- `select_representation.py` 新增 `anchor_graph` 候选；
+- `anchor_graph = [normalize(raw x), normalize(complement), normalize(graph_context)]`。
+
+新增命令：
+
+```bash
+python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode anchor_graph --seed 0 --epochs 100 --save-dir /tmp/raw_complement_cora_anchor_graph_seed0 --overwrite --log-every 100
+python train.py --dataset Actor --method raw_complement_gcl --raw-complement-eval-mode anchor_graph --seed 0 --split-index 0 --epochs 100 --save-dir /tmp/raw_complement_actor_anchor_graph_seed0_split0 --overwrite --log-every 100
+python train.py --dataset Texas --method raw_complement_gcl --raw-complement-eval-mode anchor_graph --seed 0 --split-index 0 --epochs 100 --save-dir /tmp/raw_complement_texas_anchor_graph_seed0_split0 --overwrite --log-every 100
+```
+
+结果：
+
+| Dataset/split | anchor_graph F1Mi/F1Ma | 关键对照 |
+| --- | ---: | --- |
+| Cora seed0 | 0.7726 / 0.7265 | 明显低于 graph-only 0.7997 / 0.7655，也低于 GRACE 0.8224 / 0.8015 |
+| Actor split0 | 0.3638 / 0.3482 | micro 低于 anchor 0.3704 / 0.3281，macro 略高 |
+| Texas split0 | 0.8108 / 0.6200 | 与 anchor 基本持平 |
+
+判断：
+
+- 简单拼接 graph-context 与 raw-complement 在 Cora 上失败，logistic probe 不能自动忽略有害 raw/complement 通道；
+- Actor 上 micro 也没有超过默认 anchor，仅 macro 有改善；
+- Texas split0 不伤，但不足以抵消 Cora 失败；
+- `anchor_graph` 保留为诊断模式，不作为 active candidate。
+
+下一步必须实现显式 output selection/gate：在图级或节点级决定使用 `graph` 还是 `anchor`，而不是把所有通道直接拼接给下游分类器。

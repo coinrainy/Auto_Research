@@ -613,3 +613,10 @@
   - 已执行 Texas split0 no-detach anchor sanity：`python train.py --dataset Texas --method raw_complement_gcl --raw-complement-eval-mode anchor --raw-complement-weight 0.05 --no-raw-complement-detach-anchor --seed 0 --split-index 0 --epochs 100 --save-dir /tmp/raw_complement_texas_nodetach_seed0_split0 --overwrite --log-every 100`，结果 F1Mi/F1Ma=0.7838/0.6147，低于 default 0.8108/0.6200。
   - 当前判断：`raw_anchor.detach()` 不是当前 safety 问题主因；停止沿 detach/no-detach 小改继续推进。下一步应进入 output safety gate 或 graph-context preservation 设计。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode hidden --seed 0 --epochs 100 --save-dir /tmp/raw_complement_cora_hidden_seed0 --overwrite --log-every 100`。
+- 2026-06-28 anchor_graph 并联输出消融：
+  - 已在 `train.py` 中新增 `--raw-complement-eval-mode anchor_graph`，并在 `select_representation.py` 中新增 `anchor_graph` 候选；表示为 `[normalize(raw x), normalize(complement), normalize(graph_context)]`。
+  - 已执行 Cora seed0 anchor_graph：`python train.py --dataset Cora --method raw_complement_gcl --raw-complement-eval-mode anchor_graph --seed 0 --epochs 100 --save-dir /tmp/raw_complement_cora_anchor_graph_seed0 --overwrite --log-every 100`，结果 F1Mi/F1Ma=0.7726/0.7265，明显低于 graph-only 0.7997/0.7655 与 GRACE 0.8224/0.8015。
+  - 已执行 Actor split0 anchor_graph，结果 F1Mi/F1Ma=0.3638/0.3482；micro 低于默认 anchor 0.3704，macro 高于默认 0.3281。
+  - 已执行 Texas split0 anchor_graph，结果 F1Mi/F1Ma=0.8108/0.6200，与默认 anchor 基本持平。
+  - 当前判断：简单拼接 graph-context 与 raw-complement 失败，不能替代显式 output gate/selection；`anchor_graph` 仅保留为诊断模式。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && python select_representation.py --run-dir /tmp/raw_complement_cora_graph/Cora_raw_complement_gcl_seed0 --selection-eval-mode random --random-repeats 3 --candidate-names anchor graph anchor_graph --c-min-power -8 --c-max-power 8 --out runs/summaries/raw_complement_cora_output_selection_candidates_seed0.csv --aggregate-out runs/summaries/raw_complement_cora_output_selection_candidates_seed0_aggregate.csv`。

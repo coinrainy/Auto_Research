@@ -229,7 +229,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `ego_grace` 支持纯 MLP ego encoder。
 - `residual_grace` 支持 `--ego-gate-init`，并记录 `ego_gate`。
 - `gated_ego_graph_grace` 支持 `--graph-gate-temperature`、`--graph-gate-threshold`、`--graph-gate-min`、`--graph-gate-max`，并记录 `graph_gate_*`。
-- `raw_complement_gcl` 支持 `--raw-complement-weight`、`--raw-complement-detach-anchor/--no-raw-complement-detach-anchor`、`--raw-complement-eval-mode anchor|hidden|graph`，并记录 raw/complement correlation diagnostics。
+- `raw_complement_gcl` 支持 `--raw-complement-weight`、`--raw-complement-detach-anchor/--no-raw-complement-detach-anchor`、`--raw-complement-eval-mode anchor|hidden|graph|anchor_graph`，并记录 raw/complement correlation diagnostics。
 - `evaluate_raw_features.py` 支持对原始 `data.x` 使用当前同一套 mask/random linear evaluation 协议，作为 ego/residual/GRACE 的 feature-only 硬 baseline。
 - `evaluate_feature_fusion.py` 支持递归读取 `artifacts.pt`，在同一 split 下评估 `raw`、`ssl`、`raw+ssl concat`，并输出 concat 相对 raw/ssl 的 paired delta 与 aggregate summary。
 - `select_representation.py` 支持读取 `artifacts.pt` 并用验证集选择 raw/saved/anchor/graph/complement/hidden 候选表示；当前定位为单 run / 小批量诊断工具，全候选完整 C 网格在 Actor 上过慢，不作为正式大规模评估主入口。
@@ -264,6 +264,7 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - PubMed 全量 InfoNCE 会在 12GB GPU 上 OOM，当前需使用 `--batch-size 4096`；后续所有 PubMed raw-complement/GRACE 公平对照都应固定 batch 协议。
 - `raw_complement_weight` 小消融显示：`0.01` 在 Cora seed0 更差（0.7931/0.7565），`0.1` 能轻微缓解 Cora（0.8050/0.7725）且 Actor split0 不伤（0.3730/0.3379），但 Texas split0 明显低于默认（0.7838/0.5979 vs 0.8108/0.6200）。因此停止朴素全局权重搜索。
 - `--no-raw-complement-detach-anchor` 消融显示：Cora seed0 graph 仅 0.8020/0.7651，Texas split0 anchor 降到 0.7838/0.6147；detach/no-detach 不是核心修复方向。
+- `anchor_graph=[raw, complement, graph_context]` 并联输出消融显示：Cora seed0 仅 0.7726/0.7265，Actor split0 0.3638/0.3482，Texas split0 0.8108/0.6200；简单拼接不能替代显式 gate/selection。
 - 下一步优先实现 validation-based 或 unsupervised-reliable representation selection，决定何时输出 raw+complement、何时退回 graph context；如果不能修复 Cora，则该方法应定位为 heterophily-focused。
 - 完整 C 网格 split0-2：`ego_grace` concat - raw 在 Actor/Cornell/Texas 为正、Wisconsin 为负；`residual_grace` 仅 Actor 稳定正向，Cornell/Texas/Wisconsin 为负。
 - 固定 C=1 的 10 split 快速筛查：ego/residual concat - raw 在 Actor/Cornell/Texas/Wisconsin 均为正，但该证据只能说明存在互补信号，不足以支撑 SOTA claim。
