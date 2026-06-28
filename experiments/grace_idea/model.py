@@ -199,13 +199,18 @@ class RawComplementEncoder(torch.nn.Module):
 
 class Model(torch.nn.Module):
     def __init__(self, encoder: Encoder, num_hidden: int, num_proj_hidden: int,
-                 tau: float = 0.5):
+                 tau: float = 0.5, aux_num_hidden: int = None):
         super(Model, self).__init__()
         self.encoder: Encoder = encoder
         self.tau: float = tau
 
         self.fc1 = torch.nn.Linear(num_hidden, num_proj_hidden)
         self.fc2 = torch.nn.Linear(num_proj_hidden, num_hidden)
+        self.aux_fc1 = None
+        self.aux_fc2 = None
+        if aux_num_hidden is not None:
+            self.aux_fc1 = torch.nn.Linear(aux_num_hidden, num_proj_hidden)
+            self.aux_fc2 = torch.nn.Linear(num_proj_hidden, aux_num_hidden)
 
     def forward(self, x: torch.Tensor,
                 edge_index: torch.Tensor) -> torch.Tensor:
@@ -214,6 +219,12 @@ class Model(torch.nn.Module):
     def projection(self, z: torch.Tensor) -> torch.Tensor:
         z = F.elu(self.fc1(z))
         return self.fc2(z)
+
+    def auxiliary_projection(self, z: torch.Tensor) -> torch.Tensor:
+        if self.aux_fc1 is None or self.aux_fc2 is None:
+            return z
+        z = F.elu(self.aux_fc1(z))
+        return self.aux_fc2(z)
 
     def sim(self, z1: torch.Tensor, z2: torch.Tensor):
         z1 = F.normalize(z1)
@@ -363,6 +374,21 @@ class Model(torch.nn.Module):
             ret = ret.mean() if mean else ret.sum()
 
         return ret
+
+    def auxiliary_loss(self, z1: torch.Tensor, z2: torch.Tensor,
+                       mean: bool = True, batch_size: int = 0):
+        h1 = self.auxiliary_projection(z1)
+        h2 = self.auxiliary_projection(z2)
+
+        if batch_size == 0:
+            l1 = self.semi_loss(h1, h2)
+            l2 = self.semi_loss(h2, h1)
+        else:
+            l1 = self.batched_semi_loss(h1, h2, batch_size)
+            l2 = self.batched_semi_loss(h2, h1, batch_size)
+
+        ret = (l1 + l2) * 0.5
+        return ret.mean() if mean else ret.sum()
 
 
 def drop_feature(x, drop_prob):

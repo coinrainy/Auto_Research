@@ -1267,3 +1267,72 @@ python select_representation_proxy.py \
 - 暂停继续调当前 proxy 公式；
 - 优先做强 baseline 对齐与 Chameleon/Squirrel 更强证据，或设计新的 graph-context preservation / dataset-level fallback 机制；
 - 任何 2026 顶会/顶刊版本都必须把 Cora safety 作为主要 reviewer attack 面提前处理。
+
+## 2026-06-28 Auxiliary Graph-Context Preservation 初筛
+
+目标：检验 Cora safety 退化是否来自 Raw-Complement 训练时 `graph_context` 分支被 complement objective 间接拖偏；若是，则给 `graph_context` 增加一个轻量 GRACE-style auxiliary InfoNCE 可能缩小同配图退化。
+
+实现：
+
+- 在 `Model` 中加入可选 auxiliary projector；
+- `raw_complement_gcl` 默认创建 graph-context auxiliary projector，但默认权重仍为 `0.0`；
+- 新增参数 `--raw-complement-graph-loss-weight`；
+- 当该权重大于 0 时，对两视图 `graph_context_1/graph_context_2` 额外施加 projected InfoNCE；
+- 该项不改变默认训练结果，只作为可控 safety refinement。
+
+关键命令：
+
+```bash
+python train.py --dataset Cora --method raw_complement_gcl \
+  --raw-complement-eval-mode graph --raw-complement-weight 0 \
+  --raw-complement-graph-loss-weight 0.1 --seed 0 --epochs 100 \
+  --save-dir runs/raw_complement_graph_projected_w0.1_cora_seed0_e100 \
+  --overwrite --log-every 100
+
+for seed in 1 2; do
+  python train.py --dataset Cora --method raw_complement_gcl \
+    --raw-complement-eval-mode graph --raw-complement-weight 0 \
+    --raw-complement-graph-loss-weight 0.1 --seed ${seed} --epochs 100 \
+    --save-dir runs/raw_complement_graph_projected_w01_cora_seeds1-2_e100 \
+    --overwrite --log-every 100
+done
+
+for dataset in Chameleon Squirrel; do
+  python train.py --dataset ${dataset} --method raw_complement_gcl \
+    --raw-complement-eval-mode anchor_graph --raw-complement-weight 0 \
+    --raw-complement-graph-loss-weight 0.1 --seed 0 --split-index 0 \
+    --epochs 50 --batch-size 4096 \
+    --save-dir runs/raw_complement_graph_projected_w01_wiki_split0_seed0_e50 \
+    --overwrite --log-every 50
+done
+```
+
+结果：
+
+| Setting | Dataset / split | F1Mi | F1Ma | 对照 |
+| --- | --- | ---: | ---: | --- |
+| projected graph loss 0.1 | Cora seeds0-2 mean | 0.818567 | 0.794162 | no-penalty graph 0.812597 / 0.791041；GRACE 0.824948 / 0.810003 |
+| projected graph loss 0.1 | Cora mean delta vs no-penalty | +0.005970 | +0.003120 | safety gap 缩小但未消除 |
+| projected graph loss 0.1 | Cora mean delta vs GRACE | -0.006381 | -0.015842 | 仍不能声称 non-degradation |
+| projected graph loss 0.1 | Chameleon split0 seed0 | 0.471491 | 0.467915 | no-penalty 0.475877 / 0.472223 |
+| projected graph loss 0.1 | Squirrel split0 seed0 | 0.348703 | 0.343346 | no-penalty 0.355427 / 0.349828 |
+
+补充观察：
+
+- 未经 projector 的 direct graph-context InfoNCE 失败：`0.2` 得到 Cora 0.7797 / 0.7672，`0.05` 得到 0.7743 / 0.7622，`0.005` 也只有 0.7900 / 0.7713；
+- 独立 auxiliary projector 是必要的，否则 graph preservation 会过硬地约束表示空间；
+- projected 版本可缩小 Cora seed0-2 的 micro/macro 退化，但同时在 Chameleon/Squirrel split0 上轻微降低主收益；
+- 当前不能把该项升级为主方法，只能作为 safety refinement candidate。
+
+当前判断：
+
+- Auxiliary graph-context preservation 有一点信号，但不是决定性突破；
+- 如果继续，应只做窄验证：Chameleon/Squirrel splits0-9 × seed0 和 Cora seeds0-4，检查是否能在不明显伤主战场的情况下稳定缩小 Cora gap；
+- 若多 split 显示 Chameleon/Squirrel 平均掉点超过 0.005 或 Cora macro 仍低于 GRACE 超过 0.01，应放弃该 refinement，回到 heterophily-conditioned Raw-Complement 叙事。
+
+下一步建议：
+
+```bash
+cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
+DATASETS="Chameleon Squirrel" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="raw_complement_gcl" EPOCHS=50 BATCH_SIZE=4096 SAVE_DIR="runs/raw_complement_graph_projected_w01_wiki_splits0-9_seed0_e50" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode anchor_graph --raw-complement-weight 0 --raw-complement-graph-loss-weight 0.1" LOG_EVERY=50 scripts/run_split_study.sh
+```

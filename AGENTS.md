@@ -716,3 +716,11 @@
   - 结论：proxy 明显优于 random 且略高于 validation selection，但仍低于 Cora GRACE seeds0-2 均值约 0.824948/0.810003，不能解决 homophily safety。
   - 当前研究判断：现有 Raw-Complement 仍只能作为 WikipediaNetwork-style heterophily 条件性候选；不能声称通用 GCL SOTA 或 homophily non-degradation。Cora safety 仍是最大 reviewer attack 面。
   - 下一步建议：暂停调当前 proxy 公式；优先设计 graph-context preservation / dataset-level fallback 等结构性机制，或把论文收缩为 heterophily-conditioned raw-complement GCL + failure boundary analysis。
+- 2026-06-28 Auxiliary graph-context preservation 初筛：
+  - 已在 `experiments/grace_idea/model.py` 中为 `Model` 增加可选 auxiliary projector，并在 `experiments/grace_idea/train.py` 中新增 `--raw-complement-graph-loss-weight`。
+  - 当该权重大于 0 时，Raw-Complement 会对两视图的 `graph_context` 额外施加 projected InfoNCE；默认值仍为 0，不改变既有结果。
+  - 未经 projector 的 direct graph-context InfoNCE 失败：Cora seed0 上 `0.2` 为 0.7797/0.7672，`0.05` 为 0.7743/0.7622，`0.005` 为 0.7900/0.7713，均不能解决 safety。
+  - projected graph-context loss `0.1` 在 Cora seeds0-2 上得到 0.818567/0.794162；相对 no-penalty graph 0.812597/0.791041 有小幅改善，但相对 GRACE 0.824948/0.810003 仍为 -0.006381/-0.015842。
+  - Chameleon/Squirrel split0 seed0 sanity：projected `0.1` 分别为 0.471491/0.467915 与 0.348703/0.343346，低于 no-penalty 的 0.475877/0.472223 与 0.355427/0.349828，说明该 refinement 可能轻微伤主战场。
+  - 当前判断：auxiliary graph-context preservation 有缩小 Cora gap 的信号，但不是突破；只能作为 safety refinement candidate，不能作为主方法。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Chameleon Squirrel" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" METHODS="raw_complement_gcl" EPOCHS=50 BATCH_SIZE=4096 SAVE_DIR="runs/raw_complement_graph_projected_w01_wiki_splits0-9_seed0_e50" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode anchor_graph --raw-complement-weight 0 --raw-complement-graph-loss-weight 0.1" LOG_EVERY=50 scripts/run_split_study.sh`。

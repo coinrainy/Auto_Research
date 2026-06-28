@@ -139,6 +139,7 @@ def parse_args():
     parser.add_argument('--cbr-stability-temperature', type=float, default=0.03)
     parser.add_argument('--cbr-stability-min-scale', type=float, default=0.25)
     parser.add_argument('--raw-complement-weight', type=float, default=0.0)
+    parser.add_argument('--raw-complement-graph-loss-weight', type=float, default=0.0)
     parser.add_argument('--raw-complement-detach-anchor',
                         action=argparse.BooleanOptionalAction,
                         default=True)
@@ -316,6 +317,9 @@ def build_model(config, dataset, device, args):
         model_hidden,
         config['num_proj_hidden'],
         config['tau'],
+        aux_num_hidden=(
+            config['num_hidden'] if args.method == 'raw_complement_gcl' else None
+        ),
     ).to(device)
 
 
@@ -926,6 +930,19 @@ def raw_complement_objective(raw1, comp1, raw2, comp2):
     return loss, diagnostics
 
 
+def raw_complement_graph_context_objective(model, graph1, graph2, batch_size):
+    loss = model.auxiliary_loss(graph1, graph2, batch_size=batch_size)
+    diagnostics = {
+        'raw_complement_graph_loss': loss.item(),
+        'graph_context_view_cosine': F.cosine_similarity(
+            graph1.detach(),
+            graph2.detach(),
+            dim=1,
+        ).mean().item(),
+    }
+    return loss, diagnostics
+
+
 def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     model.train()
     optimizer.zero_grad()
@@ -934,9 +951,11 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     z1 = model(x_1, edge_index_1)
     raw_anchor_1 = getattr(model.encoder, 'last_raw_anchor', None)
     complement_1 = getattr(model.encoder, 'last_complement', None)
+    graph_context_1 = getattr(model.encoder, 'last_graph_context', None)
     z2 = model(x_2, edge_index_2)
     raw_anchor_2 = getattr(model.encoder, 'last_raw_anchor', None)
     complement_2 = getattr(model.encoder, 'last_complement', None)
+    graph_context_2 = getattr(model.encoder, 'last_graph_context', None)
 
     weights = None
     raw_weights = None
@@ -1016,8 +1035,10 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     prototype_consistency_loss = z1.new_tensor(0.0)
     prototype_balance_loss = z1.new_tensor(0.0)
     raw_complement_loss = z1.new_tensor(0.0)
+    raw_complement_graph_loss = z1.new_tensor(0.0)
     prototype_diagnostics = {}
     raw_complement_diagnostics = {}
+    raw_complement_graph_diagnostics = {}
     if (
         args.method == 'sgfn'
         and use_weighting
@@ -1037,6 +1058,16 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
             raw_anchor_2,
             complement_2,
         )
+        if args.raw_complement_graph_loss_weight > 0.0:
+            (
+                raw_complement_graph_loss,
+                raw_complement_graph_diagnostics,
+            ) = raw_complement_graph_context_objective(
+                model,
+                graph_context_1,
+                graph_context_2,
+                args.batch_size,
+            )
     loss = (
         contrastive_loss
         + args.hybrid_rr_weight * rr_loss
@@ -1045,6 +1076,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         + args.pccl_consistency_weight * prototype_consistency_loss
         + args.pccl_balance_weight * prototype_balance_loss
         + args.raw_complement_weight * raw_complement_loss
+        + args.raw_complement_graph_loss_weight * raw_complement_graph_loss
     )
 
     loss.backward()
@@ -1080,6 +1112,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         'prototype_consistency_loss': prototype_consistency_loss.item(),
         'prototype_balance_loss': prototype_balance_loss.item(),
         'raw_complement_loss': raw_complement_loss.item(),
+        'raw_complement_graph_loss': raw_complement_graph_loss.item(),
         'stage': stage,
         'weight_control': weight_control_name(args),
     }
@@ -1097,6 +1130,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         })
     log.update(prototype_diagnostics)
     log.update(raw_complement_diagnostics)
+    log.update(raw_complement_graph_diagnostics)
     log.update(rr_diagnostics)
     if weights is not None:
         log.update({
@@ -1208,6 +1242,7 @@ def append_train_log(run_dir, row):
         'prototype_consistency_loss',
         'prototype_balance_loss',
         'raw_complement_loss',
+        'raw_complement_graph_loss',
         'ego_gate',
         'graph_gate_mean',
         'graph_gate_std',
@@ -1217,6 +1252,7 @@ def append_train_log(run_dir, row):
         'raw_complement_corr_max_abs',
         'raw_complement_raw_norm',
         'raw_complement_comp_norm',
+        'graph_context_view_cosine',
         'prototype_usage_entropy',
         'prototype_usage_max',
         'prototype_usage_min',
@@ -1393,6 +1429,7 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'cbr_stability_temperature': args.cbr_stability_temperature,
         'cbr_stability_min_scale': args.cbr_stability_min_scale,
         'raw_complement_weight': args.raw_complement_weight,
+        'raw_complement_graph_loss_weight': args.raw_complement_graph_loss_weight,
         'raw_complement_detach_anchor': args.raw_complement_detach_anchor,
         'raw_complement_eval_mode': args.raw_complement_eval_mode,
         'pair_shuffle_mode': args.pair_shuffle_mode,
@@ -1567,6 +1604,8 @@ def main():
     if args.method == 'raw_complement_gcl':
         print(
             f'(I) | raw_complement_weight={args.raw_complement_weight}, '
+            f'raw_complement_graph_loss_weight='
+            f'{args.raw_complement_graph_loss_weight}, '
             f'raw_complement_detach_anchor={args.raw_complement_detach_anchor}, '
             f'raw_complement_eval_mode={args.raw_complement_eval_mode}'
         )
