@@ -436,3 +436,58 @@ python evaluate_feature_fusion.py --runs-dir runs/ego_grace_splits0-9_seed0_e100
 - Cora `graph` fallback: 0.7997/0.7655，明显修复 anchor 退化，但仍低于 GRACE。
 
 判断：当前原型只能作为 heterophily-focused active candidate，不能声称 homophily non-degradation。下一步应实现 validation-based 或更可靠的 graph/raw representation selection；如果无法修复 Cora 退化，论文定位必须收缩为异配图专门方法。
+
+## 2026-06-28 表示选择诊断
+
+新增脚本：
+
+```bash
+python select_representation.py --run-dir /tmp/raw_complement_cora_graph/Cora_raw_complement_gcl_seed0 --selection-eval-mode random
+```
+
+脚本功能：
+
+- 递归读取 `artifacts.pt`；
+- 在同一 dataset/split 下比较 `raw`、`saved`、`anchor`、`graph`、`complement`、`hidden` 等候选表示；
+- 使用验证集选择候选表示，再报告测试集 F1；
+- 支持固定 mask 协议与随机 train/val/test 协议；
+- 支持 `--candidate-names`、`--solver`、`--c-min-power/--c-max-power`，用于控制诊断成本。
+
+### Cora safety 诊断
+
+输出：
+
+- `runs/summaries/raw_complement_representation_selection_cora_random_seed0_fullc.csv`
+- `runs/summaries/raw_complement_representation_selection_cora_random_seed0_fullc_aggregate.csv`
+
+结果：
+
+- 完整 C 网格、3 次随机划分，验证集均选择 `saved`；
+- `saved` 在该 graph fallback run 中等价于 graph-context 表示；
+- 平均 F1Mi/F1Ma 为 `0.800738/0.777029`；
+- 相比 anchor mode 的 `0.6524/0.6047` 明显修复同配退化；
+- 但仍低于同设置 GRACE 的约 `0.8224/0.8015`。
+
+判断：validation-based representation selection 可以避免 Cora 上最严重的 raw-anchor 崩溃，但还不能证明 homophily non-degradation。若论文方法要覆盖同配图，需要继续做更强的 graph-context fallback 或训练期 gate；否则应明确定位为 heterophily-focused。
+
+### Heterophily raw-vs-saved 诊断
+
+输出：
+
+- `runs/summaries/raw_complement_raw_vs_saved_selection_heterophily_splits0-9_seed0_e100.csv`
+- `runs/summaries/raw_complement_raw_vs_saved_selection_heterophily_splits0-9_seed0_e100_aggregate.csv`
+
+为控制成本，本诊断只比较 `raw` 与 `saved`，并使用窄 C 网格；因此它用于选择趋势分析，不作为最终性能表。
+
+| Dataset | selected counts | selected F1Mi | selected F1Ma | 判断 |
+| --- | --- | ---: | ---: | --- |
+| Actor | saved:10 | 0.359803 | 0.327280 | 学到的互补表示有稳定增量 |
+| Cornell | raw:7; saved:3 | 0.637838 | 0.379415 | 多数 split 仍退回 raw |
+| Texas | raw:9; saved:1 | 0.700000 | 0.414278 | 多数 split 仍退回 raw |
+| Wisconsin | raw:8; saved:2 | 0.752941 | 0.412862 | 多数 split 仍退回 raw |
+
+判断：当前 raw-complement 表示的真实增量最清楚地出现在 Actor；WebKB 三个小图多数 split 仍由 raw feature 主导。该证据削弱了“通用 SOTA 表示学习方法”的叙事，但保留了一个更合理的论文切口：Graph SSL 在异配图上常被 raw-feature separability 支配，方法贡献应证明何时能学习 raw 之外的互补信号，而不是只赢弱 GRACE baseline。
+
+### 工程结论
+
+全量候选、完整 C 网格的 sklearn logistic probe 在 Actor 上明显变慢，已中断两次。`select_representation.py` 当前保留为单 run / 小批量诊断工具；正式大规模汇总应继续使用训练脚本自带 evaluator 或后续实现更快的 torch linear probe。

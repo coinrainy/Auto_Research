@@ -31,6 +31,7 @@
 - `--method residual_grace`：GCN branch + ego MLP branch 的 residual encoder，是当前最稳的 encoder-level diagnostic candidate；但同样未越过 WebKB raw-feature baseline。
 - `--method gated_ego_graph_grace`：基于 local feature-neighborhood agreement 的节点级 graph usage gate；异配强，但当前 v1 与 `--graph-gate-min 0.5` 同配退化严重，不能作为最终主方法。
 - `--method raw_complement_gcl`：Raw-Anchored Complement GCL 原型，训练 hidden `[raw_anchor, complement]`，final representation 默认使用 `[normalized raw features, normalized learned complement]`；当前异配 10 split 相对 GRACE 全正向，但 homophily safety 尚未解决。
+- `select_representation.py`：raw-complement 的表示选择诊断工具，可从 `artifacts.pt` 中比较 `raw/saved/anchor/graph/complement/hidden`，用验证集选择候选表示；当前发现 Cora 可通过 graph/saved fallback 避免 anchor 崩溃，但仍低于 GRACE，Actor 上 saved 表示有清楚增量，WebKB 三小图多数 split 仍由 raw feature 主导。
 
 `es_weighted` 的设计边界：
 
@@ -231,6 +232,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `raw_complement_gcl` 支持 `--raw-complement-weight`、`--raw-complement-detach-anchor/--no-raw-complement-detach-anchor`、`--raw-complement-eval-mode anchor|hidden|graph`，并记录 raw/complement correlation diagnostics。
 - `evaluate_raw_features.py` 支持对原始 `data.x` 使用当前同一套 mask/random linear evaluation 协议，作为 ego/residual/GRACE 的 feature-only 硬 baseline。
 - `evaluate_feature_fusion.py` 支持递归读取 `artifacts.pt`，在同一 split 下评估 `raw`、`ssl`、`raw+ssl concat`，并输出 concat 相对 raw/ssl 的 paired delta 与 aggregate summary。
+- `select_representation.py` 支持读取 `artifacts.pt` 并用验证集选择 raw/saved/anchor/graph/complement/hidden 候选表示；当前定位为单 run / 小批量诊断工具，全候选完整 C 网格在 Actor 上过慢，不作为正式大规模评估主入口。
 
 示例 split-aware 命令：
 
@@ -255,6 +257,7 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - 当前应优先推进 Raw-Anchored Residual/Complement GCL：`evaluate_feature_fusion.py` 已显示 SSL embedding 可能包含 raw 之外的互补信息，但 post-hoc concat 对 C 搜索敏感，不能作为最终方法。
 - 已实现 `raw_complement_gcl` 原型，异配 Texas/Cornell/Wisconsin/Actor × splits0-9 相对 GRACE 全部 10/10 正向；相对 raw feature baseline 基本持平到小幅正向/负向，说明该方向有真实方法潜力。
 - `raw_complement_gcl` 当前最大风险是 homophily safety：Cora anchor mode 从 GRACE 0.8224/0.8015 降到 0.6524/0.6047；graph fallback 回升到 0.7997/0.7655 但仍低于 GRACE。
+- 表示选择诊断显示：Cora 完整 C 网格随机选择会选择 saved/graph-context，F1Mi/F1Ma 约 0.800738/0.777029；异配 raw-vs-saved 快速诊断中 Actor 10/10 选择 saved，Cornell/Texas/Wisconsin 多数选择 raw。当前叙事应继续收缩为 raw-feature anchored complement learning，而不是通用 Graph SSL SOTA。
 - 下一步优先实现 validation-based 或 unsupervised-reliable representation selection，决定何时输出 raw+complement、何时退回 graph context；如果不能修复 Cora，则该方法应定位为 heterophily-focused。
 - 完整 C 网格 split0-2：`ego_grace` concat - raw 在 Actor/Cornell/Texas 为正、Wisconsin 为负；`residual_grace` 仅 Actor 稳定正向，Cornell/Texas/Wisconsin 为负。
 - 固定 C=1 的 10 split 快速筛查：ego/residual concat - raw 在 Actor/Cornell/Texas/Wisconsin 均为正，但该证据只能说明存在互补信号，不足以支撑 SOTA claim。
