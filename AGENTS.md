@@ -748,3 +748,12 @@
   - Smoke runner 已跑通：Chameleon、`--reset_epochs 1`、`--linear_epochs 10`、`--reset_hidden 64`、`--reset_seed_num 4`、`--reset_max_size 64`、`--reset_subg_num_hops 2`；最新输出 `[Test] Acc Mean=0.2083333284`，仅证明官方实现可运行，不作为正式性能。
   - 已新增接入记录：`docs/spgcl_baseline_integration_note.md`。
   - 下一步建议：写正式 SP-GCL runner 并跑 Chameleon/Squirrel seed0 的半正式/正式配置；若 SP-GCL 强于 Raw-Complement，则必须降级当前 idea。
+- 2026-06-28 SP-GCL 半正式强基线门槛判定：
+  - 已执行官方 SP-GCL 半正式配置：`reset_epochs=100`、`linear_epochs=300`、`reset_hidden=256`、`reset_seed_num=32`、`reset_max_size=512`、`reset_subg_num_hops=2`、`neg_selection=random`。
+  - Chameleon 输出：`[Test] Acc Mean=0.5574561357498169 Acc Std=0.02877555787563324`；`[Last] Acc Mean=0.5589912533760071`；`[Best] BAcc Mean=0.5598684549331665`。
+  - Squirrel 输出：`[Test] Acc Mean=0.36042267084121704 Acc Std=0.018587330356240273`；`[Last] Acc Mean=0.3612872064113617`；`[Best] BAcc Mean=0.3630163371562958`。
+  - Raw-Complement no-penalty final candidate 均值为 Chameleon F1Mi/F1Ma=0.49466374269005847/0.48931417198170973，Squirrel F1Mi/F1Ma=0.34121037463976933/0.3336160445379804。
+  - 虽然 SP-GCL accuracy 与 Raw-Complement F1Mi/F1Ma 指标不完全等价，但在同一批 Chameleon/Squirrel benchmark splits 上，SP-GCL 已明显超过 Raw-Complement。
+  - 当前裁决：Raw-Complement 未通过 strong baseline gate，降级为机制诊断/负结果/后续组件资产，不再作为 2026 顶会/顶刊主方法 active candidate。
+  - 已更新 `docs/raw_complement_candidate_status_memo.md`、`docs/spgcl_baseline_integration_note.md` 与 `experiments/grace_idea/IDEA_NOTES.md`。
+  - 下一步建议：停止继续微调 Raw-Complement；进入下一轮 idea 搜索，优先寻找能正面超过 SP-GCL/PolyGCL/HLCL 的图对比学习机制。

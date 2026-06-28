@@ -205,6 +205,14 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - reliability 与 downstream error、degree、local homophily 的独立诊断；
 - 与 ProGCL / GRAPE / GraphRank 等 false-negative 或 hard-negative 方法的公平对照。
 
+`raw_complement_gcl` 最新强基线裁决：
+
+- SP-GCL 官方实现已在当前项目本地接入，并完成 Chameleon/Squirrel 半正式配置筛查。
+- SP-GCL Chameleon Test Acc Mean=0.557456，Squirrel Test Acc Mean=0.360423。
+- Raw-Complement no-penalty final candidate 在相同主战场上的均值为 Chameleon F1Mi/F1Ma=0.494664/0.489314，Squirrel F1Mi/F1Ma=0.341210/0.333616。
+- 虽然 SP-GCL accuracy 与 Raw-Complement F1 指标不完全等价，但在同一批 benchmark splits 上，SP-GCL 已足够明显地超过 Raw-Complement。
+- 当前裁决：Raw-Complement 降级为机制诊断/负结果/后续组件资产，不再作为 2026 顶会/顶刊主方法 active candidate。后续不要继续围绕它做小参数微调，除非新设计能正面解释并超过 SP-GCL/PolyGCL/HLCL 级强基线。
+
 ## 当前实验入口能力
 
 - 支持 Planetoid/CitationFull：`Cora`、`CiteSeer`、`PubMed`、`DBLP`。

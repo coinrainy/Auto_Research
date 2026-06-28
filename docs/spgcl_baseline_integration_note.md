@@ -82,8 +82,60 @@ Smoke 结果：
 
 该 smoke 结果不代表正式 baseline 性能，只证明 SP-GCL 官方代码可以在当前项目内跑通。
 
+## 半正式强基线结果
+
+为快速判断 Raw-Complement 是否值得继续作为主方法候选，已在官方 SP-GCL 代码上运行 Chameleon/Squirrel 半正式配置：
+
+```bash
+cd /root/autodl-tmp/Auto_Research/third_party_baselines/SPGCL
+PYTHONPATH=$(pwd) python src/main.py \
+  --dataset chameleon \
+  --neg_selection random \
+  --load_params 1 \
+  --save_folder logs \
+  --reset_epochs 100 \
+  --linear_epochs 300 \
+  --reset_hidden 256 \
+  --reset_seed_num 32 \
+  --reset_max_size 512 \
+  --reset_subg_num_hops 2
+
+PYTHONPATH=$(pwd) python src/main.py \
+  --dataset squirrel \
+  --neg_selection random \
+  --load_params 1 \
+  --save_folder logs \
+  --reset_epochs 100 \
+  --linear_epochs 300 \
+  --reset_hidden 256 \
+  --reset_seed_num 32 \
+  --reset_max_size 512 \
+  --reset_subg_num_hops 2
+```
+
+结果：
+
+| Dataset | Test Acc Mean | Test Acc Std | Last Acc Mean | Best Acc Mean |
+| --- | ---: | ---: | ---: | ---: |
+| Chameleon | 0.557456 | 0.028776 | 0.558991 | 0.559868 |
+| Squirrel | 0.360423 | 0.018587 | 0.361287 | 0.363016 |
+
+Raw-Complement 最终候选均值：
+
+| Dataset | Raw-Complement F1Mi | Raw-Complement F1Ma |
+| --- | ---: | ---: |
+| Chameleon | 0.494664 | 0.489314 |
+| Squirrel | 0.341210 | 0.333616 |
+
+解释：
+
+- 这不是完整官方复现实验，但已比 smoke 更接近有效 baseline；
+- 指标格式不完全一致，SP-GCL 输出 accuracy，Raw-Complement 汇总为 F1Mi/F1Ma；
+- 在同一批导出的 Chameleon/Squirrel benchmark splits 上，SP-GCL 已明显高于 Raw-Complement；
+- 因此 Raw-Complement 未通过当前 strong baseline gate，应降级为机制/负结果资产。
+
 ## 下一步
 
-1. 写正式 SP-GCL runner，记录 dataset、seed、epochs、linear_epochs、hidden、max_size、subg hops 与输出日志路径。
-2. 先跑 Chameleon/Squirrel seed0 正式或半正式配置。
-3. 若 SP-GCL 正式结果显著高于 Raw-Complement，则当前 idea 必须降级或重新设计；若 Raw-Complement 仍有优势，再补 PolyGCL/HLCL 对照。
+1. 若后续需要论文级对照，再写正式 SP-GCL runner，固化日志解析与配置记录。
+2. 当前研究决策上，Raw-Complement 已经不值得继续作为主方法微调。
+3. 下一轮应优先搜索或设计能正面超过 SP-GCL/PolyGCL/HLCL 的新机制。

@@ -84,27 +84,43 @@ Cora seeds0-2：
 
 ## 2026 投稿可行性判断
 
-当前证据达到“值得继续”的条件，但尚未达到“足以顶会/顶刊”的条件。
+更新裁决：在 SP-GCL 官方实现半正式 baseline gate 后，Raw-Complement 已不再满足“足以作为 2026 顶会/顶刊主方法候选”的门槛。
 
-可以继续的理由：
+保留价值：
 
-- Chameleon/Squirrel 多 split 多 seed 结果稳定；
-- 机制消融支持 residual complement，而非普通 graph context；
-- 方法简单，适合构造清晰的 problem diagnosis -> method -> boundary analysis 论文。
+- Chameleon/Squirrel 多 split 多 seed 相对 raw 与 GRACE 结果稳定；
+- 机制消融支持 raw-relative complement，而非普通 graph context；
+- 作为 mechanism diagnostic、ablation asset 或后续新方法组件仍有价值。
 
-暂不足的理由：
+不足以继续主推的理由：
 
 - 强 baseline 不够，目前主要对 GRACE 与 raw baseline；
+- SP-GCL 半正式配置已在 Chameleon/Squirrel 上超过 Raw-Complement；
 - homophily safety 未解决；
 - WebKB/Actor 上 raw baseline 支配，方法不能声称通用异配提升；
 - 需要和 HLCL、PolyGCL、SP-GCL 或其可复现实验结果直接对齐。
+
+## SP-GCL 强基线门槛结果
+
+SP-GCL 官方实现已在本地接入并完成 Chameleon/Squirrel 半正式配置筛查。配置为官方代码、导出的 Geom-GCN/WikipediaNetwork split、`reset_epochs=100`、`linear_epochs=300`、`reset_hidden=256`、`reset_seed_num=32`、`reset_max_size=512`、`reset_subg_num_hops=2`、`neg_selection=random`。
+
+| Dataset | Raw-Complement mean | SP-GCL Test Acc Mean | SP-GCL Test Acc Std | 判断 |
+| --- | ---: | ---: | ---: | --- |
+| Chameleon | F1Mi 0.494664 / F1Ma 0.489314 | 0.557456 | 0.028776 | SP-GCL 明显更强 |
+| Squirrel | F1Mi 0.341210 / F1Ma 0.333616 | 0.360423 | 0.018587 | SP-GCL 更强 |
+
+解释：
+
+- 指标不完全等价：Raw-Complement 汇总用当前项目 linear probe 的 F1Mi/F1Ma；SP-GCL 输出为官方脚本的 accuracy mean/std。
+- 但二者都基于同一批 Chameleon/Squirrel benchmark splits，且 SP-GCL 在两个数据集上都高于 Raw-Complement 的 micro-F1 均值。
+- 这已经足以触发候选淘汰规则：Raw-Complement 只能赢 GRACE/raw，不能赢 heterophily-specific strong baseline，因此不应继续包装为顶会/顶刊主方法。
 
 ## 下一步硬门槛
 
 1. 强 baseline gate：
    - 至少补一个 heterophily-specific GCL baseline：HLCL、PolyGCL 或 SP-GCL；
    - 若无法复现官方实现，则至少写清楚不可比原因，并补公开表格/同协议近似对照。
-   - 当前进展：SP-GCL 官方实现已在本地 smoke 跑通，见 `docs/spgcl_baseline_integration_note.md`。
+   - 当前结果：SP-GCL 官方实现已在本地跑通半正式 Chameleon/Squirrel 配置，并超过 Raw-Complement。该 gate 判定为未通过。
 
 2. Safety gate：
    - 不继续围绕 `raw_complement_graph_loss_weight` 做大网格；
@@ -121,4 +137,11 @@ Cora seeds0-2：
 
 ## 当前建议
 
-继续保留 Raw-Complement 作为 active candidate，但进入“强 baseline 与机制诊断”阶段。若 HLCL/PolyGCL/SP-GCL 对齐后 Raw-Complement 只赢 GRACE、不赢 heterophily-specific GCL，则应放弃顶会主方法路线，转为机制诊断/short paper/附录负结果路线。
+停止把 Raw-Complement 作为 active top-venue main idea 继续投入。保留以下资产：
+
+- raw-feature anchored complement parameterization；
+- raw/graph/anchor_graph output safety selection 诊断；
+- Chameleon/Squirrel 上 raw-relative complement 的稳定正向现象；
+- WebKB/Actor 与 Cora safety 失败边界。
+
+下一轮研究应转向新的主想法，优先目标是“能解释并超过 SP-GCL/PolyGCL/HLCL 这类 heterophily-specific GCL”的机制，而不是继续微调 Raw-Complement。
