@@ -1052,3 +1052,51 @@ python summarize_raw_complement_probe.py --datasets Chameleon Squirrel --splits 
 - 先做小规模表示/损失消融：Chameleon/Squirrel splits0-2 × seeds0-2，比较 `anchor`、`graph`、`anchor_graph`、`raw_complement_weight=0`、`--no-raw-complement-detach-anchor`；
 - 若消融支持 complement 机制，再扩展到 100/200 epoch 与 seeds0-4；
 - 同时准备对 HLCL/HeterGCL/H3GNNs/POLYGCL 等相关工作的强 baseline 复现或引用边界梳理。
+
+## 2026-06-28 Raw-Complement 表示/损失机制消融
+
+目标：在 Chameleon/Squirrel splits0-2 × seeds0-2 上验证 Raw-Complement 的收益是否来自 raw-relative complement，而不是普通 graph context、简单 raw+graph 拼接，或 correlation penalty 偶然调参。
+
+代码更新：
+
+- `train.py` 新增 `--raw-complement-eval-mode raw_graph`；
+- `select_representation.py` 新增 `raw_graph` 候选，表示为 `[normalize(raw x), normalize(graph_context)]`。
+
+消融变体：
+
+| Variant | 含义 |
+| --- | --- |
+| `default_anchor_graph` | `[raw, complement, graph_context]`，`raw_complement_weight=0.05` |
+| `anchor_graph_weight0` | 同上，但去掉 complement correlation penalty |
+| `anchor_only` | `[raw, complement]` |
+| `raw_graph` | `[raw, graph_context]`，不使用 residual complement |
+| `graph_only` | 仅 `graph_context` |
+
+聚合结果（Chameleon/Squirrel × splits0-2 × seeds0-2，50 epoch）：
+
+| Variant | Dataset | RC - raw F1Mi | pos/neg | RC - GRACE F1Mi | pos/neg | RC - raw F1Ma | RC - GRACE F1Ma |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| default_anchor_graph | Chameleon | +0.042154 | 9/0 | +0.069688 | 9/0 | +0.043947 | +0.075093 |
+| default_anchor_graph | Squirrel | +0.014409 | 9/0 | +0.062974 | 9/0 | +0.016688 | +0.076698 |
+| anchor_graph_weight0 | Chameleon | +0.041667 | 9/0 | +0.069201 | 9/0 | +0.043670 | +0.074815 |
+| anchor_graph_weight0 | Squirrel | +0.014196 | 9/0 | +0.062760 | 9/0 | +0.017095 | +0.077105 |
+| anchor_only | Chameleon | +0.036306 | 9/0 | +0.063840 | 9/0 | +0.038663 | +0.069809 |
+| anchor_only | Squirrel | +0.008646 | 7/2 | +0.057210 | 9/0 | +0.007061 | +0.067071 |
+| raw_graph | Chameleon | +0.018275 | 9/0 | +0.045809 | 9/0 | +0.020329 | +0.051475 |
+| raw_graph | Squirrel | -0.006084 | 0/8 | +0.042481 | 9/0 | +0.000043 | +0.060053 |
+| graph_only | Chameleon | -0.033626 | 0/9 | -0.006092 | 5/4 | -0.036623 | -0.005477 |
+| graph_only | Squirrel | -0.057423 | 0/9 | -0.008859 | 2/7 | -0.061044 | -0.001034 |
+
+机制判断：
+
+- `graph_only` 相对 raw 全负，说明 vanilla graph context 不是收益来源；
+- `raw_graph` 明显弱于 `default_anchor_graph`，尤其 Squirrel 相对 raw 的 F1Mi 变为负，说明简单 raw+graph 拼接不足以解释收益；
+- `anchor_only` 已经保留大部分收益，但 Squirrel 有 2/9 个相对 raw 负例，说明额外拼接 graph_context 可提升稳定性；
+- `anchor_graph_weight0` 与默认几乎持平，说明当前 correlation penalty 不是主贡献，应降级为 optional regularizer / appendix ablation；
+- 更合理的主贡献表述是 raw-relative graph complement parameterization：在 raw feature separability 之上，学习与 raw anchor 相对的 graph residual/complement，而不是直接使用图传播表示。
+
+下一步建议：
+
+- 将主方法暂定为 `anchor_graph` 输出，但不要把 `raw_complement_weight=0.05` 包装成核心；
+- 扩展 `raw_graph` 与 `anchor_graph_weight0` 到 Chameleon/Squirrel splits0-9 或 seeds0-4，确认机制消融是否稳定；
+- 若 `weight=0` 在更大范围仍持平，应把默认方法简化为 no-penalty residual complement，并把 correlation penalty 放入附录负/弱消融。

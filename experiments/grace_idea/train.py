@@ -143,7 +143,13 @@ def parse_args():
                         action=argparse.BooleanOptionalAction,
                         default=True)
     parser.add_argument('--raw-complement-eval-mode', type=str, default='anchor',
-                        choices=['anchor', 'hidden', 'graph', 'anchor_graph'])
+                        choices=[
+                            'anchor',
+                            'hidden',
+                            'graph',
+                            'anchor_graph',
+                            'raw_graph',
+                        ])
     parser.add_argument('--pair-shuffle-mode', type=str, default='column',
                         choices=['column', 'row'])
     parser.add_argument('--pair-normalization', type=str, default='none',
@@ -1141,6 +1147,11 @@ def encode(model, data, args=None):
             if graph_context is not None:
                 graph_context = F.normalize(graph_context.detach(), dim=1)
                 return torch.cat([raw_anchor, complement, graph_context], dim=1)
+        if mode == 'raw_graph':
+            graph_context = getattr(model.encoder, 'last_graph_context', None)
+            if graph_context is not None:
+                graph_context = F.normalize(graph_context.detach(), dim=1)
+                return torch.cat([raw_anchor, graph_context], dim=1)
         return torch.cat([raw_anchor, complement], dim=1)
     return embeddings
 

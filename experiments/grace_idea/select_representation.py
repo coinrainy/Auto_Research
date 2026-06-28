@@ -114,6 +114,10 @@ def candidate_features(data, artifact):
     if graph_context is not None:
         graph_context = graph_context.detach().cpu()
         candidates['graph'] = graph_context
+        candidates['raw_graph'] = torch.cat([
+            F.normalize(data.x.detach().cpu(), dim=1),
+            F.normalize(graph_context, dim=1),
+        ], dim=1)
         if complement is not None:
             candidates['anchor_graph'] = torch.cat([
                 F.normalize(data.x.detach().cpu(), dim=1),
@@ -258,7 +262,8 @@ def row_prefix(artifact_path, dataset_name, method, seed, split_index,
 
 def candidate_priority(name):
     priority = {
-        'anchor_graph': 6,
+        'anchor_graph': 7,
+        'raw_graph': 6,
         'saved': 5,
         'anchor': 4,
         'graph': 3,
