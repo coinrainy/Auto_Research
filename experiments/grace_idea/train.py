@@ -88,6 +88,7 @@ def parse_args():
                             'stable_cluster_cbr_gcl',
                             'raw_complement_gcl',
                             'pgsp_gcl',
+                            'sparc_gcl',
                         ])
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--epochs', type=int, default=None)
@@ -167,6 +168,9 @@ def parse_args():
                             'anchor_graph',
                             'raw_graph',
                         ])
+    parser.add_argument('--sparc-residual-weight', type=float, default=0.1)
+    parser.add_argument('--sparc-eval-mode', type=str, default='hidden_resid',
+                        choices=['hidden', 'resid', 'hidden_resid'])
     parser.add_argument('--pgsp-hops', type=int, default=2)
     parser.add_argument('--pgsp-topk', type=int, default=10)
     parser.add_argument('--pgsp-neg-topk', type=int, default=10)
@@ -383,7 +387,9 @@ def build_model(config, dataset, device, args):
         config['num_proj_hidden'],
         config['tau'],
         aux_num_hidden=(
-            config['num_hidden'] if args.method == 'raw_complement_gcl' else None
+            config['num_hidden']
+            if args.method in ['raw_complement_gcl', 'sparc_gcl']
+            else None
         ),
         projection_activation=(
             activation_by_name(args.pgsp_proj_activation)
@@ -529,6 +535,22 @@ def make_views(data, config, args):
     x_1 = drop_feature(x_base_1, config['drop_feature_rate_1'])
     x_2 = drop_feature(x_base_2, config['drop_feature_rate_2'])
     return x_1, edge_index_1, x_2, edge_index_2
+
+
+def propagate_embeddings(x, edge_index, add_self=True):
+    source, target = edge_index
+    aggregate = torch.zeros_like(x)
+    degree = torch.zeros(x.size(0), device=x.device, dtype=x.dtype)
+    aggregate.index_add_(0, target, x[source])
+    degree.index_add_(0, target, torch.ones_like(target, dtype=x.dtype))
+    if add_self:
+        aggregate = aggregate + x
+        degree = degree + 1.0
+    return aggregate / degree.clamp_min(1.0).view(-1, 1)
+
+
+def sparc_residual(z, edge_index):
+    return z - propagate_embeddings(z, edge_index, add_self=True)
 
 
 def build_teacher(model):
@@ -1089,6 +1111,25 @@ def raw_complement_graph_context_objective(model, graph1, graph2, batch_size):
     return loss, diagnostics
 
 
+def sparc_residual_objective(model, z1, edge_index_1, z2, edge_index_2, batch_size):
+    residual_1 = sparc_residual(z1, edge_index_1)
+    residual_2 = sparc_residual(z2, edge_index_2)
+    loss = model.auxiliary_loss(residual_1, residual_2, batch_size=batch_size)
+    diagnostics = {
+        'sparc_residual_loss': loss.item(),
+        'sparc_residual_view_cosine': F.cosine_similarity(
+            residual_1.detach(),
+            residual_2.detach(),
+            dim=1,
+        ).mean().item(),
+        'sparc_residual_norm': (
+            residual_1.detach().norm(dim=1).mean()
+            + residual_2.detach().norm(dim=1).mean()
+        ).mul(0.5).item(),
+    }
+    return loss, diagnostics
+
+
 def propagation_guided_single_pass_objective(model, z, data, args):
     projection_input = F.relu(z) if args.pgsp_pre_proj_relu else z
     embeddings = F.normalize(model.projection(projection_input), dim=1)
@@ -1290,9 +1331,11 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     prototype_balance_loss = z1.new_tensor(0.0)
     raw_complement_loss = z1.new_tensor(0.0)
     raw_complement_graph_loss = z1.new_tensor(0.0)
+    sparc_residual_loss = z1.new_tensor(0.0)
     prototype_diagnostics = {}
     raw_complement_diagnostics = {}
     raw_complement_graph_diagnostics = {}
+    sparc_diagnostics = {}
     if (
         args.method == 'sgfn'
         and use_weighting
@@ -1322,6 +1365,15 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
                 graph_context_2,
                 args.batch_size,
             )
+    if args.method == 'sparc_gcl':
+        sparc_residual_loss, sparc_diagnostics = sparc_residual_objective(
+            model,
+            z1,
+            edge_index_1,
+            z2,
+            edge_index_2,
+            args.batch_size,
+        )
     loss = (
         contrastive_loss
         + args.hybrid_rr_weight * rr_loss
@@ -1331,6 +1383,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
         + args.pccl_balance_weight * prototype_balance_loss
         + args.raw_complement_weight * raw_complement_loss
         + args.raw_complement_graph_loss_weight * raw_complement_graph_loss
+        + args.sparc_residual_weight * sparc_residual_loss
     )
 
     loss.backward()
@@ -1372,6 +1425,8 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     }
     if args.method == 'raw_complement_gcl':
         log['stage'] = 'raw_complement'
+    if args.method == 'sparc_gcl':
+        log['stage'] = 'sparc_residual'
     if hasattr(model.encoder, 'ego_gate'):
         log['ego_gate'] = model.encoder.ego_gate.item()
     if getattr(model.encoder, 'last_graph_gate', None) is not None:
@@ -1385,6 +1440,7 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
     log.update(prototype_diagnostics)
     log.update(raw_complement_diagnostics)
     log.update(raw_complement_graph_diagnostics)
+    log.update(sparc_diagnostics)
     log.update(rr_diagnostics)
     if weights is not None:
         log.update({
@@ -1418,6 +1474,16 @@ def train_epoch(model, teacher, data, optimizer, config, args, epoch):
 def encode(model, data, args=None):
     model.eval()
     embeddings = model(data.x, data.edge_index)
+    if args is not None and args.method == 'sparc_gcl':
+        residual = sparc_residual(embeddings, data.edge_index)
+        if args.sparc_eval_mode == 'hidden':
+            return embeddings
+        if args.sparc_eval_mode == 'resid':
+            return residual
+        return torch.cat([
+            F.normalize(embeddings, dim=1),
+            F.normalize(residual, dim=1),
+        ], dim=1)
     complement = getattr(model.encoder, 'last_complement', None)
     if complement is not None:
         mode = 'anchor' if args is None else args.raw_complement_eval_mode
@@ -1497,6 +1563,9 @@ def append_train_log(run_dir, row):
         'prototype_balance_loss',
         'raw_complement_loss',
         'raw_complement_graph_loss',
+        'sparc_residual_loss',
+        'sparc_residual_view_cosine',
+        'sparc_residual_norm',
         'ego_gate',
         'graph_gate_mean',
         'graph_gate_std',
@@ -1696,6 +1765,8 @@ def save_metadata(run_dir, args, config, seed, device, eval_stats):
         'raw_complement_graph_loss_weight': args.raw_complement_graph_loss_weight,
         'raw_complement_detach_anchor': args.raw_complement_detach_anchor,
         'raw_complement_eval_mode': args.raw_complement_eval_mode,
+        'sparc_residual_weight': args.sparc_residual_weight,
+        'sparc_eval_mode': args.sparc_eval_mode,
         'pgsp_hops': args.pgsp_hops,
         'pgsp_topk': args.pgsp_topk,
         'pgsp_neg_topk': args.pgsp_neg_topk,
@@ -1905,6 +1976,11 @@ def main():
             f'{args.raw_complement_graph_loss_weight}, '
             f'raw_complement_detach_anchor={args.raw_complement_detach_anchor}, '
             f'raw_complement_eval_mode={args.raw_complement_eval_mode}'
+        )
+    if args.method == 'sparc_gcl':
+        print(
+            f'(I) | sparc_residual_weight={args.sparc_residual_weight}, '
+            f'sparc_eval_mode={args.sparc_eval_mode}'
         )
     if args.method == 'pgsp_gcl':
         print(

@@ -558,6 +558,75 @@ artifact method 结果与四 seed residual summary 对齐：
 
 这一步的意义是把 SPARC 从 “evaluation mode” 固化为可比较的 artifact-level method。下一步仍需推进到训练时 residual projector / calibration objective，否则论文贡献会被质疑为 post-hoc linear-probe trick。
 
+## Propagation branch 对照与训练时原型早筛
+
+已补 `ssl_prop2` 的 artifact-level method 对照：
+
+```bash
+python build_sparc_artifacts.py \
+  --runs-dir runs/spgcl_official_embeddings_seed42_e100/artifacts \
+  --runs-dir runs/spgcl_official_embeddings_seed7_e100/artifacts \
+  --runs-dir runs/spgcl_official_embeddings_seed0_e100/artifacts \
+  --runs-dir runs/spgcl_official_embeddings_seed1_e100/artifacts \
+  --out-dir runs/sparc_prop2_artifacts_seed42_seed7_seed0_seed1 \
+  --mode ssl_prop2 \
+  --method-suffix sparc_prop2 \
+  --overwrite
+```
+
+并使用同一套 C-grid 评估：
+
+```bash
+python evaluate_propagation_calibration.py \
+  --runs-dir runs/sparc_prop2_artifacts_seed42_seed7_seed0_seed1 \
+  --include-methods spgcl_official_sparc_prop2 \
+  --modes ssl \
+  --max-hop 1 \
+  --split-indices 0 1 2 3 4 5 6 7 8 9 \
+  --c-values 4 16 64 \
+  --max-iter 500 \
+  --out runs/summaries/sparc_prop2_artifact_method_seed42_seed7_seed0_seed1.csv \
+  --aggregate-out runs/summaries/sparc_prop2_artifact_method_seed42_seed7_seed0_seed1_aggregate.csv
+```
+
+四 seed artifact-level 对照：
+
+| Dataset | `sparc_resid1` F1Mi/F1Ma | `sparc_prop2` F1Mi/F1Ma | `resid1 - prop2` |
+| --- | ---: | ---: | ---: |
+| Chameleon | 0.640132 / 0.640153 | 0.639254 / 0.640057 | +0.000877 / +0.000095 |
+| Squirrel | 0.483381 / 0.479678 | 0.478410 / 0.474747 | +0.004971 / +0.004931 |
+
+结论：`ssl_prop2` 仍应保留为 ablation / optional branch，但当前主路线继续选择 `ssl_resid1`。Squirrel 上 residual branch 明显更强；Chameleon 上两者接近，说明后续如果做 node-level gate，主要收益空间不在全局 mode selector，而在避免 high-local-homophily 区域被 residual branch 伤害。
+
+已实现训练时最小原型：
+
+- `train.py --method sparc_gcl`
+- 主损失：GRACE InfoNCE；
+- 附加损失：view-specific residual `z-Pz` 的 auxiliary InfoNCE；
+- 默认评估表示：`[normalize(z), normalize(z-Pz)]`；
+- 关键参数：`--sparc-residual-weight`、`--sparc-eval-mode hidden|resid|hidden_resid`。
+
+smoke 已通过：
+
+```bash
+python train.py --dataset Cora --method sparc_gcl --epochs 2 --skip-eval \
+  --save-dir runs/sparc_gcl_smoke --overwrite --log-every 1 \
+  --sparc-residual-weight 0.1
+
+python train.py --dataset Chameleon --method sparc_gcl --epochs 2 \
+  --eval-mode mask --split-index 0 --save-dir runs/sparc_gcl_smoke \
+  --overwrite --log-every 1 --sparc-residual-weight 0.1
+```
+
+但 50 epoch early gate 失败：
+
+| Method | Dataset | Split/Seed | F1Mi/F1Ma |
+| --- | --- | --- | ---: |
+| `sparc_gcl` | Chameleon | split0 seed0 | 0.4276 / 0.4282 |
+| `sparc_gcl` | Squirrel | split0 seed0 | 0.3333 / 0.3077 |
+
+这些结果远低于 official SP-GCL embedding 与 SPARC artifact-level method。因此当前训练时 `sparc_gcl` 只能作为工程原型和后续消融入口，不能作为主方法结果。主方法应继续围绕 strong SP-GCL embedding 的 residual calibration，下一步若要摆脱 post-hoc 质疑，应修改/扩展 official SP-GCL 训练流程本身，而不是在当前 GRACE scaffold 上继续小调 residual loss。
+
 ## 研究假设
 
 SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embedding 仍混合了两类信息：
@@ -580,9 +649,9 @@ SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embeddin
    - 证明 raw concat 不等价于 propagation residual calibration。
 
 3. 方法化：
-   - 设计无标签 mode selection：何时用 `z`、`[z, P^kz]`、`[z, z-P^kz]`；
-   - 优先尝试 dataset-level 或 node-level gate，避免 Chameleon high-local-homophily 区域被 residual branch 伤害；
-   - 或把 propagation-residual branch 写成训练时 regularizer / projector，而不是仅 post-hoc eval。
+   - `sparc_gcl` 在当前 GRACE scaffold 上的训练时原型 early gate 失败，不应继续小调；
+   - 下一步应修改 official SP-GCL 训练流程，在 strong subgraph-contrastive encoder 内加入 residual projector / residual branch；
+   - 若继续做 selection/gate，应优先做 node-level local-homophily/degree proxy，避免 Chameleon high-local-homophily 区域被 residual branch 伤害。
 
 4. 强基线：
    - 以 official SP-GCL 为 baseline；
@@ -604,6 +673,7 @@ SPARC-GCL 是当前最值得继续的 active candidate。
 主要风险：
 
 - 当前只是 post-hoc representation calibration；
+- 当前 GRACE scaffold 上的训练时 `sparc_gcl` 原型早筛失败，不能作为主结果；
 - Chameleon 增益小且 best mode 可能不同于 Squirrel；
 - 需要证明不是 validation/C-grid 偶然；
 - 需要扩展到更多数据集和更多 seed。
