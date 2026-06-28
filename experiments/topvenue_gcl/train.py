@@ -44,6 +44,7 @@ def parse_args():
                         choices=[
                             "grace",
                             "danv_gcl",
+                            "danv_degree_gcl",
                             "energy_spgcl",
                             "gcn_mlp_gcl",
                             "er_residual_gcl",
@@ -67,6 +68,8 @@ def parse_args():
     parser.add_argument("--danv-disagreement-weight", type=float, default=None)
     parser.add_argument("--danv-gate-temperature", type=float, default=None)
     parser.add_argument("--danv-min-align-weight", type=float, default=None)
+    parser.add_argument("--danv-degree-threshold", type=float, default=None)
+    parser.add_argument("--danv-degree-temperature", type=float, default=None)
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -107,6 +110,10 @@ def override_config(config, args):
         merged["danv_gate_temperature"] = args.danv_gate_temperature
     if args.danv_min_align_weight is not None:
         merged["danv_min_align_weight"] = args.danv_min_align_weight
+    if args.danv_degree_threshold is not None:
+        merged["danv_degree_threshold"] = args.danv_degree_threshold
+    if args.danv_degree_temperature is not None:
+        merged["danv_degree_temperature"] = args.danv_degree_temperature
     return merged
 
 
@@ -252,6 +259,19 @@ def _weighted_cosine_abs(z1, z2, weight):
 
 
 @torch.no_grad()
+def _degree_disagreement_gate(data, config):
+    num_nodes = data.num_nodes
+    degree = torch.zeros(num_nodes, device=data.edge_index.device, dtype=torch.float32)
+    ones = torch.ones(data.edge_index.size(1), device=data.edge_index.device)
+    degree.scatter_add_(0, data.edge_index[0], ones)
+    degree.scatter_add_(0, data.edge_index[1], ones)
+    log_degree = torch.log1p(degree)
+    threshold = float(config["danv_degree_threshold"])
+    temperature = max(float(config["danv_degree_temperature"]), 1e-12)
+    return torch.sigmoid((log_degree - threshold) / temperature)
+
+
+@torch.no_grad()
 def _static_cache_keys(data, config):
     mode = config.get("cache_key_mode", "raw_signature")
     if mode == "raw_low":
@@ -298,9 +318,15 @@ def train_er_cache_gcl(model, data, config, args):
         weight_decay=float(config["weight_decay"]),
     )
     energy_spgcl = args.method == "energy_spgcl"
-    danv_gcl = args.method == "danv_gcl"
-    residual_only = args.method in {"er_residual_gcl", "gcn_mlp_gcl", "danv_gcl"}
-    graph_target = args.method in {"gcn_mlp_gcl", "danv_gcl"}
+    danv_gcl = args.method in {"danv_gcl", "danv_degree_gcl"}
+    danv_degree_gcl = args.method == "danv_degree_gcl"
+    residual_only = args.method in {
+        "er_residual_gcl",
+        "gcn_mlp_gcl",
+        "danv_gcl",
+        "danv_degree_gcl",
+    }
+    graph_target = args.method in {"gcn_mlp_gcl", "danv_gcl", "danv_degree_gcl"}
     topk = 0 if (args.disable_cache or residual_only) else int(config["cache_topk"])
     cache_update = max(1, int(config["cache_update_interval"]))
     cache_idx = None
@@ -335,6 +361,8 @@ def train_er_cache_gcl(model, data, config, args):
         if danv_gcl:
             align_gate = _danv_alignment_gate(data, parts, config)
             disagreement_gate = 1.0 - align_gate
+            if danv_degree_gcl:
+                disagreement_gate = disagreement_gate * _degree_disagreement_gate(data, config)
             loss_align = 0.5 * (
                 weighted_negative_cosine(pred_ego, parts["graph"], align_gate)
                 + weighted_negative_cosine(pred_high, parts["ego"], align_gate)
@@ -422,8 +450,12 @@ def train_er_cache_gcl(model, data, config, args):
             gate = _danv_alignment_gate(data, parts, config)
             diagnostics["danv_gate_mean"] = float(gate.mean().item())
             diagnostics["danv_gate_std"] = float(gate.std(unbiased=False).item())
+        if danv_degree_gcl:
+            degree_gate = _degree_disagreement_gate(data, config)
+            diagnostics["danv_degree_gate_mean"] = float(degree_gate.mean().item())
+            diagnostics["danv_degree_gate_std"] = float(degree_gate.std(unbiased=False).item())
     diagnostics["cache_control"] = (
-        "danv" if danv_gcl else
+        ("danv_degree" if danv_degree_gcl else "danv") if danv_gcl else
         "energy_spgcl" if energy_spgcl else
         "gcn_mlp_only" if graph_target else
         "residual_only" if residual_only else
@@ -461,7 +493,7 @@ def main():
     config = override_config(load_yaml(args.config), args)
     if args.method == "gcn_mlp_gcl" and args.final_repr is None:
         config["final_repr"] = "ego_graph"
-    if args.method == "danv_gcl" and args.final_repr is None:
+    if args.method in {"danv_gcl", "danv_degree_gcl"} and args.final_repr is None:
         config["final_repr"] = "ego_graph"
     if args.method == "energy_spgcl" and args.final_repr is None:
         config["final_repr"] = "ego_high"

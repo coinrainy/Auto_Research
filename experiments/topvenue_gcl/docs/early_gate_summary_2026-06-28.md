@@ -155,3 +155,29 @@ Aggregate：
 - 下一步不扩大数据集，先做 DANV penalty/gate ablation：`danv_disagreement_weight=0`、`0.02`、温度与 min-align 消融；如果无法同时保住 Texas macro 与 Actor 稳定性，应放弃 DANV 主线或收缩到 WikipediaNetwork 条件性方法。
 
 工程补充：`train.py` 已支持 `--danv-alignment-weight`、`--danv-disagreement-weight`、`--danv-gate-temperature`、`--danv-min-align-weight`，方便下一轮不改 YAML 直接跑消融。
+
+## 2026-06-28 追加：DANV 消融后裁决
+
+已新增决策记录：`docs/danv_ablation_decision_2026-06-28.md`。
+
+补充实验：
+
+- `danv_disagreement_weight=0.0`；
+- `danv_disagreement_weight=0.02`；
+- 新增 `danv_degree_gcl`，用 incident-degree gate 调节 disagreement penalty。
+
+关键结果：
+
+| Variant | Texas ΔF1Mi/ΔF1Ma | Actor ΔF1Mi/ΔF1Ma | Chameleon ΔF1Mi/ΔF1Ma | Squirrel ΔF1Mi/ΔF1Ma | 裁决 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| DANV `w=0.1` | +0.027027/-0.030448 | +0.002412/-0.002621 | +0.005117/+0.007722 | +0.008005/+0.007299 | mean 正向但 macro/split 风险 |
+| DANV `w=0.0` | +0.009009/+0.044501 | +0.003947/+0.006653 | +0.008041/+0.009381 | +0.006084/+0.013229 | mean 正向但 split 不稳 |
+| DANV `w=0.02` | +0.018018/+0.019142 | -0.001754/+0.003021 | -0.000731/+0.002283 | +0.006724/+0.004984 | Actor/Chameleon micro 失败 |
+| `danv_degree_gcl` split0 | 0.000000/-0.003734 | +0.005921/+0.013567 | 0.000000/-0.000556 | -0.002882/+0.004420 | 未过 split0 early gate |
+
+裁决：
+
+- 固定全局 disagreement penalty 没有稳定有效区间；
+- degree-aware gate 没有救回 Squirrel/Chameleon 的主张；
+- DANV 家族不再作为当前主方法推进，只保留为失败/条件性消融资产；
+- `gcn_mlp_gcl` 仍是 Natural-View strong foundation，下一代 idea 必须换机制。

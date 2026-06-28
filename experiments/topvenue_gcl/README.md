@@ -4,7 +4,7 @@
 
 当前 active foundation：**GCN-MLP Natural View GCL**。它在 Texas/Actor/Chameleon/Squirrel 的轻量 split sanity 中稳定超过 GRACE，但本身不够创新；后续 candidate 必须在它之上给出新机制和增益。`ER-Cache`、`ER-Residual`、`Energy-SPGCL` 均已降级为失败/条件性消融。
 
-当前下一代候选：**Disagreement-Aware Natural-View GCL (DANV-GCL)**，目标是在 GCN-MLP 天然双视图底座上学习“何时对齐、何时保留分歧”。
+当前裁决：**Disagreement-Aware Natural-View GCL (DANV-GCL)** 家族已降级为失败/条件性消融。`gcn_mlp_gcl` 仍是 strong foundation；下一代 active idea 需要换机制，而不是继续调 DANV penalty。
 
 核心假设：
 
@@ -37,6 +37,7 @@ DATASETS="Texas Actor" METHODS="grace gcn_mlp_gcl" SPLITS="0 1 2" SEEDS="0" EPOC
 python train.py --dataset Texas --method gcn_mlp_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method danv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method danv_gcl --epochs 5 --split-index 0 --seed 0 --danv-disagreement-weight 0.0
+python train.py --dataset Texas --method danv_degree_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method energy_spgcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_residual_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_cache_gcl --epochs 5 --split-index 0 --seed 0

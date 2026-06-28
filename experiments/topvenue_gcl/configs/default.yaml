@@ -25,6 +25,8 @@ danv_alignment_weight: 1.0
 danv_disagreement_weight: 0.1
 danv_gate_temperature: 1.0
 danv_min_align_weight: 0.05
+danv_degree_threshold: 2.5
+danv_degree_temperature: 1.0
 variance_loss_weight: 1.0
 covariance_loss_weight: 0.01
 eval_mode: auto

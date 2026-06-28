@@ -66,3 +66,11 @@ DANV splits 0/1/2 early gate：
 - 当前状态仍是 active-but-risky，不是成功方法；
 - 下一步只允许做 gate/penalty 消融与 safety fallback：`danv_disagreement_weight=0`、`0.02`、gate temperature、min-align；
 - 若消融不能缓解 Texas macro 与 Actor split instability，应放弃 DANV 主线或收缩为 WikipediaNetwork 条件性机制。
+
+DANV 消融裁决：
+
+- `danv_disagreement_weight=0.0`、`0.02` 和 `danv_degree_gcl` 均未形成稳定主方法；
+- 固定全局 disagreement penalty 没有稳定有效区间；
+- degree-aware disagreement gate 在 split0 上未超过 early gate；
+- DANV 家族降级为失败/条件性消融资产，不再作为当前 active idea；
+- 下一代方法仍可继承 `gcn_mlp_gcl` natural-view foundation，但必须换机制。

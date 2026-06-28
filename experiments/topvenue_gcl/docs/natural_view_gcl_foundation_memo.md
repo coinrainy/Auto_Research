@@ -146,6 +146,18 @@ Aggregate vs GCN-MLP：
 - `train.py` 已支持 DANV 参数命令行覆盖：`--danv-alignment-weight`、`--danv-disagreement-weight`、`--danv-gate-temperature`、`--danv-min-align-weight`。
 - 下一轮优先做 penalty/gate 消融，而不是扩大到更多方法名。
 
+## DANV 家族放弃裁决
+
+详见：`docs/danv_ablation_decision_2026-06-28.md`。
+
+后续消融显示：
+
+- `danv_disagreement_weight=0.0` 和 `0.02` 都无法形成稳定主方法；
+- `danv_degree_gcl` 虽能在 Texas/Actor 上更安全，但在 Chameleon/Squirrel 上没有保住足够增益；
+- 固定全局 penalty 或简单 degree gate 不足以支撑顶会级主张。
+
+因此 DANV 家族降级为失败/条件性消融，不再作为 active idea。Natural-View foundation 本身仍保留，因为 `gcn_mlp_gcl` 相对 GRACE 的 split sanity 仍是当前最稳的工程信号。
+
 ## 保留标准
 
 下一轮实现 DANV-GCL 时，最低 early gate：

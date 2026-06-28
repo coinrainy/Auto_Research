@@ -954,3 +954,14 @@
   - 已验证：`python -m py_compile train.py summarize_split_study.py src/*.py`、`bash -n scripts/run_split_study.sh && bash -n scripts/run_smoke.sh`、`python train.py --dataset Texas --method danv_gcl --epochs 2 --seed 0 --split-index 0 --skip-eval --run-name smoke_texas_danv_w0 --overwrite --danv-disagreement-weight 0.0 --log-every 1`。
   - 已更新文档：`experiments/topvenue_gcl/docs/natural_view_gcl_foundation_memo.md`、`experiments/topvenue_gcl/docs/early_gate_summary_2026-06-28.md`、`experiments/topvenue_gcl/docs/implementation_principles.md` 与 `experiments/topvenue_gcl/README.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Texas Actor Chameleon Squirrel" METHODS="danv_gcl" SPLITS="0 1 2" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/split_study_danv_ablation_w0_s0_splits0-2_e50" EXTRA_ARGS="--danv-disagreement-weight 0.0" OVERWRITE=1 bash scripts/run_split_study.sh`；随后再跑 `EXTRA_ARGS="--danv-disagreement-weight 0.02"`，比较 Texas macro 与 Actor split stability 是否改善。
+- 2026-06-28 DANV 消融裁决与放弃：
+  - 已按建议执行 `danv_disagreement_weight=0.0` 与 `0.02` 消融，均为 Texas/Actor/Chameleon/Squirrel × splits 0/1/2 × seed0 × 50 epoch，并用 `gcn_mlp_gcl` 作为同目录 baseline 汇总。
+  - `w=0.0` aggregate vs GCN-MLP：Texas +0.009009/+0.044501，Actor +0.003947/+0.006653，Chameleon +0.008041/+0.009381，Squirrel +0.006084/+0.013229；但 Texas/Squirrel split stability 不足。
+  - `w=0.02` aggregate vs GCN-MLP：Texas +0.018018/+0.019142，Actor -0.001754/+0.003021，Chameleon -0.000731/+0.002283，Squirrel +0.006724/+0.004984；Actor/Chameleon micro 失败。
+  - 已新增 `danv_degree_gcl`：用 incident-degree gate 调节 disagreement penalty，默认 `danv_degree_threshold=2.5`、`danv_degree_temperature=1.0`。
+  - `danv_degree_gcl` smoke 诊断符合预期：Texas degree gate mean=0.235104，Squirrel=0.615749。
+  - `danv_degree_gcl` split0 early gate vs GCN-MLP：Texas 0.000000/-0.003734，Actor +0.005921/+0.013567，Chameleon 0.000000/-0.000556，Squirrel -0.002882/+0.004420，未通过 early gate。
+  - 当前裁决：DANV 家族不再作为主方法推进；固定全局 disagreement penalty 没有稳定有效区间，degree-aware gate 也不足以救回。保留 `gcn_mlp_gcl` 作为 Natural-View strong foundation，下一代 idea 必须换机制。
+  - 外部边界核对：近期 GCL/heterophily 趋势仍强调 simple/fast inference、filter/high-pass-low-pass、semantic/structure decoupling 与 adaptive fusion；这支持放弃固定 penalty DANV。
+  - 已新增文档：`experiments/topvenue_gcl/docs/danv_ablation_decision_2026-06-28.md`；并更新 `README.md`、`docs/early_gate_summary_2026-06-28.md`、`docs/natural_view_gcl_foundation_memo.md`、`docs/implementation_principles.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && rg -n "filter|high|low|spectral|propagation|decoupl" ../../third_party_baselines/reference_gcl -g '*.py' -g '*.md'`，从 GraphECL/S3GCL/PolyGCL 参考实现中抽取下一代非 DANV 机制。
