@@ -675,3 +675,11 @@
   - 聚合结果：Squirrel Raw-Complement 相对 raw F1Mi/F1Ma 平均 +0.008742/+0.011555，10/10 split 为正；相对 GRACE +0.065514/+0.076369，10/10 split 为正。
   - 当前判断：这条线重新具备 active candidate 资格，但必须严格限定为 WikipediaNetwork-style heterophily graphs；WebKB/Actor 负结果仍然保留为失败边界，不能声称通用 heterophily SOTA。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Chameleon Squirrel" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" METHODS="raw_complement_gcl" EPOCHS=50 BATCH_SIZE=4096 SAVE_DIR="runs/raw_complement_wiki_splits0-9_seeds1-2_e50" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode anchor_graph" scripts/run_split_study.sh`。
+- 2026-06-28 Chameleon/Squirrel Raw-Complement 多 seed 复核：
+  - 已更新 `experiments/grace_idea/summarize_raw_complement_probe.py`：支持 `--seeds`，支持重复传入 `--grace-dir` 与 `--raw-complement-dir`，可跨多个结果根目录对齐 raw、GRACE、Raw-Complement 的 dataset/split/seed 结果。
+  - 已执行：`DATASETS="Chameleon Squirrel" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" METHODS="grace raw_complement_gcl" EPOCHS=50 BATCH_SIZE=4096 SAVE_DIR="runs/wiki_splits0-9_seeds1-2_e50" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode anchor_graph" LOG_EVERY=50 scripts/run_split_study.sh`。
+  - 已生成多 seed 汇总：`experiments/grace_idea/runs/summaries/raw_complement_wiki_e50_splits0-9_seeds0-2_paired.csv` 与 `experiments/grace_idea/runs/summaries/raw_complement_wiki_e50_splits0-9_seeds0-2_aggregate.csv`。
+  - Chameleon（10 splits × 3 seeds）：Raw-Complement 相对 raw F1Mi/F1Ma 平均 +0.037208/+0.037554，30/30 pair 为正；相对 GRACE +0.073319/+0.078816，30/30 pair 为正。
+  - Squirrel（10 splits × 3 seeds）：Raw-Complement 相对 raw F1Mi/F1Ma 平均 +0.010086/+0.010904，28/30 pair 为正；相对 GRACE +0.062184/+0.078077，30/30 pair 为正。两个相对 raw 负例为 Squirrel split3 seed1 与 split9 seed1，均仍明显高于 GRACE。
+  - 当前判断：Raw-Complement 不是通用 heterophily GCL SOTA claim，但在 WikipediaNetwork-style heterophily graphs 上已具备 active candidate 资格。论文叙事应限定为 raw-feature anchored complement learning：保留 raw separability，同时学习 raw 之外的图上下文补充量。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Chameleon Squirrel" SPLITS="0 1 2" SEEDS="0 1 2" METHODS="raw_complement_gcl" EPOCHS=50 BATCH_SIZE=4096 SAVE_DIR="runs/wiki_ablation_splits0-2_seeds0-2_e50" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode graph" LOG_EVERY=50 scripts/run_split_study.sh`，随后补 `anchor`、`anchor_graph`、`raw_complement_weight=0`、`--no-raw-complement-detach-anchor` 等机制消融。

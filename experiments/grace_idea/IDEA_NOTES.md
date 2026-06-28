@@ -233,7 +233,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `evaluate_raw_features.py` 支持对原始 `data.x` 使用当前同一套 mask/random linear evaluation 协议，作为 ego/residual/GRACE 的 feature-only 硬 baseline。
 - `evaluate_feature_fusion.py` 支持递归读取 `artifacts.pt`，在同一 split 下评估 `raw`、`ssl`、`raw+ssl concat`，并输出 concat 相对 raw/ssl 的 paired delta 与 aggregate summary。
 - `select_representation.py` 支持读取 `artifacts.pt` 并用验证集选择 raw/saved/anchor/graph/complement/hidden 候选表示；当前定位为单 run / 小批量诊断工具，全候选完整 C 网格在 Actor 上过慢，不作为正式大规模评估主入口。
-- `summarize_raw_complement_probe.py` 支持按 dataset/split 对齐 raw、GRACE、Raw-Complement 的 `eval_summary.csv`，输出 paired delta 与 aggregate。
+- `summarize_raw_complement_probe.py` 支持按 dataset/split/seed 对齐 raw、GRACE、Raw-Complement 的 `eval_summary.csv`，支持从多个结果根目录搜索 GRACE 与 Raw-Complement run，输出 paired delta 与 aggregate。
 
 示例 split-aware 命令：
 
@@ -275,8 +275,9 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - 已新增 `select_representation_proxy.py`，实现 label-free output safety proxy v1：effective-rank 过滤 collapsed candidate，按 `edge_random_contrast + 0.08 * raw_similarity_correlation - raw_penalty` 选择候选，小图上取消 raw penalty 作为 WebKB raw-baseline safety rule。完整 C 网格 sanity 中，proxy 在 Cora/PubMed/Actor/Texas 达到 validation selection 上界，CiteSeer micro 低约 0.010 但 macro 高约 0.013；5 个数据集均优于 random selection。
 - WebKB/Actor splits0-9 扩展显示：一旦 `raw` 纳入候选且使用完整 C 网格，Actor/Cornell/Texas/Wisconsin 的 validation selection 与 proxy selection 都 100% 选择 raw。这说明 Raw-Complement 的 WebKB/Actor 收益主要是 raw baseline safety，而不是 learned complement 稳定超过 raw。
 - 已新增 Chameleon/Squirrel loader 与配置。Chameleon/Squirrel split0-2 的 50 epoch sanity 显示 Raw-Complement `anchor_graph` 全部同时超过 raw baseline 与 GRACE：Chameleon raw-complement - raw F1Mi 为 +0.032895/+0.010965/+0.059211，Squirrel 为 +0.018252/+0.012488/+0.014409。
-- Chameleon/Squirrel splits0-9 的 50 epoch 对照已经完成并由 `summarize_raw_complement_probe.py` 汇总：Raw-Complement 相对 raw baseline 在 Chameleon 上 F1Mi/F1Ma 平均 +0.033772/+0.033688，10/10 split 为正；在 Squirrel 上 +0.008742/+0.011555，10/10 split 为正。相对 GRACE 的均值提升更大：Chameleon +0.066228/+0.068241，Squirrel +0.065514/+0.076369。
-- 当前决策：Raw-Complement 在 WebKB/Actor 上降级为机制诊断与 output safety selection 资产，但在 Chameleon/Squirrel 上重新成为条件性 active candidate。下一步进入 100/200 epoch、seeds0-2、以及 `anchor/anchor_graph/graph` 与 penalty ablation；若多 seed 稳定，再考虑论文方法定型。
+- Chameleon/Squirrel splits0-9 的 seed0 50 epoch 对照已经完成并由 `summarize_raw_complement_probe.py` 汇总：Raw-Complement 相对 raw baseline 在 Chameleon 上 F1Mi/F1Ma 平均 +0.033772/+0.033688，10/10 split 为正；在 Squirrel 上 +0.008742/+0.011555，10/10 split 为正。相对 GRACE 的均值提升更大：Chameleon +0.066228/+0.068241，Squirrel +0.065514/+0.076369。
+- Chameleon/Squirrel splits0-9 × seeds0-2 的 50 epoch 多 seed 复核已经完成：Chameleon 相对 raw 为 +0.037208/+0.037554，30/30 pair 为正；相对 GRACE 为 +0.073319/+0.078816，30/30 pair 为正。Squirrel 相对 raw 为 +0.010086/+0.010904，28/30 pair 为正；相对 GRACE 为 +0.062184/+0.078077，30/30 pair 为正。
+- 当前决策：Raw-Complement 在 WebKB/Actor 上降级为机制诊断与 output safety selection 资产，但在 Chameleon/Squirrel 上重新成为当前 active candidate。它不是通用 heterophily SOTA claim，而是 raw-feature anchored complement learning 在 WikipediaNetwork-style heterophily graphs 上的条件性强候选。下一步进入 `anchor/anchor_graph/graph`、去掉 correlation penalty、detach/no-detach、residual subtraction 等机制消融；若机制消融成立，再扩展 100/200 epoch、seeds0-4 和强 baseline 对照。
 - 完整 C 网格 split0-2：`ego_grace` concat - raw 在 Actor/Cornell/Texas 为正、Wisconsin 为负；`residual_grace` 仅 Actor 稳定正向，Cornell/Texas/Wisconsin 为负。
 - 固定 C=1 的 10 split 快速筛查：ego/residual concat - raw 在 Actor/Cornell/Texas/Wisconsin 均为正，但该证据只能说明存在互补信号，不足以支撑 SOTA claim。
 - 下一步应实现显式 raw-anchored residual/complement objective 或 light-validation fusion，而不是继续把 `ego_grace` / `residual_grace` 单独包装为方法。

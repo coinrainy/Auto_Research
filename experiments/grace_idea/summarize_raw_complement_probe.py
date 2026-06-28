@@ -8,9 +8,10 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--datasets', nargs='+', required=True)
     parser.add_argument('--splits', nargs='+', type=int, required=True)
+    parser.add_argument('--seeds', nargs='+', type=int, default=[0])
     parser.add_argument('--raw-dir', default='runs/raw_feature_smoke')
-    parser.add_argument('--grace-dir', required=True)
-    parser.add_argument('--raw-complement-dir', required=True)
+    parser.add_argument('--grace-dir', action='append', required=True)
+    parser.add_argument('--raw-complement-dir', action='append', required=True)
     parser.add_argument('--paired-out', required=True)
     parser.add_argument('--aggregate-out', required=True)
     return parser.parse_args()
@@ -32,48 +33,68 @@ def raw_path(raw_dir, dataset, split):
     return Path(raw_dir) / f'{dataset}_split{split}' / 'eval_summary.csv'
 
 
-def run_path(root, dataset, method, split):
-    return Path(root) / f'{dataset}_{method}_seed0_split{split}' / 'eval_summary.csv'
+def run_path(root, dataset, method, seed, split):
+    return Path(root) / f'{dataset}_{method}_seed{seed}_split{split}' / 'eval_summary.csv'
+
+
+def find_eval(roots, dataset, method, seed, split):
+    for root in roots:
+        path = run_path(root, dataset, method, seed, split)
+        record = read_eval(path)
+        if record is not None:
+            return record, path
+    return None, None
 
 
 def make_paired(args):
     rows = []
     for dataset in args.datasets:
         for split in args.splits:
-            raw = read_eval(raw_path(args.raw_dir, dataset, split))
-            grace = read_eval(run_path(args.grace_dir, dataset, 'grace', split))
-            rc = read_eval(run_path(
-                args.raw_complement_dir,
-                dataset,
-                'raw_complement_gcl',
-                split,
-            ))
-            row = {
-                'dataset': dataset,
-                'split_index': split,
-                'status': 'computed' if raw and grace and rc else 'missing',
-            }
-            for prefix, record in [
-                ('raw', raw),
-                ('grace', grace),
-                ('raw_complement', rc),
-            ]:
-                for metric in ['F1Mi', 'F1Ma']:
-                    row[f'{prefix}_{metric}'] = (
-                        record[metric] if record is not None else ''
-                    )
-            if raw and grace and rc:
-                for metric in ['F1Mi', 'F1Ma']:
-                    row[f'delta_rc_minus_raw_{metric}'] = (
-                        rc[metric] - raw[metric]
-                    )
-                    row[f'delta_rc_minus_grace_{metric}'] = (
-                        rc[metric] - grace[metric]
-                    )
-                    row[f'delta_grace_minus_raw_{metric}'] = (
-                        grace[metric] - raw[metric]
-                    )
-            rows.append(row)
+            for seed in args.seeds:
+                raw = read_eval(raw_path(args.raw_dir, dataset, split))
+                grace, grace_path = find_eval(
+                    args.grace_dir,
+                    dataset,
+                    'grace',
+                    seed,
+                    split,
+                )
+                rc, rc_path = find_eval(
+                    args.raw_complement_dir,
+                    dataset,
+                    'raw_complement_gcl',
+                    seed,
+                    split,
+                )
+                row = {
+                    'dataset': dataset,
+                    'split_index': split,
+                    'seed': seed,
+                    'status': 'computed' if raw and grace and rc else 'missing',
+                    'grace_path': str(grace_path) if grace_path else '',
+                    'raw_complement_path': str(rc_path) if rc_path else '',
+                }
+                for prefix, record in [
+                    ('raw', raw),
+                    ('grace', grace),
+                    ('raw_complement', rc),
+                ]:
+                    for metric in ['F1Mi', 'F1Ma']:
+                        row[f'{prefix}_{metric}'] = (
+                            record[metric] if record is not None else ''
+                        )
+                if raw and grace and rc:
+                    for metric in ['F1Mi', 'F1Ma']:
+                        row[f'delta_rc_minus_raw_{metric}'] = (
+                            rc[metric] - raw[metric]
+                        )
+                        row[f'delta_rc_minus_grace_{metric}'] = (
+                            rc[metric] - grace[metric]
+                        )
+                        row[f'delta_grace_minus_raw_{metric}'] = (
+                            grace[metric] - raw[metric]
+                        )
+                rows.append(row)
     return rows
 
 
@@ -96,7 +117,9 @@ def make_aggregate(rows):
         ]
         record = {
             'dataset': dataset,
-            'num_splits': len(group),
+            'num_pairs': len(group),
+            'num_splits': len({row['split_index'] for row in group}),
+            'num_seeds': len({row['seed'] for row in group}),
         }
         for key in [
             'delta_rc_minus_raw_F1Mi',

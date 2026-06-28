@@ -1008,3 +1008,47 @@ python summarize_raw_complement_probe.py --datasets Squirrel --splits 0 1 2 3 4 
 - 优先跑 Chameleon/Squirrel splits0-9 的 Raw-Complement 100 epoch 或 seeds1-2；
 - 若正信号保持，再做 ablation：`anchor` vs `anchor_graph` vs `graph`，以及去掉 complement correlation penalty；
 - 若 Squirrel 的小幅收益在多 seed 上消失，则主 claim 只能聚焦 Chameleon 或机制分析。
+
+## 2026-06-28 Chameleon/Squirrel seeds0-2 50 epoch 多 seed 复核
+
+目标：检验 Raw-Complement 在 WikipediaNetwork-style heterophily graphs 上的正信号是否能跨训练 seed 保持，而不是 seed0 偶然现象。
+
+代码更新：
+
+- `experiments/grace_idea/summarize_raw_complement_probe.py` 新增 `--seeds`；
+- `--grace-dir` 与 `--raw-complement-dir` 支持重复传入多个结果根目录；
+- paired 输出新增 `seed`、`grace_path`、`raw_complement_path`，aggregate 输出新增 `num_pairs`、`num_splits`、`num_seeds`。
+
+主要命令：
+
+```bash
+DATASETS="Chameleon Squirrel" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" METHODS="grace raw_complement_gcl" EPOCHS=50 BATCH_SIZE=4096 SAVE_DIR="runs/wiki_splits0-9_seeds1-2_e50" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode anchor_graph" LOG_EVERY=50 scripts/run_split_study.sh
+python summarize_raw_complement_probe.py --datasets Chameleon Squirrel --splits 0 1 2 3 4 5 6 7 8 9 --seeds 0 1 2 --raw-dir runs/raw_feature_smoke --grace-dir /tmp/grace_chameleon_e50 --grace-dir /tmp/grace_squirrel_e50 --grace-dir runs/wiki_splits0-9_seeds1-2_e50 --raw-complement-dir /tmp/chameleon_raw_complement_e50_splits0-9 --raw-complement-dir /tmp/squirrel_raw_complement_e50_splits0-9 --raw-complement-dir runs/wiki_splits0-9_seeds1-2_e50 --paired-out runs/summaries/raw_complement_wiki_e50_splits0-9_seeds0-2_paired.csv --aggregate-out runs/summaries/raw_complement_wiki_e50_splits0-9_seeds0-2_aggregate.csv
+```
+
+聚合结果（2 datasets × 10 splits × 3 seeds）：
+
+| Dataset | RC - raw F1Mi mean | Positive pairs | RC - raw F1Ma mean | Positive pairs | RC - GRACE F1Mi mean | Positive pairs | RC - GRACE F1Ma mean | Positive pairs |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Chameleon | +0.037208 | 30/30 | +0.037554 | 30/30 | +0.073319 | 30/30 | +0.078816 | 30/30 |
+| Squirrel | +0.010086 | 28/30 | +0.010904 | 28/30 | +0.062184 | 30/30 | +0.078077 | 30/30 |
+
+负例检查：
+
+- Squirrel split3 seed1：RC - raw F1Mi/F1Ma 为 -0.013449/-0.027354；
+- Squirrel split9 seed1：RC - raw F1Mi/F1Ma 为 -0.013449/-0.009317；
+- 两个负例均仍明显高于 GRACE，因此问题不是 RC 崩溃，而是 raw baseline 在部分 split/seed 上仍更强。
+
+当前判断：
+
+- Chameleon 证据很强：Raw-Complement 在 30/30 个 pair 上同时超过 raw 与 GRACE；
+- Squirrel 证据中等偏强：Raw-Complement 稳定超过 GRACE，但相对 raw 有 2/30 小幅负例，不能声称每个 split/seed 都优于 raw；
+- Raw-Complement 重新成为当前 active candidate，但论文 claim 必须限定为 raw-anchored complement learning 在 WikipediaNetwork-style heterophily graphs 上有稳定互补收益；
+- WebKB/Actor 的 raw-dominated 负结果继续保留为失败边界，不能把该方法包装成通用 heterophily GCL SOTA；
+- 下一阶段最关键不是继续堆 seed，而是证明增益来自 complement 设计本身：`anchor` vs `graph` vs `anchor_graph`、去掉 correlation penalty、去掉 residual subtraction、以及与 MLP/raw/GRACE 和近期 heterophily SSL baseline 的公平对照。
+
+下一步建议：
+
+- 先做小规模表示/损失消融：Chameleon/Squirrel splits0-2 × seeds0-2，比较 `anchor`、`graph`、`anchor_graph`、`raw_complement_weight=0`、`--no-raw-complement-detach-anchor`；
+- 若消融支持 complement 机制，再扩展到 100/200 epoch 与 seeds0-4；
+- 同时准备对 HLCL/HeterGCL/H3GNNs/POLYGCL 等相关工作的强 baseline 复现或引用边界梳理。
