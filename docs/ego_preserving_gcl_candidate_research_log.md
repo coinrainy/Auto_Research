@@ -776,3 +776,51 @@ python select_representation.py --run-dir /tmp/raw_complement_actor_anchor_graph
 - 该证据支持继续方法化 output selection/gate，但当前选择仍依赖标签验证集，不能直接作为无标签 GCL 主贡献。
 
 下一步：把 validation selection 作为上界，设计无标签 proxy 或 light-validation protocol，并加入 shuffled/random selection control 作为机制实验。
+
+## 2026-06-28 CiteSeer/PubMed output selection random-control 补充
+
+目标：补齐同配图上的 output selection-vs-random 证据，检查 Cora 上的 selection 现象是否可迁移到 CiteSeer/PubMed。
+
+新增命令：
+
+```bash
+python select_representation.py --run-dir /tmp/raw_complement_citeseer_graph/CiteSeer_raw_complement_gcl_seed0 --selection-eval-mode random --random-repeats 3 --random-selection-repeats 5 --candidate-names raw graph anchor_graph --c-min-power -8 --c-max-power 8 --out runs/summaries/raw_complement_citeseer_output_selection_minimal_candidates_seed0.csv --aggregate-out runs/summaries/raw_complement_citeseer_output_selection_minimal_candidates_seed0_aggregate.csv
+python select_representation.py --run-dir /tmp/raw_complement_pubmed_graph_b4096/PubMed_raw_complement_gcl_seed0 --selection-eval-mode random --random-repeats 3 --random-selection-repeats 5 --candidate-names raw graph anchor_graph --c-min-power -4 --c-max-power 4 --max-iter 2000 --out runs/summaries/raw_complement_pubmed_output_selection_minimal_candidates_seed0_fast.csv --aggregate-out runs/summaries/raw_complement_pubmed_output_selection_minimal_candidates_seed0_fast_aggregate.csv
+```
+
+结果：
+
+| Dataset | Status | F1Mi mean | F1Ma mean | selected counts |
+| --- | --- | ---: | ---: | --- |
+| CiteSeer | selected | 0.721868 | 0.639671 | graph:2; anchor_graph:1 |
+| CiteSeer | selected_random | 0.702766 | 0.634546 | anchor_graph:7; graph:4; raw:4 |
+| PubMed | selected | 0.847903 | 0.847778 | anchor_graph:2; raw:1 |
+| PubMed | selected_random | 0.825259 | 0.825074 | anchor_graph:7; graph:4; raw:4 |
+
+候选均值补充：
+
+| Dataset | raw F1Mi/F1Ma | graph F1Mi/F1Ma | anchor_graph F1Mi/F1Ma |
+| --- | ---: | ---: | ---: |
+| CiteSeer | 0.662160 / 0.605105 | 0.726749 / 0.633206 | 0.711729 / 0.652489 |
+| PubMed | 0.844184 / 0.843729 | 0.763402 / 0.763155 | 0.850185 / 0.850116 |
+
+判断：
+
+- CiteSeer 的 validation selection 相比 random selection 有 micro 正向差距，但 macro 差距较小；`graph` 更适合 micro，`anchor_graph` 更适合 macro，说明单一 micro selection 仍可能牺牲类别均衡。
+- PubMed 中 `graph` 候选明显弱，`raw` 与 `anchor_graph` 明显更强；validation selection 明显优于 random selection，且 `anchor_graph` 表现超过 raw，说明 learned complement 可能提供 raw 之外的增量。
+- Cora/CiteSeer/PubMed 三个同配图的安全输出并不一致：Cora 需要 graph，CiteSeer 在 graph/anchor_graph 间摇摆，PubMed 更偏 raw/anchor_graph。这支持“output safety selection/gate”是必要问题，而不是单个 fallback 规则能解决的问题。
+
+文献边界核对：
+
+- HLCL 已经用 feature similarity 划分同配/异配子图并结合 high-pass/low-pass graph filters 做 heterophily GCL，因此当前方法不能声称“首次处理异配 GCL 的频率差异”。参考：https://arxiv.org/html/2303.06344v2
+- HeterGCL 已经强调随机增强会破坏异配图结构，并联合结构/语义学习来处理 heterophily，因此当前方法不能只讲“结构语义联合”。参考：https://www.ijcai.org/proceedings/2024/0265.pdf
+- H3GNNs 已经在 2025 方向上尝试调和 homophily 与 heterophily 的 self-supervised framework，因此当前方法必须把贡献收缩到更具体的 raw-feature anchored complement 与 safety selection。参考：https://arxiv.org/html/2504.11699v1
+- SimMLP 一类工作也提示 MLP/raw feature 通道在图 SSL 中并非弱 baseline；当前论文若继续推进，必须把 raw feature baseline 当硬约束，而不是只与 GRACE 对比。参考：https://par.nsf.gov/servlets/purl/10638099
+
+当前方法化判断：
+
+- 继续保留 Raw-Anchored Complement GCL，但主 claim 收缩为：在 GCL 中显式保留 raw-feature separability，并学习 graph-context complement；再通过 output safety selection 在 raw、graph-context、raw+complement 间选择，避免同配图退化。
+- 不再把该方向包装为“通用异配图 SOTA GCL”。它目前更像一个 raw-baseline-aware 的 graph SSL 校准框架，若要达到顶会/顶刊强度，下一步必须把 selection 从验证集上界推进为可解释、可控、可复现的 protocol。
+- 已新增 `summarize_selection_controls.py` 固化 selection-control 汇总协议；当前统一表输出到 `runs/summaries/raw_complement_output_selection_control_summary.csv`，5 个 dataset 的 selected-vs-random test micro delta 均为正：Actor +0.025822、CiteSeer +0.019101、Cora +0.044711、PubMed +0.022643、Texas +0.040541。
+
+下一步：实现 selection summary / protocol 固化，并设计一个 label-light 或 unsupervised proxy；候选信号包括候选表示的 validation stability、class-balance proxy、embedding anisotropy、graph-vs-raw neighborhood agreement，以及 random/shuffled selection control。

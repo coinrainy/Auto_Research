@@ -268,6 +268,9 @@ python analyze_pair_weights.py --runs-dir runs/sgfn_split_control_sanity --out r
 - `anchor/graph/anchor_graph` output selection 诊断显示：Cora seeds0-2 的 9 次随机选择全部选 graph，graph 平均 0.810834/0.790843，明显优于 anchor 与 anchor_graph；Actor/Texas split0 均选 anchor_graph，但 Actor 上 anchor 的 test micro 反而略高，说明单一 val micro 选择还不够稳。
 - 加入 raw 候选后，Cora 仍 9/9 选择 graph，raw 只有 0.645910/0.600536；Actor raw 0.348026/0.332063 低于 anchor/anchor_graph；Texas raw 与 anchor_graph 测试持平 0.810811/0.619968。说明 raw 不总是支配，但 WebKB 小图必须严守 raw baseline。
 - `select_representation.py` 已加入 `--random-selection-repeats` 控制；minimal candidates `raw/graph/anchor_graph` 中 validation selection 相对 random selection：Cora 0.810834/0.790843 vs 0.766123/0.732582，Actor 0.364474/0.343554 vs 0.338651/0.310091，Texas 0.810811/0.619968 vs 0.770270/0.533084。selection/gate 方向值得方法化，但当前仍依赖标签验证集。
+- CiteSeer/PubMed 补充同配 selection-control：CiteSeer selected 0.721868/0.639671 vs random 0.702766/0.634546，PubMed selected 0.847903/0.847778 vs random 0.825259/0.825074。Cora 偏 graph、CiteSeer 在 graph/anchor_graph 间摇摆、PubMed 偏 raw/anchor_graph，说明没有单一固定 fallback 能同时解决同配安全问题，必须方法化 output safety selection。
+- 文献边界更新：HLCL/HeterGCL/H3GNNs 已覆盖异配图高低频、结构语义和 homophily/heterophily self-supervised 调和；当前 Raw-Complement 若继续，创新点必须收缩到 raw-feature anchored complement learning + safety selection，而不是泛化地声称 heterophily GCL SOTA。
+- 已新增 `summarize_selection_controls.py`，用于把多个 `select_representation.py` aggregate 表统一成 selected-vs-random delta 表；当前 5 个 dataset 的 selected-random test micro delta 均为正，范围约 +0.019 到 +0.045。
 - 下一步优先实现 validation-based 或 unsupervised-reliable representation selection，决定何时输出 raw+complement、何时退回 graph context；如果不能修复 Cora，则该方法应定位为 heterophily-focused。
 - 完整 C 网格 split0-2：`ego_grace` concat - raw 在 Actor/Cornell/Texas 为正、Wisconsin 为负；`residual_grace` 仅 Actor 稳定正向，Cornell/Texas/Wisconsin 为负。
 - 固定 C=1 的 10 split 快速筛查：ego/residual concat - raw 在 Actor/Cornell/Texas/Wisconsin 均为正，但该证据只能说明存在互补信号，不足以支撑 SOTA claim。
