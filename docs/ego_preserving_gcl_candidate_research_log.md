@@ -697,3 +697,45 @@ python select_representation.py --run-dir /tmp/raw_complement_actor_anchor_graph
 - Texas 类 WebKB 图：`anchor` / `anchor_graph` 均可，但不能退回纯 `graph`；
 - Actor 类图：需要处理 micro/macro trade-off，单一 validation micro 不足以定义最优 gate；
 - 下一步应实现候选选择的无标签 proxy 或轻量 validation protocol，并与 shuffled/random selection control 对比，证明不是后验挑结果。
+
+## 2026-06-28 output selection 加入 raw 候选
+
+目标：检查 raw feature 加入候选后是否支配选择。如果 raw 经常胜出，raw-complement 的论文叙事必须进一步收缩为 raw-feature baseline 校准；如果 raw 不支配，则说明 graph/anchor/complement 的选择仍有方法空间。
+
+新增命令：
+
+```bash
+python select_representation.py --run-dir /tmp/raw_complement_cora_graph/Cora_raw_complement_gcl_seed0 --run-dir /tmp/raw_complement_cora_graph_seed1/Cora_raw_complement_gcl_seed1 --run-dir /tmp/raw_complement_cora_graph_seed2/Cora_raw_complement_gcl_seed2 --selection-eval-mode random --random-repeats 3 --candidate-names anchor graph anchor_graph raw --c-min-power -8 --c-max-power 8 --out runs/summaries/raw_complement_cora_output_selection_with_raw_s0-2.csv --aggregate-out runs/summaries/raw_complement_cora_output_selection_with_raw_s0-2_aggregate.csv
+python select_representation.py --run-dir /tmp/raw_complement_actor_anchor_graph_seed0_split0/Actor_raw_complement_gcl_seed0_split0 --run-dir /tmp/raw_complement_texas_anchor_graph_seed0_split0/Texas_raw_complement_gcl_seed0_split0 --selection-eval-mode mask --candidate-names anchor graph anchor_graph raw --c-min-power -8 --c-max-power 8 --out runs/summaries/raw_complement_actor_texas_output_selection_with_raw.csv --aggregate-out runs/summaries/raw_complement_actor_texas_output_selection_with_raw_aggregate.csv
+```
+
+### Cora seeds0-2
+
+| Candidate | F1Mi mean | F1Ma mean | 选择情况 |
+| --- | ---: | ---: | --- |
+| raw | 0.645910 | 0.600536 | 0/9 |
+| anchor | 0.673688 | 0.629499 | 0/9 |
+| graph | 0.810834 | 0.790843 | 9/9 |
+| anchor_graph | 0.781570 | 0.741479 | 0/9 |
+
+判断：raw 加入后并不改变 Cora 的结论；Cora 的安全表示明确是 `graph`，raw/anchor/anchor_graph 都不合适。
+
+### Actor/Texas split0
+
+| Dataset | Selected | selected F1Mi/F1Ma | raw 对照 |
+| --- | --- | ---: | ---: |
+| Actor | anchor_graph | 0.364474 / 0.343554 | raw 0.348026 / 0.332063 |
+| Texas | anchor_graph | 0.810811 / 0.619968 | raw 0.810811 / 0.619968 |
+
+判断：
+
+- Actor 上 raw 不支配；anchor/anchor_graph 仍提供超过 raw 的信号；
+- Texas 上 raw 与 anchor_graph 测试持平，说明 WebKB 小图仍高度受 raw feature 支配；
+- 选择机制需要能区分“raw 足够强”与“learned complement 有增量”的场景，不能只做 graph-vs-anchor 二选一。
+
+### 设计约束更新
+
+- Cora：选择 `graph`，避免 raw/anchor；
+- Texas：raw 与 anchor_graph 持平，方法必须证明没有牺牲 raw baseline；
+- Actor：anchor/anchor_graph 超过 raw，但 micro/macro 偏好不同；
+- 下一步若实现 gate，应至少包含 `raw`、`graph`、`anchor/anchor_graph` 三类候选或其等价机制，而不只是 graph-vs-anchor。
