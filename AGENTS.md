@@ -662,3 +662,10 @@
   - split0-2 50 epoch sanity：Raw-Complement `anchor_graph` 在 Chameleon/Squirrel 上全部同时超过 raw baseline 与 GRACE。Chameleon RC-raw F1Mi 为 +0.032895、+0.010965、+0.059211；Squirrel RC-raw F1Mi 为 +0.018252、+0.012488、+0.014409。
   - 当前判断：Raw-Complement 不能作为 WebKB/Actor 通用 SOTA，但在 WikipediaNetwork-style heterophily graphs 上重新成为条件性 active candidate；下一步必须做 Chameleon/Squirrel splits0-9 对照验证。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && for split in 3 4 5 6 7 8 9; do python evaluate_raw_features.py --dataset Chameleon --split-index ${split} --eval-mode auto --out-dir runs/raw_feature_smoke/Chameleon_split${split}; done && for split in 3 4 5 6 7 8 9; do python evaluate_raw_features.py --dataset Squirrel --split-index ${split} --eval-mode auto --out-dir runs/raw_feature_smoke/Squirrel_split${split}; done`。
+- 2026-06-28 Chameleon/Squirrel splits0-9 50 epoch 稳定性验证：
+  - 已新增 `experiments/grace_idea/summarize_raw_complement_probe.py`，用于按 dataset/split 对齐 raw、GRACE、Raw-Complement 的 `eval_summary.csv` 并输出 paired/aggregate delta。
+  - 已完成 Chameleon/Squirrel splits0-9 的 raw baseline、GRACE 50 epoch、Raw-Complement `anchor_graph` 50 epoch 对照。
+  - 聚合结果：Chameleon Raw-Complement 相对 raw F1Mi/F1Ma 平均 +0.033772/+0.033688，10/10 split 为正；相对 GRACE +0.066228/+0.068241，10/10 split 为正。
+  - 聚合结果：Squirrel Raw-Complement 相对 raw F1Mi/F1Ma 平均 +0.008742/+0.011555，10/10 split 为正；相对 GRACE +0.065514/+0.076369，10/10 split 为正。
+  - 当前判断：这条线重新具备 active candidate 资格，但必须严格限定为 WikipediaNetwork-style heterophily graphs；WebKB/Actor 负结果仍然保留为失败边界，不能声称通用 heterophily SOTA。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/grace_idea && DATASETS="Chameleon Squirrel" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" METHODS="raw_complement_gcl" EPOCHS=50 BATCH_SIZE=4096 SAVE_DIR="runs/raw_complement_wiki_splits0-9_seeds1-2_e50" TRAIN_EXTRA_ARGS="--raw-complement-eval-mode anchor_graph" scripts/run_split_study.sh`。

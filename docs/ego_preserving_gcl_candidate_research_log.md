@@ -964,3 +964,47 @@ split0-2 sanity 结果（50 epoch，seed0，固定 mask）：
 - 跑 Chameleon/Squirrel splits0-9 的 raw、GRACE、Raw-Complement 50 epoch 对照；
 - 若 10 split 均值仍稳定正向，再扩展到 100/200 epoch 与多 seed；
 - 同时必须保留 WebKB/Actor 负结果，论文叙事不能声称通用 heterophily SOTA，只能声称“条件性 raw-anchored complement gains”。
+
+## 2026-06-28 Chameleon/Squirrel splits0-9 50 epoch 稳定性验证
+
+目标：验证 split0-2 的 Raw-Complement 正信号是否能扩展到完整 10 split，并同时超过 raw baseline 与 GRACE。
+
+新增脚本：
+
+- `experiments/grace_idea/summarize_raw_complement_probe.py`
+
+该脚本读取 `eval_summary.csv`，按 dataset/split 对齐 raw、GRACE、Raw-Complement，输出 paired delta 与 dataset aggregate。
+
+主要命令：
+
+```bash
+python summarize_raw_complement_probe.py --datasets Chameleon --splits 0 1 2 3 4 5 6 7 8 9 --raw-dir runs/raw_feature_smoke --grace-dir /tmp/grace_chameleon_e50 --raw-complement-dir /tmp/chameleon_raw_complement_e50_splits0-9 --paired-out runs/summaries/raw_complement_chameleon_e50_splits0-9_paired.csv --aggregate-out runs/summaries/raw_complement_chameleon_e50_splits0-9_aggregate.csv
+python summarize_raw_complement_probe.py --datasets Squirrel --splits 0 1 2 3 4 5 6 7 8 9 --raw-dir runs/raw_feature_smoke --grace-dir /tmp/grace_squirrel_e50 --raw-complement-dir /tmp/squirrel_raw_complement_e50_splits0-9 --paired-out runs/summaries/raw_complement_squirrel_e50_splits0-9_paired.csv --aggregate-out runs/summaries/raw_complement_squirrel_e50_splits0-9_aggregate.csv
+```
+
+聚合结果：
+
+| Dataset | RC - raw F1Mi mean | Positive splits | RC - raw F1Ma mean | Positive splits | RC - GRACE F1Mi mean | Positive splits | RC - GRACE F1Ma mean | Positive splits |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Chameleon | +0.033772 | 10/10 | +0.033688 | 10/10 | +0.066228 | 10/10 | +0.068241 | 10/10 |
+| Squirrel | +0.008742 | 10/10 | +0.011555 | 10/10 | +0.065514 | 10/10 | +0.076369 | 10/10 |
+
+逐 split 观察：
+
+- Chameleon 的 RC - raw F1Mi 范围为 +0.006579 到 +0.070175；
+- Squirrel 的 RC - raw F1Mi 范围为 +0.000961 到 +0.016330；
+- GRACE 在两个数据集上均明显低于 raw，说明 vanilla GCN-GRACE 不适合这些异配图；
+- Raw-Complement 在 Chameleon 上收益较大，在 Squirrel 上收益稳定但幅度偏小。
+
+当前判断：
+
+- Raw-Complement 重新成为条件性 active candidate，但限定在 WikipediaNetwork-style heterophily graphs；
+- 与 WebKB/Actor 负结果共同说明：方法不是通用 heterophily SOTA，而是“当 raw 不完全支配且 GCN-GRACE 过度平滑时，raw-anchored complement 可以保留 raw separability 并抽取额外图上下文”；
+- 这条线比此前 reliability-weighted GCL 更有希望，因为它已经同时跨过 raw baseline 与 GRACE，并有清晰失败边界；
+- 仍不足以宣称 2026 顶会/顶刊：下一步必须做 100/200 epoch、seeds0-2、对照 residual_grace/ego_grace/MLP/近期 heterophily GCL 方法，并补机制诊断。
+
+下一步建议：
+
+- 优先跑 Chameleon/Squirrel splits0-9 的 Raw-Complement 100 epoch 或 seeds1-2；
+- 若正信号保持，再做 ablation：`anchor` vs `anchor_graph` vs `graph`，以及去掉 complement correlation penalty；
+- 若 Squirrel 的小幅收益在多 seed 上消失，则主 claim 只能聚焦 Chameleon 或机制分析。
