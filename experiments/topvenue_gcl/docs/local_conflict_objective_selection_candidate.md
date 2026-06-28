@@ -3,6 +3,7 @@
 ## 当前裁决
 
 `lcos_gcl` 已降级为 **失败/条件性诊断资产**，不进入 splits 0-2 扩展。
+`lcm_gcl` 作为 LCOS 的 final-only 后续变体也已降级，不进入 splits 0-2 扩展。
 
 核心原因：
 
@@ -10,6 +11,7 @@
 - Actor 仅小幅正向；
 - Squirrel 同时满足 normal > baseline 与 normal > shuffled，是唯一有机制线索的数据集；
 - 因此局部冲突 gate 可能有信息量，但“直接在 graph view 与 high-pass view 之间切换对齐目标”的 objective 设计不成立。
+- 后续 final-only mix 证明：即使不改训练目标，只把 gate 用于最终结构表征混合，也不能形成稳定主方法。
 
 ## 方法定义
 
@@ -77,3 +79,37 @@ LCOS 的 negative evidence：
 - 不再直接对齐 high-pass target；
 - 将局部冲突 gate 用于 **loss reliability / negative suppression / representation mixing**，而不是硬切 graph/high alignment；
 - 需要加入 downstream separability proxy 或 cluster-margin proxy，避免只优化 view alignment。
+
+## 2026-06-29 追加：LCM final-only 复核
+
+为区分“high-pass alignment loss 错误”与“local-conflict gate 本身无效”，已实现 `--method lcm_gcl`：
+
+- 训练目标保持 `gcn_mlp_gcl` 的 graph-view bootstrap；
+- 只在 final representation 中使用 `[ego, (1-gate) graph + gate high]`；
+- 复用 `--lcos-shuffle-gate` 作为 final mix gate control。
+
+执行：
+
+```bash
+RUNS_DIR="runs/lcm_split0_s0_e50"
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl lcm_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="normal" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="lcm_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="shuffled" EXTRA_ARGS="--lcos-shuffle-gate" OVERWRITE=1 bash scripts/run_split_study.sh
+python summarize_split_study.py --runs-dir "$RUNS_DIR" --baseline-method gcn_mlp_gcl --out "$RUNS_DIR/runs_vs_gcn_mlp.csv" --aggregate-out "$RUNS_DIR/aggregate_vs_gcn_mlp.csv"
+```
+
+结果：
+
+| Dataset | LCM ΔF1Mi/ΔF1Ma | LCM - shuffled ΔF1Mi/ΔF1Ma | 裁决 |
+| --- | ---: | ---: | --- |
+| Texas | -0.054054 / +0.012536 | -0.135135 / -0.163095 | micro 失败，shuffled 更强 |
+| Actor | +0.004605 / +0.008602 | +0.015132 / +0.023555 | 弱正向 |
+| Chameleon | +0.006579 / +0.008321 | +0.024123 / +0.024515 | 弱正向 |
+| Squirrel | +0.000961 / -0.003220 | +0.001921 / +0.009034 | 近零 |
+
+裁决：
+
+- LCM 不进入 splits 0-2 扩展；
+- final-only mix 比 LCOS 的 training objective 更稳，但 Texas micro 仍失败；
+- Texas shuffled final mix 大幅超过 normal，说明当前 local-conflict gate 不是稳健机制；
+- Actor/Chameleon 的小幅正向不足以支撑主方法；
+- 后续不再继续围绕 local-conflict graph/high mix 调参。

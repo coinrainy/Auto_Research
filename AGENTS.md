@@ -1125,3 +1125,16 @@
   - 后续不再继续调 LCOS route threshold、temperature 或 degree weight；下一代若继承局部冲突线索，应转向 loss reliability、negative suppression 或 downstream separability proxy。
   - 已新增文档：`experiments/topvenue_gcl/docs/local_conflict_objective_selection_candidate.md`，并更新 `experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/lcos_split0_s0_e50/runs_vs_gcn_mlp.csv` 查看 LCOS 逐数据集边界；随后应设计 downstream separability proxy 或 loss reliability 新候选，而不是继续调 LCOS。
+- 2026-06-29 LCM-GCL final-only local-conflict mix 实现与放弃：
+  - 已实现 `experiments/topvenue_gcl/train.py --method lcm_gcl`，暂名 Local-Conflict Mix GCL。
+  - 方法保留 `gcn_mlp_gcl` 的训练目标，只在 final representation 中使用 `[ego, (1-gate) graph + gate high]`，用于检验 LCOS 失败是否主要来自 high-pass alignment loss。
+  - 复用 `--lcos-shuffle-gate` 作为 final mix gate control；复用 LCOS 的 gate 诊断字段。
+  - 已完成 smoke：`python -m py_compile train.py summarize_split_study.py src/*.py`、Texas normal/shuffled 2 epoch、Chameleon 2 epoch。
+  - 已执行 split0 early gate：Texas/Actor/Chameleon/Squirrel × split0 × seed0 × 50 epoch 的 `gcn_mlp_gcl`、LCM normal 与 LCM shuffled，输出目录 `experiments/topvenue_gcl/runs/lcm_split0_s0_e50/`。
+  - LCM normal vs `gcn_mlp_gcl`：Texas -0.054054/+0.012536，Actor +0.004605/+0.008602，Chameleon +0.006579/+0.008321，Squirrel +0.000961/-0.003220。
+  - LCM normal-vs-shuffled：Texas -0.135135/-0.163095，Actor +0.015132/+0.023555，Chameleon +0.024123/+0.024515，Squirrel +0.001921/+0.009034。
+  - 裁决：LCM 不进入 splits 0-2 扩展；final-only mix 比 LCOS training objective 更稳，但 Texas micro 失败，且 Texas shuffled final mix 大幅更强，说明当前 local-conflict gate 不是稳健机制。
+  - 当前保留价值：作为 negative/conditional diagnostic asset，说明 local-conflict graph/high mix 在 Actor/Chameleon 有弱线索，但不足以作为主方法。
+  - 后续不再围绕 local-conflict graph/high final mix 调参；下一代应转向 downstream separability proxy 或 loss reliability，而不是继续改 graph/high mix。
+  - 已更新文档：`experiments/topvenue_gcl/docs/local_conflict_objective_selection_candidate.md`、`experiments/topvenue_gcl/README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md` 与本 `AGENTS.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/lcm_split0_s0_e50/runs_vs_gcn_mlp.csv` 查看 LCM 逐数据集边界；随后应实现 downstream separability proxy 或 loss reliability 新候选。

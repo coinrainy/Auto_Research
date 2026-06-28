@@ -640,3 +640,33 @@ python summarize_split_study.py --runs-dir "$RUNS_DIR" --baseline-method gcn_mlp
 - 直接对齐 high-pass target 的 objective selection 不成立；
 - 后续不再继续调 LCOS threshold、temperature 或 degree weight；
 - 下一代若继承局部冲突线索，应转向 loss reliability、negative suppression 或 downstream separability proxy，而不是 graph/high alignment 切换。
+
+## 2026-06-29 追加：LCM-GCL final-only local-conflict mix 与放弃
+
+已实现 `--method lcm_gcl`：Local-Conflict Mix GCL。该方法保留 `gcn_mlp_gcl` 的训练目标，只在 final representation 中使用 `[ego, (1-gate) graph + gate high]`，用于检验 LCOS 失败是否主要来自 high-pass alignment loss。
+
+执行：
+
+```bash
+RUNS_DIR="runs/lcm_split0_s0_e50"
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl lcm_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="normal" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="lcm_gcl" SPLITS="0" SEEDS="0" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="shuffled" EXTRA_ARGS="--lcos-shuffle-gate" OVERWRITE=1 bash scripts/run_split_study.sh
+python summarize_split_study.py --runs-dir "$RUNS_DIR" --baseline-method gcn_mlp_gcl --out "$RUNS_DIR/runs_vs_gcn_mlp.csv" --aggregate-out "$RUNS_DIR/aggregate_vs_gcn_mlp.csv"
+```
+
+结果：
+
+| Dataset | LCM ΔF1Mi | LCM ΔF1Ma | LCM - shuffled ΔF1Mi | LCM - shuffled ΔF1Ma | 裁决 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Texas | -0.054054 | +0.012536 | -0.135135 | -0.163095 | micro 失败，shuffled 更强 |
+| Actor | +0.004605 | +0.008602 | +0.015132 | +0.023555 | 弱正向 |
+| Chameleon | +0.006579 | +0.008321 | +0.024123 | +0.024515 | 弱正向 |
+| Squirrel | +0.000961 | -0.003220 | +0.001921 | +0.009034 | 近零 |
+
+裁决：
+
+- LCM 不进入 splits 0-2 扩展；
+- final-only mix 比 LCOS training objective 更稳，但 Texas micro 仍失败；
+- Texas shuffled final mix 大幅超过 normal，说明当前 local-conflict gate 不是稳健机制；
+- Actor/Chameleon 的小幅正向不足以支撑主方法；
+- 后续不再围绕 local-conflict graph/high mix 调参。

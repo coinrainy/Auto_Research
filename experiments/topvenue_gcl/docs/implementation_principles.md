@@ -197,4 +197,8 @@ LCOS 当前裁决：
 - 当前解释：Squirrel 给出最清楚的局部冲突 gate 机制线索，但 Texas micro 和 Chameleon baseline gate 失败；
 - LCOS 第一版已降级为失败/条件性诊断资产，不进入 splits 0-2 扩展；
 - 后续不再继续调 LCOS route threshold、temperature 或 degree weight；
-- 若继承 LCOS 线索，必须改变目标设计：局部冲突 gate 应用于 loss reliability、negative suppression 或 downstream separability proxy，而不是直接对齐 high-pass target。
+- 已实现 `lcm_gcl` 作为 LCOS 的 final-only 后续变体：训练目标保持 `gcn_mlp_gcl`，只在 final representation 中使用 local-conflict graph/high mix；
+- LCM 在 Texas/Actor/Chameleon/Squirrel × split0 × seed0 × 50 epoch 中，相对 `gcn_mlp_gcl` 的 ΔF1Mi 分别为 -0.054054、+0.004605、+0.006579、+0.000961；
+- LCM normal-vs-shuffled 的 ΔF1Mi 分别为 -0.135135、+0.015132、+0.024123、+0.001921，Texas shuffled 明显更强；
+- LCM 也已降级，不进入 splits 0-2 扩展；
+- 若继承 LCOS/LCM 线索，必须改变目标设计：局部冲突 gate 应用于 loss reliability、negative suppression 或 downstream separability proxy，而不是直接对齐 high-pass target，也不是简单 graph/high final mix。

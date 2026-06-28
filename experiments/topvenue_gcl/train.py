@@ -58,6 +58,7 @@ def parse_args():
                             "srgnv_gcl",
                             "pcnv_gcl",
                             "lcos_gcl",
+                            "lcm_gcl",
                             "energy_spgcl",
                             "gcn_mlp_gcl",
                             "er_residual_gcl",
@@ -932,6 +933,7 @@ def train_er_cache_gcl(model, data, config, args):
     aompnv_gcl = args.method == "aompnv_gcl"
     srgnv_gcl = args.method == "srgnv_gcl"
     lcos_gcl = args.method == "lcos_gcl"
+    lcm_gcl = args.method == "lcm_gcl"
     residual_only = args.method in {
         "er_residual_gcl",
         "gcn_mlp_gcl",
@@ -946,6 +948,7 @@ def train_er_cache_gcl(model, data, config, args):
         "srgnv_gcl",
         "pcnv_gcl",
         "lcos_gcl",
+        "lcm_gcl",
     }
     graph_target = args.method in {
         "gcn_mlp_gcl",
@@ -960,6 +963,7 @@ def train_er_cache_gcl(model, data, config, args):
         "srgnv_gcl",
         "pcnv_gcl",
         "lcos_gcl",
+        "lcm_gcl",
     }
     topk = 0 if (args.disable_cache or residual_only) else int(config["cache_topk"])
     cache_update = max(1, int(config["cache_update_interval"]))
@@ -1012,7 +1016,7 @@ def train_er_cache_gcl(model, data, config, args):
         target = parts["graph"] if graph_target else parts["high"]
         lcos_gate = None
         lcos_mix = None
-        if lcos_gcl:
+        if lcos_gcl or lcm_gcl:
             lcos_gate, _, _, _ = _lcos_conflict_gate(data, config)
             lcos_mix = _lcos_structural_mix(parts, lcos_gate)
             parts["final"] = _lcos_final(model, parts, lcos_mix)
@@ -1300,7 +1304,7 @@ def train_er_cache_gcl(model, data, config, args):
     model.eval()
     with torch.no_grad():
         parts = model(data.x, data.edge_index, final_mode=config["final_repr"])
-        if lcos_gcl:
+        if lcos_gcl or lcm_gcl:
             lcos_gate, _, _, _ = _lcos_conflict_gate(data, config)
             lcos_mix = _lcos_structural_mix(parts, lcos_gate)
             parts["final"] = _lcos_final(model, parts, lcos_mix)
@@ -1456,7 +1460,7 @@ def train_er_cache_gcl(model, data, config, args):
             diagnostics["pcnv_entropy_guard"] = bool(config.get("pcnv_entropy_guard", False))
             diagnostics["pcnv_shuffle_assignments"] = bool(config.get("pcnv_shuffle_assignments", False))
             diagnostics["pcnv_prototype_cosine_offdiag_mean"] = float(off_diag.mean().item())
-        if lcos_gcl:
+        if lcos_gcl or lcm_gcl:
             gate, score, raw_agreement, raw_residual = _lcos_conflict_gate(data, config)
             diagnostics["lcos_high_gate_mean"] = float(gate.mean().item())
             diagnostics["lcos_high_gate_std"] = float(gate.std(unbiased=False).item())
@@ -1478,6 +1482,7 @@ def train_er_cache_gcl(model, data, config, args):
         ("srgnv_shuffled" if bool(config.get("srgnv_shuffle_residual", False)) else "srgnv") if srgnv_gcl else
         _pcnv_control_name(config) if pcnv_gcl else
         ("lcos_shuffled" if bool(config.get("lcos_shuffle_gate", False)) else "lcos") if lcos_gcl else
+        ("lcm_shuffled" if bool(config.get("lcos_shuffle_gate", False)) else "lcm") if lcm_gcl else
         ("aompnv_shuffled" if bool(config.get("aompnv_shuffle_positives", False)) else "aompnv") if aompnv_gcl else
         ("mpnv_shuffled" if bool(config.get("mpnv_shuffle_positives", False)) else "mpnv") if mpnv_gcl else
         "bspnv" if bspnv_gcl else
@@ -1520,7 +1525,7 @@ def main():
     config = override_config(load_yaml(args.config), args)
     if args.method == "gcn_mlp_gcl" and args.final_repr is None:
         config["final_repr"] = "ego_graph"
-    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl", "srgnv_gcl", "pcnv_gcl", "lcos_gcl"} and args.final_repr is None:
+    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl", "srgnv_gcl", "pcnv_gcl", "lcos_gcl", "lcm_gcl"} and args.final_repr is None:
         config["final_repr"] = "ego_graph"
     if args.method == "energy_spgcl" and args.final_repr is None:
         config["final_repr"] = "ego_high"
