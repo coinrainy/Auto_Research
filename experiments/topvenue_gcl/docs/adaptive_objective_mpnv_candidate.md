@@ -4,11 +4,11 @@
 
 ## 当前裁决
 
-`aompnv_gcl` 暂时升级为 **active-but-risky candidate**，但不能声称已经找到 SOTA idea。
+`aompnv_gcl` 已在 10 split x seeds 1/2 硬门控后降级为 **失败/条件性消融资产**，不再作为 active main idea。
 
-理由：它在 Texas/Actor/Chameleon/Squirrel × splits 0-2 × seeds 1/2 × 50 epoch 的小门控中，相对 `gcn_mlp_gcl` strong foundation 四个数据集 mean F1Mi 均为正，且 Chameleon 与 Squirrel 的信号强于失败的 full MPNV 复核。但 shuffled-positive control 在 Texas 与 Squirrel 上也保持较强正向，说明“结构化 semantic/spatial positive mask 本身正确”的机制证据不干净。
+理由：它在 Texas/Actor/Chameleon/Squirrel x splits 0-2 x seeds 1/2 x 50 epoch 的小门控中，相对 `gcn_mlp_gcl` strong foundation 四个数据集 mean F1Mi 均为正，且 Chameleon 与 Squirrel 的信号强于失败的 full MPNV 复核。但更硬的 splits 0-9 x seeds 1/2 复核显示，只有 Squirrel 同时满足 normal > baseline 与 normal > shuffled 的较清楚信号；Texas 正向但 split-level 不稳，Actor 对 baseline 为负，Chameleon 反而 shuffled-positive control 更强。
 
-因此当前应把贡献假设收缩为：**无标签 objective activation / node-level fallback 可能稳定化 dense multi-positive objectives**，而不是“semantic/spatial dense positives 天然可靠”。
+因此当前应放弃把 AOMPNV 包装为 2026 顶会/顶刊主方法。可保留的线索是：**multi-objective / dense-positive 正则有时有效，但结构化 positive routing 尚未证明是因果机制**。
 
 ## 方法定义
 
@@ -84,30 +84,58 @@ Aggregate vs `gcn_mlp_gcl`：
 
 AOMPNV 在四个数据集上均不弱于单独 semantic/spatial dense 分支，说明 objective activation 至少在小门控中修复了 full MPNV 的固定加权问题。
 
+## 硬门控结果
+
+执行设置：
+
+- Dataset：Texas / Actor / Chameleon / Squirrel；
+- Splits：0-9；
+- Seeds：1 / 2；
+- Epochs：50；
+- Baseline：`gcn_mlp_gcl`；
+- Control：`aompnv_gcl --aompnv-shuffle-positives`；
+- 输出目录：`runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50/`。
+
+Aggregate vs `gcn_mlp_gcl`：
+
+| Dataset | AOMPNV ΔF1Mi | AOMPNV ΔF1Ma | Positive/Zero/Negative F1Mi | Shuffled ΔF1Mi | Normal - Shuffled ΔF1Mi | 裁决 |
+| --- | ---: | ---: | --- | ---: | ---: | --- |
+| Texas | +0.010811 | +0.024572 | 9/5/6 | +0.002703 | +0.008108 | 均值正向但 split-level 不稳 |
+| Actor | -0.002829 | -0.006672 | 7/1/12 | -0.010592 | +0.007763 | normal > shuffled 但低于 baseline |
+| Chameleon | +0.000658 | +0.000853 | 12/1/7 | +0.011952 | -0.011294 | shuffled 明显更强，机制失败 |
+| Squirrel | +0.018348 | +0.017634 | 16/1/3 | +0.004755 | +0.013593 | 唯一较清楚成功数据集 |
+
+关键判断：
+
+- AOMPNV 没有达到主方法升级门槛。虽然 3/4 数据集 normal mean F1Mi 不低于 baseline，但 Chameleon 几乎为零且 shuffled 更强，Actor 对 baseline 为负，Texas split-level 正负混杂。
+- normal-vs-shuffled 只有 Squirrel 明确干净；Texas 和 Actor 的正差值不足以抵消 baseline/稳定性问题。
+- 结构化 semantic/spatial dense positives 与 objective activation 不能作为主贡献叙事。
+- AOMPNV 可作为后续论文的 negative result / regularization ablation：说明“多目标正则可能有用，但无标签 positive routing 并不自动带来可发表级稳定提升”。
+
 ## 风险
 
-- 当前只覆盖 splits 0-2 与 seeds 1/2，还不是 10 split 多 seed 结论；
-- Texas normal 与 shuffled 的 micro 均值完全持平，不能证明结构化 positive mask 有效；
-- Squirrel normal 虽然 6/6 正向，但 shuffled 也是 6/6 正向，机制证据偏弱；
-- Chameleon shuffled 接近 normal，说明一部分收益可能来自 dense objective regularization，而不是正确 positive construction；
-- Actor 性能增益太小，不能作为主成功数据集；
+- 硬门控已覆盖 splits 0-9 与 seeds 1/2，但仍未达到主方法门槛；
+- Texas normal 只有均值正向，split-level 正负混杂，不能证明结构化 positive mask 稳定有效；
+- Squirrel 是唯一较清楚正例，但单数据集成功不足以支撑顶会/顶刊主方法；
+- Chameleon shuffled 明显强于 normal，说明一部分收益来自 dense objective regularization 或训练噪声，而不是正确 positive construction；
+- Actor normal 低于 baseline，不能作为成功数据集；
 - dense mask 仍有 O(N^2) 内存/计算风险，若继续推进必须实现 sparse/block 版本。
 
 ## 下一步停止/升级标准
 
-继续推进前必须跑一个更硬门控：
+硬门控已经完成，结论为停止主线推进：
 
-- Texas/Actor/Chameleon/Squirrel × splits 0-9 × seeds 1/2；
-- 同时包含 `gcn_mlp_gcl`、AOMPNV normal、AOMPNV shuffled；
-- 升级条件：至少 3/4 数据集 normal mean F1Mi > `gcn_mlp_gcl`，且至少 2/4 数据集 normal - shuffled 明显为正；
-- 停止条件：若 normal 与 shuffled 接近，或收益只来自 Chameleon/Squirrel 小幅正向，则把 AOMPNV 降级为 regularization ablation，不再作为主方法。
+- 不继续调 `aompnv_router_temperature`、branch weight 或 confidence threshold；
+- 不再围绕 semantic/spatial positive mask 做小修小补；
+- 保留结果用于分析 shuffled/multi-objective regularization 为什么在部分数据集很强；
+- 下一代 idea 必须换机制，仍以 `gcn_mlp_gcl` 为 strong foundation，并继续保留 shuffled/random/no-structure control。
 
-建议命令：
+复现实验与汇总命令：
 
 ```bash
 cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl
-RUNS_DIR="runs/aompnv_gate_ta_wiki_s1-2_splits0-9_e50"
-DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl aompnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="$RUNS_DIR" OVERWRITE=1 bash scripts/run_split_study.sh
-DATASETS="Texas Actor Chameleon Squirrel" METHODS="aompnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="shuffled" EXTRA_ARGS="--aompnv-shuffle-positives" OVERWRITE=1 bash scripts/run_split_study.sh
+RUNS_DIR="runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50"
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="aompnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="aompnv" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="aompnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="aompnv_shuffled" EXTRA_ARGS="--aompnv-shuffle-positives" OVERWRITE=1 bash scripts/run_split_study.sh
 python summarize_split_study.py --runs-dir "$RUNS_DIR" --baseline-method gcn_mlp_gcl --out "$RUNS_DIR/runs_vs_gcn_mlp.csv" --aggregate-out "$RUNS_DIR/aggregate_vs_gcn_mlp.csv"
 ```

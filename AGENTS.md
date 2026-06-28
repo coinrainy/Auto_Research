@@ -1059,3 +1059,13 @@
   - 若按“顶会强方法/SOTA”推进，目标线需接近或超过同协议强基线：Cornell/Texas/Wisconsin 大致需进入 75-85%+ 区间，Actor 约 35-41%+，Chameleon 约 60-72%+，Squirrel 约 40-56%+；Cora/CiteSeer/PubMed 需至少不低于强 GCL baseline 的常见区间。
   - 当前小门控 AOMPNV 仅在 splits 0-2、seeds 1/2、50 epoch 上显示 Texas/Chameleon/Squirrel 正向，仍远不足以支撑投稿结论；下一步必须跑完整 10 split、补 shuffled、补 PolyGCL/GraphECL/GRASS/GREET/M3P-GCL 或可复现等价强基线同协议对齐。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && RUNS_DIR="runs/aompnv_gate_ta_wiki_s1-2_splits0-9_e50" && DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl aompnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="$RUNS_DIR" OVERWRITE=1 bash scripts/run_split_study.sh`。
+- 2026-06-29 AOMPNV 硬门控与放弃：
+  - 已执行 Texas/Actor/Chameleon/Squirrel × splits 0-9 × seeds 1/2 × 50 epoch 的 AOMPNV normal 与 `--aompnv-shuffle-positives` control，复用 `experiments/topvenue_gcl/runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50/` 中已有 `gcn_mlp_gcl` baseline。
+  - 输出与汇总文件：`runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50/split_study_runs.csv`、`split_study_aggregate.csv`、`runs_vs_gcn_mlp.csv`、`aggregate_vs_gcn_mlp.csv`。
+  - AOMPNV normal vs `gcn_mlp_gcl`：Texas ΔF1Mi/ΔF1Ma=+0.010811/+0.024572，Actor -0.002829/-0.006672，Chameleon +0.000658/+0.000853，Squirrel +0.018348/+0.017634。
+  - AOMPNV shuffled vs `gcn_mlp_gcl`：Texas +0.002703/+0.006203，Actor -0.010592/-0.009279，Chameleon +0.011952/+0.012303，Squirrel +0.004755/+0.001526。
+  - AOMPNV normal-vs-shuffled：Texas +0.008108/+0.018369，Actor +0.007763/+0.002608，Chameleon -0.011294/-0.011450，Squirrel +0.013593/+0.016108。
+  - 裁决：AOMPNV 不再作为 active main idea；只有 Squirrel 同时给出较清楚的 baseline 增益与 shuffled 差距，Texas 不稳，Actor 低于 baseline，Chameleon shuffled 明显更强。
+  - 当前保留价值：作为 regularization / negative-result ablation，说明 multi-objective dense-positive 正则有时有效，但结构化 positive routing 未被证明是因果机制。
+  - 已更新文档：`experiments/topvenue_gcl/docs/adaptive_objective_mpnv_candidate.md`、`experiments/topvenue_gcl/docs/early_gate_summary_2026-06-28.md`、`experiments/topvenue_gcl/docs/implementation_principles.md`、`experiments/topvenue_gcl/README.md` 与本 `AGENTS.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50/aggregate_vs_gcn_mlp.csv` 查看硬门控汇总；随后应换机制设计下一代 candidate，不再继续调 AOMPNV router、branch weight 或 confidence threshold。

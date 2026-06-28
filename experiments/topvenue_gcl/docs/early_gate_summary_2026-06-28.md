@@ -419,3 +419,35 @@ AOMPNV normal-vs-shuffled：
 | Squirrel | +0.003522 | +0.006586 | 性能稳，但机制差距偏小 |
 
 当前裁决：AOMPNV 暂时升级为 active-but-risky candidate。它修复了 full MPNV 固定加权的部分问题，并在小门控中不弱于 semantic-only/spatial-only dense 分支；但 shuffled control 偏强，不能包装成“结构化 dense positives 已被证明”。下一步必须做 splits 0-9 × seeds 1/2 的 normal/shuffled 硬门控；若 normal 与 shuffled 接近，则降级为 regularization ablation。
+
+## 2026-06-29 追加：AOMPNV 硬门控与放弃
+
+已完成 Texas/Actor/Chameleon/Squirrel x splits 0-9 x seeds 1/2 x 50 epoch 的 AOMPNV normal 与 shuffled-positive control，复用 `runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50/` 中已有的 `gcn_mlp_gcl` baseline。
+
+执行与汇总：
+
+```bash
+RUNS_DIR="runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50"
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="aompnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="aompnv" OVERWRITE=1 bash scripts/run_split_study.sh
+DATASETS="Texas Actor Chameleon Squirrel" METHODS="aompnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="aompnv_shuffled" EXTRA_ARGS="--aompnv-shuffle-positives" OVERWRITE=1 bash scripts/run_split_study.sh
+python summarize_split_study.py --runs-dir "$RUNS_DIR" --baseline-method gcn_mlp_gcl --out "$RUNS_DIR/runs_vs_gcn_mlp.csv" --aggregate-out "$RUNS_DIR/aggregate_vs_gcn_mlp.csv"
+```
+
+Aggregate：
+
+| Dataset | AOMPNV ΔF1Mi | AOMPNV ΔF1Ma | Positive/Zero/Negative F1Mi | Shuffled ΔF1Mi | Normal - Shuffled ΔF1Mi | 裁决 |
+| --- | ---: | ---: | --- | ---: | ---: | --- |
+| Texas | +0.010811 | +0.024572 | 9/5/6 | +0.002703 | +0.008108 | 均值正向但 split-level 不稳 |
+| Actor | -0.002829 | -0.006672 | 7/1/12 | -0.010592 | +0.007763 | normal 优于 shuffled，但低于 baseline |
+| Chameleon | +0.000658 | +0.000853 | 12/1/7 | +0.011952 | -0.011294 | shuffled 明显更强，机制失败 |
+| Squirrel | +0.018348 | +0.017634 | 16/1/3 | +0.004755 | +0.013593 | 唯一较清楚正例 |
+
+裁决：
+
+- AOMPNV 不再作为 active main idea；
+- 只有 Squirrel 同时满足较清楚的 normal > baseline 与 normal > shuffled；
+- Texas 有正均值但 split-level 正负混杂，不能作为稳定主证据；
+- Actor 的 normal-vs-shuffled 差值不能弥补低于 baseline 的事实；
+- Chameleon shuffled control 明显强于 normal，直接击穿结构化 positive routing 叙事；
+- AOMPNV 保留为 regularization / negative-result ablation，不再继续调 router、branch weight 或 confidence threshold；
+- 下一代 candidate 必须换机制，继续以 `gcn_mlp_gcl` 为 strong foundation，并保留 shuffled/random/no-structure control。

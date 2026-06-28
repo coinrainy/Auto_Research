@@ -37,6 +37,7 @@
 - `fdnv_gcl`；
 - `sspnv_gcl` / `afpnv_gcl` / `bspnv_gcl` 作为最终主方法。
 - `mpnv_gcl` 作为最终主方法。
+- `aompnv_gcl` 作为最终主方法。
 
 后续所有新候选必须同时报告：
 
@@ -145,6 +146,10 @@ AOMPNV 当前裁决：
 - `--aompnv-shuffle-positives` 是必须保留的机制 control；
 - Texas/Actor/Chameleon/Squirrel × splits 0-2 × seeds 1/2 × 50 epoch 中，相对 `gcn_mlp_gcl` 的 ΔF1Mi 分别为 +0.022523、+0.001864、+0.015351、+0.018892；
 - normal-vs-shuffled 的 ΔF1Mi 分别为 Texas -0.000000、Actor +0.009539、Chameleon +0.006579、Squirrel +0.003522；
-- 当前解释：AOMPNV 比 full MPNV 和单独 semantic/spatial dense 分支更稳，但 shuffled control 仍偏强，不能把结构化 mask 本身作为核心机制；
-- 下一步必须跑 splits 0-9 × seeds 1/2 的 normal/shuffled 硬门控；
-- 若 normal 与 shuffled 接近，AOMPNV 降级为 regularization ablation，不再作为主线。
+- 已完成 splits 0-9 × seeds 1/2 的 normal/shuffled 硬门控；
+- 相对 `gcn_mlp_gcl` 的 ΔF1Mi 分别为 Texas +0.010811、Actor -0.002829、Chameleon +0.000658、Squirrel +0.018348；
+- normal-vs-shuffled 的 ΔF1Mi 分别为 Texas +0.008108、Actor +0.007763、Chameleon -0.011294、Squirrel +0.013593；
+- 当前解释：只有 Squirrel 同时给出较清楚的 baseline 增益与 shuffled control 差距；Texas 正向但 split-level 不稳，Actor 低于 baseline，Chameleon shuffled 明显更强；
+- AOMPNV 已降级为 regularization / negative-result ablation，不再作为主线；
+- 后续不再继续调 AOMPNV 的 router temperature、branch weight 或 confidence threshold；
+- 下一代方法必须换训练机制，同时保留 `gcn_mlp_gcl` strong foundation 与 shuffled/random/no-structure control。
