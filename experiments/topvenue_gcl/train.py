@@ -180,6 +180,7 @@ def parse_args():
     parser.add_argument("--rwirrnv-min-reliability", type=float, default=None)
     parser.add_argument("--rwirrnv-weight-power", type=float, default=None)
     parser.add_argument("--rwirrnv-shuffle-weight", action="store_true")
+    parser.add_argument("--rwirrnv-constant-weight", action="store_true")
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -396,6 +397,8 @@ def override_config(config, args):
         merged["rwirrnv_weight_power"] = args.rwirrnv_weight_power
     if args.rwirrnv_shuffle_weight:
         merged["rwirrnv_shuffle_weight"] = True
+    if args.rwirrnv_constant_weight:
+        merged["rwirrnv_constant_weight"] = True
     return merged
 
 
@@ -815,6 +818,8 @@ def _rrnv_weighted_invariance_loss(z_ego, z_graph, reliability, config, shuffle_
     reliability = reliability.clamp(0.0, 1.0)
     reliability = min_reliability + (1.0 - min_reliability) * reliability
     reliability = reliability.pow(float(config["rwirrnv_weight_power"]))
+    if bool(config.get("rwirrnv_constant_weight", False)):
+        reliability = torch.full_like(reliability, reliability.mean())
     invariance = (per_node * reliability).mean()
     unweighted_invariance = per_node.mean()
     variance = 0.5 * (variance_loss(z_ego) + variance_loss(z_graph))
@@ -2071,6 +2076,7 @@ def train_er_cache_gcl(model, data, config, args):
             diagnostics["dsrrnv_high_gate"] = float(gate_stats["graph_high_gate"].item())
             diagnostics["dsrrnv_avg_degree"] = float(gate_stats["avg_degree"])
             diagnostics["rwirrnv_shuffle_weight"] = bool(config.get("rwirrnv_shuffle_weight", False))
+            diagnostics["rwirrnv_constant_weight"] = bool(config.get("rwirrnv_constant_weight", False))
             diagnostics["rwirrnv_reliability_mean"] = float(effective_reliability.mean().item())
             diagnostics["rwirrnv_reliability_std"] = float(
                 effective_reliability.std(unbiased=False).item()
@@ -2124,7 +2130,7 @@ def train_er_cache_gcl(model, data, config, args):
         ("dirrnv_shuffled" if bool(config.get("rrnv_shuffle_pairs", False)) else "dirrnv") if dirrnv_gcl else
         ("dprrnv_shuffled" if bool(config.get("rrnv_shuffle_pairs", False)) else "dprrnv") if dprrnv_gcl else
         ("nprrnv_full_shuffled" if bool(config.get("rrnv_shuffle_pairs", False)) else "nprrnv_gate_shuffled" if bool(config.get("nprrnv_shuffle_gate", False)) else "nprrnv") if nprrnv_gcl else
-        ("rwirrnv_weight_shuffled" if bool(config.get("rwirrnv_shuffle_weight", False)) else "rwirrnv") if rwirrnv_gcl else
+        ("rwirrnv_constant_weight" if bool(config.get("rwirrnv_constant_weight", False)) else "rwirrnv_weight_shuffled" if bool(config.get("rwirrnv_shuffle_weight", False)) else "rwirrnv") if rwirrnv_gcl else
         ("aompnv_shuffled" if bool(config.get("aompnv_shuffle_positives", False)) else "aompnv") if aompnv_gcl else
         ("mpnv_shuffled" if bool(config.get("mpnv_shuffle_positives", False)) else "mpnv") if mpnv_gcl else
         "bspnv" if bspnv_gcl else

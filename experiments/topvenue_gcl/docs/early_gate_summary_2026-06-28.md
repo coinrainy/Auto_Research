@@ -817,4 +817,13 @@ splits 0-2、seed0、50 epoch 复核：
 | Squirrel | +0.014089 | +0.012488 | +0.001601 | 2/1 | 性能小正，但 control 弱 |
 | Actor | +0.002851 | +0.000658 | +0.002193 | 1/1 | 边缘正，证据很弱 |
 
-裁决：RWIRRNV 继续作为 active-but-risky candidate，证据从单 split 升级为四个异配数据集 splits 0-2 均值正向，且 Texas/Chameleon 的 reliability 排序 control 支持机制。但 Squirrel/Actor 的 normal-vs-shuffled 差距太小，不能声称 reliability weighting 已经普适有效。下一步必须做 10 splits / 多 seed 复核、强基线同协议对齐与 Squirrel/Actor failure analysis；若 control 仍弱，应放弃通用 SOTA 叙事。
+splits 0-9、seed0、50 epoch 硬门控，并新增 `--rwirrnv-constant-weight` 同均值常数权重 control：
+
+| Dataset | normal ΔF1Mi | shuffled-weight ΔF1Mi | constant-weight ΔF1Mi | normal - shuffled | normal - constant | 裁决 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Texas | +0.075676 | +0.032432 | +0.072973 | +0.043243 | +0.002703 | 性能强，但排序不关键 |
+| Chameleon | +0.013158 | +0.014254 | +0.015132 | -0.001096 | -0.001974 | 常数最好，排序 claim 失败 |
+| Squirrel | +0.022574 | +0.026705 | +0.018636 | -0.004131 | +0.003939 | shuffled 最强，排序 claim 失败 |
+| Actor | -0.001513 | -0.004934 | -0.001184 | +0.003421 | -0.000329 | 低于 baseline |
+
+裁决：RWIRRNV 不能继续作为“per-node reliability ranking”主线。10 split 结果支持“invariance attenuation 有用”这一弱假设，但不支持当前节点 reliability score 的对应关系；Chameleon/Squirrel 的 control 直接击穿排序叙事。后续应放弃继续调该 reliability score，转向 graph-level 或 schedule-level invariance attenuation，并把 normal/shuffled/constant 三重 control 设为默认门槛。

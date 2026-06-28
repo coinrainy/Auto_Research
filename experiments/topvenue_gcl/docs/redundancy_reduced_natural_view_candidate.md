@@ -199,7 +199,7 @@ L_inv = mean_i reliability_i * ||norm(ego_i) - norm(graph_i)||^2
 L = 25 L_inv + 25 L_var + 1 L_cov
 ```
 
-默认 `rwirrnv_min_reliability=0.1`、`rwirrnv_weight_power=1.0`，并提供 `--rwirrnv-shuffle-weight` 作为 reliability 排序 control。
+默认 `rwirrnv_min_reliability=0.1`、`rwirrnv_weight_power=1.0`，并提供 `--rwirrnv-shuffle-weight` 作为 reliability 排序 control，`--rwirrnv-constant-weight` 作为同均值常数权重 control。
 
 split0 seed0 结果：
 
@@ -219,13 +219,23 @@ splits 0-2、seed0、50 epoch 复核结果：
 | Squirrel | +0.014089 | +0.012488 | +0.001601 | 2/1 | 性能小正，但 control 弱 |
 | Actor | +0.002851 | +0.000658 | +0.002193 | 1/1 | 边缘正，证据很弱 |
 
-裁决：RWIRRNV 继续保留为 active-but-risky candidate，并且比 split0 初筛更健康：四个数据集的 normal 均值都不低于 `gcn_mlp_gcl`，Texas 信号很强，Chameleon/Squirrel 也从“局部/失败”变成小幅正向。但这仍不是成功方法：Squirrel 的 shuffled-weight control 几乎同样有效，Actor 的收益接近噪声，说明当前 reliability 排序还不能支撑通用机制 claim。下一步应进入 10 splits / 多 seed 复核、强基线对齐与 failure analysis，而不是继续添加模块后直接包装论文主方法。
+splits 0-9、seed0、50 epoch 硬门控结果：
+
+| Dataset | normal ΔF1Mi | shuffled-weight ΔF1Mi | constant-weight ΔF1Mi | normal - shuffled | normal - constant | 裁决 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Texas | +0.075676 | +0.032432 | +0.072973 | +0.043243 | +0.002703 | 性能强，但权重几乎全 1，排序机制不关键 |
+| Chameleon | +0.013158 | +0.014254 | +0.015132 | -0.001096 | -0.001974 | 三种权重均小正，常数最好，排序 claim 失败 |
+| Squirrel | +0.022574 | +0.026705 | +0.018636 | -0.004131 | +0.003939 | 降权有用，但 shuffled 最强，排序 claim 失败 |
+| Actor | -0.001513 | -0.004934 | -0.001184 | +0.003421 | -0.000329 | 低于 baseline，边界/失败数据集 |
+
+裁决：RWIRRNV 的原始“节点 reliability 排序”主张降级，不再作为可包装的主贡献。10 split 结果说明 invariance attenuation 本身有性能信号：Texas 强正，Chameleon/Squirrel 正向；但 Chameleon 的常数权重最好、Squirrel 的 shuffled 权重最好，证明当前 reliability score 的节点对应关系没有通过机制门控。RWIRRNV 保留为下一代 `invariance attenuation / graph-level reliability calibration` 的实验线索，不应继续以 per-node reliability score 为主线扩展。
 
 ## 下一步
 
-保留 `rwirrnv_gcl` 为当前最有价值候选，但后续必须解决三个问题：
+保留 `rwirrnv_gcl` 为机制线索，但放弃把当前 per-node reliability 排序写成主贡献。后续必须解决三个问题：
 
-- Squirrel/Actor mechanism：RWIRRNV 在 Texas 强正、Chameleon 小正，但 Squirrel/Actor 的 normal-vs-shuffled 差距太小；后续需要证明 reliability 排序本身有效，而不是只引入了温和 regularization；
+- 排序机制失败：Chameleon 常数权重、Squirrel shuffled 权重均不弱于 normal；后续若继续，应把 hypothesis 改成 graph/dataset-level invariance attenuation，而不是节点 reliability ranking；
+- Actor boundary：三种 RWIRRNV 变体在 Actor 上均低于 `gcn_mlp_gcl`，说明该目标不适合所有异配图；
 - 高密度扰动配对：DPRRNV 在 Squirrel 有修复信号，但 full-shuffled control 不够干净；NPRRNV 进一步说明节点级 target perturbation 仍会伤害 Chameleon；若后续继承该线索，必须转向 reliability-weighted invariance / filtering；
 - 强基线对齐：RRNV 仍只与内部 `gcn_mlp_gcl` 对齐，尚未和 PolyGCL / S3GCL / GraphECL 等强基线同协议比较。
 
@@ -241,4 +251,4 @@ cat runs/rwirrnv_split0_s0_e50/aggregate_vs_gcn_mlp.csv
 cat runs/rwirrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv
 ```
 
-若继续方法实验，优先围绕 RWIRRNV 做 10 splits / seeds 1-2 复核、Squirrel/Actor shuffled-weight failure analysis 与强基线同协议对齐；停止 `darrnv_gcl`、`dirrnv_gcl` 和 `nprrnv_gcl` 主线，DPRRNV/NPRRNV 仅作为 Squirrel 机制线索，不作为下一轮默认扩展对象。
+若继续方法实验，不应继续调当前 reliability score；优先设计下一代 graph-level / schedule-level invariance attenuation，并使用 normal、shuffled、constant 三重 control 作为硬门槛。停止 `darrnv_gcl`、`dirrnv_gcl` 和 `nprrnv_gcl` 主线，DPRRNV/NPRRNV 仅作为 Squirrel 机制线索。

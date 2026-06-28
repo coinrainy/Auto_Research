@@ -1190,5 +1190,9 @@
   - 已执行 RWIRRNV splits 0-2、seed0、50 epoch normal 与 `--rwirrnv-shuffle-weight` control，输出目录 `experiments/topvenue_gcl/runs/rwirrnv_s0_splits0-2_e50/`。
   - splits 0-2 normal vs `gcn_mlp_gcl`：Texas +0.117117、Chameleon +0.013889、Squirrel +0.014089、Actor +0.002851；normal 正/负 split 分别为 Texas 3/0、Chameleon 2/0、Squirrel 2/1、Actor 1/1。
   - splits 0-2 shuffled-weight vs `gcn_mlp_gcl`：Texas +0.054054、Chameleon +0.005117、Squirrel +0.012488、Actor +0.000658；normal-vs-shuffled-weight 分别为 Texas +0.063063、Chameleon +0.008772、Squirrel +0.001601、Actor +0.002193。
-  - 当前裁决：RWIRRNV 继续作为 active-but-risky candidate，证据从单 split 升级为四个异配数据集均值正向；Texas 是当前最强证据，Chameleon 小正且 control 基本支持，Squirrel/Actor 的 control 差距太小，不能声称 reliability weighting 已经通用有效。
-  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/rwirrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv` 查看 RWIRRNV 多 split 边界；随后扩展到 splits 0-9 / seeds 1-2，并补强 PolyGCL、S3GCL、GraphECL 等强基线同协议对齐。
+  - 已扩展 RWIRRNV 到 splits 0-9、seed0、50 epoch normal 与 `--rwirrnv-shuffle-weight` control，并新增/执行 `--rwirrnv-constant-weight` 同均值常数权重 control；同目录聚合文件为 `experiments/topvenue_gcl/runs/rwirrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv`，实际已包含 160 run rows。
+  - splits 0-9 normal vs `gcn_mlp_gcl`：Texas +0.075676、Chameleon +0.013158、Squirrel +0.022574、Actor -0.001513。
+  - splits 0-9 shuffled-weight vs `gcn_mlp_gcl`：Texas +0.032432、Chameleon +0.014254、Squirrel +0.026705、Actor -0.004934。
+  - splits 0-9 constant-weight vs `gcn_mlp_gcl`：Texas +0.072973、Chameleon +0.015132、Squirrel +0.018636、Actor -0.001184。
+  - 三重 control 裁决：RWIRRNV 的 per-node reliability 排序主张失败；Texas normal/constant 都强，Chameleon constant 最强，Squirrel shuffled 最强，Actor 三种变体均低于 baseline。当前结果支持较弱的“invariance attenuation 有用”假设，但不支持当前 reliability score 的节点对应关系。
+  - 当前 active candidate 空缺；RWIRRNV 降级为机制线索。下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/rwirrnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv` 查看三重 control 边界；随后设计 graph-level / schedule-level invariance attenuation，并继续使用 normal/shuffled/constant control 作为硬门槛。
