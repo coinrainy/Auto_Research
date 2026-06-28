@@ -48,6 +48,13 @@ mpnv_spatial_weight: 0.1
 mpnv_bootstrap_weight: 1.0
 mpnv_include_self: true
 mpnv_shuffle_positives: false
+aompnv_router_temperature: 0.7
+aompnv_min_branch_prob: 0.05
+aompnv_confidence_weight: 0.5
+aompnv_semantic_weight: 1.0
+aompnv_spatial_weight: 1.0
+aompnv_bootstrap_weight: 1.0
+aompnv_shuffle_positives: false
 variance_loss_weight: 1.0
 covariance_loss_weight: 0.01
 eval_mode: auto

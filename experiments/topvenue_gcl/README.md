@@ -8,6 +8,8 @@ SSPNV / AFPNV / BSPNV 已降级为机制与消融资产，不再作为 active ma
 
 MPNV-GCL 已降级为失败/条件性消融资产，不再作为 active main idea。它用 dense semantic/spatial multi-positive mask 替代 SSPNV 的单采样 positive，并保留 Natural-View bootstrap；seed0 在 Chameleon/Squirrel 上曾出现正信号，但 seed1/seed2 扩展门控未复现稳定优势。Texas/Actor/Chameleon/Squirrel × splits0-9 × seeds1-2 × 50 epoch 下，MPNV 相对 `gcn_mlp_gcl` 的 mean F1Mi delta 分别为 +0.002703、-0.001776、+0.000219、-0.000288，均不足以支撑主方法。
 
+当前 active-but-risky candidate：**Adaptive Objective-Activated MPNV (AOMPNV)**，入口为 `--method aompnv_gcl`。它不再固定相加 dense semantic/spatial positives，而是在 semantic、spatial、bootstrap 三个 self-supervised objectives 之间做节点级无标签路由，低可靠时回退到 Natural-View bootstrap。Texas/Actor/Chameleon/Squirrel × splits0-2 × seeds1-2 × 50 epoch 下，AOMPNV 相对 `gcn_mlp_gcl` 的 mean F1Mi delta 分别为 +0.022523、+0.001864、+0.015351、+0.018892；但 shuffled control 在 Texas/Squirrel 也较强，因此它只是新的待复核候选，不是成功主方法。
+
 新增 `--method afpnv_gcl` 和 `--method bspnv_gcl`：分别对应置信度加权与 semantic/spatial/bootstrap branch selection。二者都已经跑通 Chameleon/Squirrel 10 split，但都没有形成足够强的主线结果。
 
 核心假设：
@@ -18,7 +20,8 @@ MPNV-GCL 已降级为失败/条件性消融资产，不再作为 active main ide
 - SSPNV 的核心待证机制是 filter-specific positive construction，但 random-positive control 已证明固定双分支叙事不够；
 - AFPNV/BSPNV 已尝试解释何时选择 semantic、spatial 或 bootstrap-only objective，但未过升级门槛；
 - MPNV 将 positive construction 从单采样改为 dense multi-positive mask，但 seed1/seed2 复核失败，当前只保留为机制/消融资产；
-- 当前没有可直接包装为 2026 顶会/顶刊主方法的 active idea；下一步必须换成带无标签选择/回退机制的新候选，或回到 S3GCL/GraphECL/PolyGCL 级参考范式重新设计训练目标。
+- AOMPNV 将 MPNV 的固定 dense objectives 改成 label-free objective activation / node-level fallback，是当前唯一 active-but-risky candidate；
+- 当前仍没有可直接包装为 2026 顶会/顶刊主方法的成功 idea；AOMPNV 必须通过 10 split 多 seed normal-vs-shuffled 复核，否则降级为 regularization ablation。
 
 最小 smoke：
 
@@ -57,6 +60,8 @@ python train.py --dataset Texas --method afpnv_gcl --epochs 5 --split-index 0 --
 python train.py --dataset Texas --method bspnv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method mpnv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method mpnv_gcl --epochs 5 --split-index 0 --seed 0 --mpnv-shuffle-positives
+python train.py --dataset Texas --method aompnv_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method aompnv_gcl --epochs 5 --split-index 0 --seed 0 --aompnv-shuffle-positives
 python train.py --dataset Texas --method energy_spgcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_residual_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_cache_gcl --epochs 5 --split-index 0 --seed 0

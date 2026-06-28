@@ -38,21 +38,33 @@ def sampled_info_nce(anchor, positive, negatives, tau, sample_weight=None):
     return (loss * sample_weight).mean()
 
 
-def multi_positive_info_nce(anchor, sample, positive_mask, tau):
+def multi_positive_info_nce_per_node(anchor, sample, positive_mask, tau):
     anchor = F.normalize(anchor, dim=1)
     sample = F.normalize(sample, dim=1)
     positive_mask = positive_mask.to(anchor.device, dtype=torch.bool)
     sim = anchor @ sample.t() / tau
     log_prob = sim - torch.logsumexp(sim, dim=1, keepdim=True)
     pos_count = positive_mask.sum(dim=1).clamp_min(1)
-    loss = -(log_prob * positive_mask.to(log_prob.dtype)).sum(dim=1) / pos_count
-    return loss.mean()
+    return -(log_prob * positive_mask.to(log_prob.dtype)).sum(dim=1) / pos_count
+
+
+def multi_positive_info_nce(anchor, sample, positive_mask, tau, sample_weight=None):
+    loss = multi_positive_info_nce_per_node(anchor, sample, positive_mask, tau)
+    if sample_weight is None:
+        return loss.mean()
+    sample_weight = sample_weight.detach().to(loss.device, dtype=loss.dtype)
+    sample_weight = sample_weight / sample_weight.mean().clamp_min(1e-12)
+    return (loss * sample_weight).mean()
 
 
 def negative_cosine(pred, target):
+    return negative_cosine_per_node(pred, target).mean()
+
+
+def negative_cosine_per_node(pred, target):
     pred = F.normalize(pred, dim=1)
     target = F.normalize(target.detach(), dim=1)
-    return -(pred * target).sum(dim=1).mean()
+    return -(pred * target).sum(dim=1)
 
 
 def weighted_negative_cosine(pred, target, weight):

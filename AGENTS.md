@@ -1037,3 +1037,18 @@
   - 已跳过 MPNV shuffled seed1/2 扩展，因为 normal gate 已失败；继续跑 shuffled 只能解释失败原因，不能改变主线裁决。
   - 已更新文档：`experiments/topvenue_gcl/README.md`、`docs/multi_positive_natural_view_candidate.md`、`docs/early_gate_summary_2026-06-28.md` 与 `docs/implementation_principles.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/mpnv_gate_ta_wiki_s1-2_splits0-9_e50/aggregate_vs_gcn_mlp.csv`，随后基于失败边界设计带 label-free objective activation / fallback 的新候选，而不是继续默认开启 MPNV。
+- 2026-06-29 AOMPNV objective activation 实现与小门控：
+  - 已补跑 MPNV 分支诊断：Texas/Actor/Chameleon/Squirrel × splits 0-2 × seeds 1/2 × 50 epoch 的 semantic-only 与 spatial-only。
+  - 分支诊断显示 full MPNV 失败不是因为 semantic/spatial 分支完全无效，而是固定同权组合缺少无标签选择与 fallback；semantic-only 在 Texas/Squirrel 更强，spatial-only 在 Chameleon 略强，Actor 两者都弱。
+  - 已实现 `experiments/topvenue_gcl/train.py --method aompnv_gcl`，暂名 Adaptive Objective-Activated MPNV。
+  - AOMPNV 复用 dense semantic/spatial mask，但按节点在 semantic dense InfoNCE、spatial dense InfoNCE、Natural-View bootstrap 三个目标之间做 label-free objective routing；路由信号来自 per-node self-supervised loss ranking 与 raw-signature confidence。
+  - 新增 `src/losses.py::multi_positive_info_nce_per_node` 与 `negative_cosine_per_node`，支持 per-node objective activation。
+  - 新增配置/CLI：`aompnv_router_temperature`、`aompnv_min_branch_prob`、`aompnv_confidence_weight`、`aompnv_semantic_weight`、`aompnv_spatial_weight`、`aompnv_bootstrap_weight` 与 `--aompnv-shuffle-positives`。
+  - 新增诊断字段：AOMPNV semantic/spatial/bootstrap prob mean、win fraction、confidence mean、loss mean、positive mask size 与 shuffle 标记。
+  - 已完成 smoke：`python -m py_compile train.py summarize_split_study.py src/*.py`、Texas 5 epoch AOMPNV、Chameleon 5 epoch AOMPNV。
+  - 已执行小门控：Texas/Actor/Chameleon/Squirrel × splits 0-2 × seeds 1/2 × 50 epoch 的 AOMPNV normal 与 shuffled control，复用 `runs/mpnv_branch_diag_ta_wiki_s1-2_splits0-2_e50/` 中的 `gcn_mlp_gcl` baseline。
+  - AOMPNV vs `gcn_mlp_gcl`：Texas +0.022523/+0.041834，Actor +0.001864/-0.001147，Chameleon +0.015351/+0.017719，Squirrel +0.018892/+0.017179。
+  - AOMPNV normal-vs-shuffled ΔF1Mi/ΔF1Ma：Texas -0.000000/+0.016728，Actor +0.009539/+0.001431，Chameleon +0.006579/+0.006398，Squirrel +0.003522/+0.006586。
+  - 当前裁决：AOMPNV 暂时升级为 active-but-risky candidate；它比 full MPNV 和单分支 dense MPNV 更稳，但 shuffled control 在 Texas/Squirrel 仍偏强，不能声称结构化 dense positives 机制已被证明。
+  - 已新增文档：`experiments/topvenue_gcl/docs/adaptive_objective_mpnv_candidate.md`；已更新 `README.md`、`docs/implementation_principles.md`、`docs/early_gate_summary_2026-06-28.md`、`docs/multi_positive_natural_view_candidate.md` 与本 `AGENTS.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && RUNS_DIR="runs/aompnv_gate_ta_wiki_s1-2_splits0-9_e50" && DATASETS="Texas Actor Chameleon Squirrel" METHODS="gcn_mlp_gcl aompnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="$RUNS_DIR" OVERWRITE=1 bash scripts/run_split_study.sh`，随后补 `DATASETS="Texas Actor Chameleon Squirrel" METHODS="aompnv_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="$RUNS_DIR" RUN_TAG="shuffled" EXTRA_ARGS="--aompnv-shuffle-positives" OVERWRITE=1 bash scripts/run_split_study.sh`。

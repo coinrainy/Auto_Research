@@ -142,3 +142,28 @@ MPNV 触发停止条件：
 - node-level fallback：低置信区域退回 `gcn_mlp_gcl` bootstrap；
 - sparse/block multi-positive：降低 dense mask 复杂度；
 - 或直接回到 S3GCL / GraphECL / PolyGCL 级参考范式，重新设计训练目标。
+
+## 2026-06-29 分支诊断与后继
+
+为确认 full MPNV 失败来自整个 dense multi-positive 假设，还是来自 semantic/spatial 固定同权组合，已补跑 Texas/Actor/Chameleon/Squirrel × splits 0-2 × seeds 1/2 × 50 epoch 的 MPNV semantic-only 与 spatial-only 分支诊断。
+
+Aggregate vs `gcn_mlp_gcl`：
+
+| Dataset | semantic-only ΔF1Mi | semantic-only ΔF1Ma | spatial-only ΔF1Mi | spatial-only ΔF1Ma | 解释 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Texas | +0.022523 | +0.019688 | -0.004505 | +0.018393 | semantic 分支更稳，spatial micro 风险大 |
+| Actor | +0.000439 | +0.004256 | -0.001206 | -0.002260 | 两者都弱，semantic 略好 |
+| Chameleon | +0.002193 | +0.005253 | +0.005848 | +0.009463 | spatial 分支略强，但整体小 |
+| Squirrel | +0.012648 | +0.012769 | +0.008005 | +0.006115 | 两个分支均正，semantic 更强 |
+
+诊断结论：
+
+- full MPNV 失败不是因为 semantic/spatial 分支完全无效，而是固定同权组合与缺少 fallback 导致收益不稳定；
+- 分支效果具有明显数据集依赖，不能用单一 semantic-only 或 spatial-only 作为最终主方法；
+- 这支持后继方法 `aompnv_gcl`：将 dense semantic/spatial objectives 交给节点级 label-free objective activation，并保留 bootstrap fallback。
+
+后继状态：
+
+- `aompnv_gcl` 已实现并通过小门控，当前是 active-but-risky candidate；
+- 但 AOMPNV 的 shuffled control 仍偏强，因此它尚未证明结构化 mask 机制；
+- 若 AOMPNV 在 splits 0-9 × seeds 1/2 的 normal/shuffled 硬门控失败，则整个 MPNV 家族应彻底降级为 regularization / diagnostic ablation。

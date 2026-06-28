@@ -17,7 +17,9 @@ from src.eval import linear_probe_random, linear_probe_with_masks
 from src.losses import (
     info_nce_loss,
     multi_positive_info_nce,
+    multi_positive_info_nce_per_node,
     negative_cosine,
+    negative_cosine_per_node,
     sampled_info_nce,
     vicreg_regularizer,
     weighted_negative_cosine,
@@ -51,6 +53,7 @@ def parse_args():
                             "afpnv_gcl",
                             "bspnv_gcl",
                             "mpnv_gcl",
+                            "aompnv_gcl",
                             "energy_spgcl",
                             "gcn_mlp_gcl",
                             "er_residual_gcl",
@@ -96,6 +99,13 @@ def parse_args():
     parser.add_argument("--mpnv-spatial-weight", type=float, default=None)
     parser.add_argument("--mpnv-bootstrap-weight", type=float, default=None)
     parser.add_argument("--mpnv-shuffle-positives", action="store_true")
+    parser.add_argument("--aompnv-router-temperature", type=float, default=None)
+    parser.add_argument("--aompnv-min-branch-prob", type=float, default=None)
+    parser.add_argument("--aompnv-confidence-weight", type=float, default=None)
+    parser.add_argument("--aompnv-semantic-weight", type=float, default=None)
+    parser.add_argument("--aompnv-spatial-weight", type=float, default=None)
+    parser.add_argument("--aompnv-bootstrap-weight", type=float, default=None)
+    parser.add_argument("--aompnv-shuffle-positives", action="store_true")
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -180,6 +190,20 @@ def override_config(config, args):
         merged["mpnv_bootstrap_weight"] = args.mpnv_bootstrap_weight
     if args.mpnv_shuffle_positives:
         merged["mpnv_shuffle_positives"] = True
+    if args.aompnv_router_temperature is not None:
+        merged["aompnv_router_temperature"] = args.aompnv_router_temperature
+    if args.aompnv_min_branch_prob is not None:
+        merged["aompnv_min_branch_prob"] = args.aompnv_min_branch_prob
+    if args.aompnv_confidence_weight is not None:
+        merged["aompnv_confidence_weight"] = args.aompnv_confidence_weight
+    if args.aompnv_semantic_weight is not None:
+        merged["aompnv_semantic_weight"] = args.aompnv_semantic_weight
+    if args.aompnv_spatial_weight is not None:
+        merged["aompnv_spatial_weight"] = args.aompnv_spatial_weight
+    if args.aompnv_bootstrap_weight is not None:
+        merged["aompnv_bootstrap_weight"] = args.aompnv_bootstrap_weight
+    if args.aompnv_shuffle_positives:
+        merged["aompnv_shuffle_positives"] = True
     return merged
 
 
@@ -427,7 +451,7 @@ def _spatial_positive_indices(data):
 
 
 @torch.no_grad()
-def _multi_positive_masks(data, semantic_idx, config):
+def _multi_positive_masks(data, semantic_idx, config, shuffle_key="mpnv_shuffle_positives"):
     num_nodes = data.num_nodes
     device = data.x.device
     semantic_mask = torch.zeros((num_nodes, num_nodes), device=device, dtype=torch.bool)
@@ -442,7 +466,7 @@ def _multi_positive_masks(data, semantic_idx, config):
         diag = torch.arange(num_nodes, device=device)
         semantic_mask[diag, diag] = True
         spatial_mask[diag, diag] = True
-    if bool(config.get("mpnv_shuffle_positives", False)):
+    if bool(config.get(shuffle_key, False)):
         perm = torch.randperm(num_nodes, device=device)
         semantic_mask = semantic_mask[:, perm]
         spatial_mask = spatial_mask[:, perm]
@@ -460,6 +484,57 @@ def _positive_confidence(cache_keys, semantic_idx, spatial_idx):
     semantic_sim = (keys.view(keys.size(0), 1, -1) * semantic_positive).sum(dim=2).mean(dim=1)
     spatial_sim = (keys * keys[spatial_idx]).sum(dim=1)
     return semantic_sim, spatial_sim
+
+
+@torch.no_grad()
+def _dense_positive_confidence(cache_keys, semantic_mask, spatial_mask):
+    keys = F.normalize(cache_keys, dim=1)
+    sim = keys @ keys.t()
+    num_nodes = keys.size(0)
+    diag = torch.arange(num_nodes, device=keys.device)
+
+    def masked_mean(mask):
+        confidence_mask = mask.clone()
+        confidence_mask[diag, diag] = False
+        count = confidence_mask.sum(dim=1)
+        if (count == 0).any():
+            confidence_mask[diag[count == 0], diag[count == 0]] = True
+            count = confidence_mask.sum(dim=1)
+        values = (sim * confidence_mask.to(sim.dtype)).sum(dim=1)
+        return values / count.clamp_min(1).to(sim.dtype)
+
+    return masked_mean(semantic_mask), masked_mean(spatial_mask)
+
+
+@torch.no_grad()
+def _aompnv_router_weights(
+    loss_semantic,
+    loss_spatial,
+    loss_bootstrap,
+    semantic_conf,
+    spatial_conf,
+    config,
+):
+    objective_scores = torch.stack([
+        -_standardize(loss_semantic.detach()),
+        -_standardize(loss_spatial.detach()),
+        -_standardize(loss_bootstrap.detach()),
+    ], dim=1)
+    confidence_scores = torch.stack([
+        _standardize(semantic_conf),
+        _standardize(spatial_conf),
+        torch.zeros_like(semantic_conf),
+    ], dim=1)
+    logits = (
+        objective_scores
+        + float(config["aompnv_confidence_weight"]) * confidence_scores
+    )
+    temperature = max(float(config["aompnv_router_temperature"]), 1e-12)
+    probs = torch.softmax(logits / temperature, dim=1)
+    min_prob = min(max(float(config["aompnv_min_branch_prob"]), 0.0), 1.0 / 3.0)
+    if min_prob > 0.0:
+        probs = probs * (1.0 - 3.0 * min_prob) + min_prob
+    return probs
 
 
 @torch.no_grad()
@@ -559,6 +634,7 @@ def train_er_cache_gcl(model, data, config, args):
     afpnv_gcl = args.method == "afpnv_gcl"
     bspnv_gcl = args.method == "bspnv_gcl"
     mpnv_gcl = args.method == "mpnv_gcl"
+    aompnv_gcl = args.method == "aompnv_gcl"
     residual_only = args.method in {
         "er_residual_gcl",
         "gcn_mlp_gcl",
@@ -569,6 +645,7 @@ def train_er_cache_gcl(model, data, config, args):
         "afpnv_gcl",
         "bspnv_gcl",
         "mpnv_gcl",
+        "aompnv_gcl",
     }
     graph_target = args.method in {
         "gcn_mlp_gcl",
@@ -579,12 +656,13 @@ def train_er_cache_gcl(model, data, config, args):
         "afpnv_gcl",
         "bspnv_gcl",
         "mpnv_gcl",
+        "aompnv_gcl",
     }
     topk = 0 if (args.disable_cache or residual_only) else int(config["cache_topk"])
     cache_update = max(1, int(config["cache_update_interval"]))
     cache_idx = None
     cache_keys = _static_cache_keys(data, config)
-    semantic_idx = _semantic_positive_indices(data, config) if (sspnv_gcl or mpnv_gcl) else None
+    semantic_idx = _semantic_positive_indices(data, config) if (sspnv_gcl or mpnv_gcl or aompnv_gcl) else None
     spatial_idx = _spatial_positive_indices(data) if sspnv_gcl else None
     if sspnv_gcl and bool(config.get("sspnv_random_semantic", False)):
         semantic_idx = _random_positive_indices(
@@ -613,6 +691,16 @@ def train_er_cache_gcl(model, data, config, args):
     mpnv_masks = None
     if mpnv_gcl:
         mpnv_masks = _multi_positive_masks(data, semantic_idx, config)
+    aompnv_masks = None
+    aompnv_confidence = None
+    if aompnv_gcl:
+        aompnv_masks = _multi_positive_masks(
+            data,
+            semantic_idx,
+            config,
+            shuffle_key="aompnv_shuffle_positives",
+        )
+        aompnv_confidence = _dense_positive_confidence(cache_keys, *aompnv_masks)
     history = []
     diagnostics = {}
     for epoch in range(1, int(config["epochs"]) + 1):
@@ -718,6 +806,51 @@ def train_er_cache_gcl(model, data, config, args):
                 + semantic_scale * float(config["sspnv_semantic_weight"]) * loss_semantic
                 + spatial_scale * float(config["sspnv_spatial_weight"]) * loss_spatial
             )
+            loss_cache = parts["final"].new_tensor(0.0)
+        elif aompnv_gcl:
+            semantic_mask, spatial_mask = aompnv_masks
+            semantic_conf, spatial_conf = aompnv_confidence
+            loss_semantic_nodes = multi_positive_info_nce_per_node(
+                pred_ego,
+                parts["high"],
+                semantic_mask,
+                float(config["tau"]),
+            )
+            loss_spatial_nodes = multi_positive_info_nce_per_node(
+                pred_ego,
+                parts["low"],
+                spatial_mask,
+                float(config["tau"]),
+            )
+            loss_bootstrap_nodes = 0.5 * (
+                negative_cosine_per_node(pred_ego, parts["graph"])
+                + negative_cosine_per_node(pred_high, parts["ego"])
+            )
+            router_probs = _aompnv_router_weights(
+                loss_semantic_nodes,
+                loss_spatial_nodes,
+                loss_bootstrap_nodes,
+                semantic_conf,
+                spatial_conf,
+                config,
+            )
+            branch_weights = torch.tensor(
+                [
+                    float(config["aompnv_semantic_weight"]),
+                    float(config["aompnv_spatial_weight"]),
+                    float(config["aompnv_bootstrap_weight"]),
+                ],
+                device=parts["final"].device,
+                dtype=parts["final"].dtype,
+            )
+            weighted_probs = router_probs * branch_weights.view(1, 3)
+            weighted_probs = weighted_probs / weighted_probs.sum(dim=1, keepdim=True).clamp_min(1e-12)
+            loss_nodes = (
+                weighted_probs[:, 0] * loss_semantic_nodes
+                + weighted_probs[:, 1] * loss_spatial_nodes
+                + weighted_probs[:, 2] * loss_bootstrap_nodes
+            )
+            loss_self = loss_nodes.mean()
             loss_cache = parts["final"].new_tensor(0.0)
         elif mpnv_gcl:
             semantic_mask, spatial_mask = mpnv_masks
@@ -862,6 +995,50 @@ def train_er_cache_gcl(model, data, config, args):
             diagnostics["bspnv_bootstrap_win_fraction"] = float((winners == 2).float().mean().item())
             diagnostics["bspnv_semantic_conf_mean"] = float(semantic_conf.mean().item())
             diagnostics["bspnv_spatial_conf_mean"] = float(spatial_conf.mean().item())
+        if aompnv_gcl:
+            semantic_mask, spatial_mask = aompnv_masks
+            semantic_conf, spatial_conf = aompnv_confidence
+            pred_ego = model.pred_ego(parts["ego"])
+            pred_high = model.pred_high(parts["graph"])
+            loss_semantic_nodes = multi_positive_info_nce_per_node(
+                pred_ego,
+                parts["high"],
+                semantic_mask,
+                float(config["tau"]),
+            )
+            loss_spatial_nodes = multi_positive_info_nce_per_node(
+                pred_ego,
+                parts["low"],
+                spatial_mask,
+                float(config["tau"]),
+            )
+            loss_bootstrap_nodes = 0.5 * (
+                negative_cosine_per_node(pred_ego, parts["graph"])
+                + negative_cosine_per_node(pred_high, parts["ego"])
+            )
+            router_probs = _aompnv_router_weights(
+                loss_semantic_nodes,
+                loss_spatial_nodes,
+                loss_bootstrap_nodes,
+                semantic_conf,
+                spatial_conf,
+                config,
+            )
+            winners = router_probs.argmax(dim=1)
+            diagnostics["aompnv_semantic_prob_mean"] = float(router_probs[:, 0].mean().item())
+            diagnostics["aompnv_spatial_prob_mean"] = float(router_probs[:, 1].mean().item())
+            diagnostics["aompnv_bootstrap_prob_mean"] = float(router_probs[:, 2].mean().item())
+            diagnostics["aompnv_semantic_win_fraction"] = float((winners == 0).float().mean().item())
+            diagnostics["aompnv_spatial_win_fraction"] = float((winners == 1).float().mean().item())
+            diagnostics["aompnv_bootstrap_win_fraction"] = float((winners == 2).float().mean().item())
+            diagnostics["aompnv_semantic_conf_mean"] = float(semantic_conf.mean().item())
+            diagnostics["aompnv_spatial_conf_mean"] = float(spatial_conf.mean().item())
+            diagnostics["aompnv_semantic_loss_mean"] = float(loss_semantic_nodes.mean().item())
+            diagnostics["aompnv_spatial_loss_mean"] = float(loss_spatial_nodes.mean().item())
+            diagnostics["aompnv_bootstrap_loss_mean"] = float(loss_bootstrap_nodes.mean().item())
+            diagnostics["aompnv_semantic_pos_mean"] = float(semantic_mask.float().sum(dim=1).mean().item())
+            diagnostics["aompnv_spatial_pos_mean"] = float(spatial_mask.float().sum(dim=1).mean().item())
+            diagnostics["aompnv_shuffle_positives"] = bool(config.get("aompnv_shuffle_positives", False))
         if mpnv_gcl:
             semantic_mask, spatial_mask = mpnv_masks
             diagnostics["mpnv_semantic_pos_mean"] = float(semantic_mask.float().sum(dim=1).mean().item())
@@ -872,6 +1049,7 @@ def train_er_cache_gcl(model, data, config, args):
     diagnostics["cache_control"] = (
         ("danv_degree" if danv_degree_gcl else "danv") if danv_gcl else
         "fdnv" if fdnv_gcl else
+        ("aompnv_shuffled" if bool(config.get("aompnv_shuffle_positives", False)) else "aompnv") if aompnv_gcl else
         ("mpnv_shuffled" if bool(config.get("mpnv_shuffle_positives", False)) else "mpnv") if mpnv_gcl else
         "bspnv" if bspnv_gcl else
         "afpnv" if afpnv_gcl else
@@ -913,7 +1091,7 @@ def main():
     config = override_config(load_yaml(args.config), args)
     if args.method == "gcn_mlp_gcl" and args.final_repr is None:
         config["final_repr"] = "ego_graph"
-    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl"} and args.final_repr is None:
+    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl", "sspnv_gcl", "afpnv_gcl", "bspnv_gcl", "mpnv_gcl", "aompnv_gcl"} and args.final_repr is None:
         config["final_repr"] = "ego_graph"
     if args.method == "energy_spgcl" and args.final_repr is None:
         config["final_repr"] = "ego_high"

@@ -26,7 +26,7 @@
 
 当前 active foundation 是 `gcn_mlp_gcl`。它是必须击败的 strong control，但不是论文主贡献。
 
-当前没有通过复核的 active main idea。`mpnv_gcl` 曾是 active-but-risky candidate，但 seed1/seed2 扩展门控失败，已降级为失败/条件性消融资产。
+当前没有通过最终复核的 active main idea。`aompnv_gcl` 是当前唯一 active-but-risky candidate：它把 MPNV 的固定 dense semantic/spatial objectives 改为节点级无标签 objective activation，并允许回退到 `gcn_mlp_gcl` bootstrap。
 
 当前已经停止的主线：
 
@@ -136,3 +136,15 @@ MPNV 当前裁决：
 - 当前裁决是降级为失败/条件性消融资产，不再作为 active main idea；
 - 后续不再继续跑 MPNV shuffled seed1/2，因为 normal gate 已失败；
 - 下一代方法必须加入 label-free objective activation / node-level fallback，或彻底更换训练目标。
+
+AOMPNV 当前裁决：
+
+- `aompnv_gcl` 入口为 `--method aompnv_gcl`；
+- 它复用 MPNV 的 dense semantic/spatial mask，但不再固定相加 semantic/spatial/bootstrap loss；
+- 每个节点根据 semantic dense InfoNCE、spatial dense InfoNCE、bootstrap negative cosine 的相对自监督 loss，以及 raw-signature positive confidence，路由到 semantic / spatial / bootstrap objective；
+- `--aompnv-shuffle-positives` 是必须保留的机制 control；
+- Texas/Actor/Chameleon/Squirrel × splits 0-2 × seeds 1/2 × 50 epoch 中，相对 `gcn_mlp_gcl` 的 ΔF1Mi 分别为 +0.022523、+0.001864、+0.015351、+0.018892；
+- normal-vs-shuffled 的 ΔF1Mi 分别为 Texas -0.000000、Actor +0.009539、Chameleon +0.006579、Squirrel +0.003522；
+- 当前解释：AOMPNV 比 full MPNV 和单独 semantic/spatial dense 分支更稳，但 shuffled control 仍偏强，不能把结构化 mask 本身作为核心机制；
+- 下一步必须跑 splits 0-9 × seeds 1/2 的 normal/shuffled 硬门控；
+- 若 normal 与 shuffled 接近，AOMPNV 降级为 regularization ablation，不再作为主线。

@@ -385,3 +385,37 @@ Aggregate vs `gcn_mlp_gcl`：
 - seed0 的 Squirrel normal-vs-shuffled 现象保留为 diagnostic clue，但不能支撑方法主张；
 - Chameleon/Squirrel seed1/2 均未复现稳定优势，因此跳过 shuffled-positive seed1/2 扩展，避免继续消耗算力解释一个已经失败的主线；
 - 下一步应设计带无标签选择/回退机制的新候选，或者回到 S3GCL / GraphECL / PolyGCL 级参考范式重做训练目标。
+
+## 2026-06-29 追加：AOMPNV objective activation 小门控
+
+已实现 `--method aompnv_gcl`：将 MPNV 的固定 dense semantic/spatial multi-positive objectives 改为节点级无标签 objective activation。每个节点在 semantic dense InfoNCE、spatial dense InfoNCE、Natural-View bootstrap 三个目标之间路由，路由信号来自相对 self-supervised loss 与 raw-signature confidence。
+
+已验证：
+
+```bash
+python -m py_compile train.py summarize_split_study.py src/*.py
+python train.py --dataset Texas --method aompnv_gcl --epochs 5 --seed 0 --split-index 0 --runs-dir runs/aompnv_smoke --run-name texas_aompnv_e5 --overwrite
+python train.py --dataset Chameleon --method aompnv_gcl --epochs 5 --seed 0 --split-index 0 --runs-dir runs/aompnv_smoke --run-name chameleon_aompnv_e5 --overwrite
+```
+
+已执行 Texas/Actor/Chameleon/Squirrel × splits 0-2 × seeds 1/2 × 50 epoch 小门控，并补 `--aompnv-shuffle-positives` control。输出目录：`runs/mpnv_branch_diag_ta_wiki_s1-2_splits0-2_e50/`。
+
+AOMPNV vs `gcn_mlp_gcl`：
+
+| Dataset | ΔF1Mi | ΔF1Ma | Positive/Zero/Negative F1Mi | 裁决 |
+| --- | ---: | ---: | --- | --- |
+| Texas | +0.022523 | +0.041834 | 3/2/1 | 性能正向，但 shuffled 同样强 |
+| Actor | +0.001864 | -0.001147 | 3/1/2 | 性能弱，机制 control 相对更干净 |
+| Chameleon | +0.015351 | +0.017719 | 5/0/1 | 正向，但 shuffled 也正 |
+| Squirrel | +0.018892 | +0.017179 | 6/0/0 | 当前最稳性能信号，但 shuffled 也强 |
+
+AOMPNV normal-vs-shuffled：
+
+| Dataset | ΔF1Mi | ΔF1Ma | 裁决 |
+| --- | ---: | ---: | --- |
+| Texas | -0.000000 | +0.016728 | micro 机制不干净 |
+| Actor | +0.009539 | +0.001431 | 结构化版本优于 shuffled，但总增益小 |
+| Chameleon | +0.006579 | +0.006398 | 有轻微机制信号 |
+| Squirrel | +0.003522 | +0.006586 | 性能稳，但机制差距偏小 |
+
+当前裁决：AOMPNV 暂时升级为 active-but-risky candidate。它修复了 full MPNV 固定加权的部分问题，并在小门控中不弱于 semantic-only/spatial-only dense 分支；但 shuffled control 偏强，不能包装成“结构化 dense positives 已被证明”。下一步必须做 splits 0-9 × seeds 1/2 的 normal/shuffled 硬门控；若 normal 与 shuffled 接近，则降级为 regularization ablation。
