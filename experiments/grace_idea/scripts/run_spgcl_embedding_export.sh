@@ -13,11 +13,18 @@ RESET_MAX_SIZE=${RESET_MAX_SIZE:-512}
 RESET_SUBG_NUM_HOPS=${RESET_SUBG_NUM_HOPS:-2}
 NEG_SELECTION=${NEG_SELECTION:-random}
 SEED=${SEED:-42}
+SPGCL_EXTRA_ARGS=${SPGCL_EXTRA_ARGS:-}
+SPGCL_ARTIFACT_METHOD=${SPGCL_ARTIFACT_METHOD:-spgcl_official}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GRACE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SPGCL_ROOT_ABS="$(cd "${GRACE_DIR}" && cd "${SPGCL_ROOT}" && pwd)"
 OUT_DIR_ABS="$(cd "${GRACE_DIR}" && mkdir -p "${OUT_DIR}" && cd "${OUT_DIR}" && pwd)"
+EXTRA_ARGS=()
+if [[ -n "${SPGCL_EXTRA_ARGS}" ]]; then
+  # shellcheck disable=SC2206
+  EXTRA_ARGS=(${SPGCL_EXTRA_ARGS})
+fi
 
 cd "${GRACE_DIR}"
 python export_spgcl_geom_data.py \
@@ -71,10 +78,11 @@ for dataset in ${DATASETS}; do
       --reset_hidden "${RESET_HIDDEN}" \
       --reset_seed_num "${RESET_SEED_NUM}" \
       --reset_max_size "${RESET_MAX_SIZE}" \
-      --reset_subg_num_hops "${RESET_SUBG_NUM_HOPS}"
+      --reset_subg_num_hops "${RESET_SUBG_NUM_HOPS}" \
+      "${EXTRA_ARGS[@]}"
   )
 
-  python - "${raw_out}" "${OUT_DIR_ABS}/artifacts" "${dataset}" "${SEED}" <<'PY'
+  python - "${raw_out}" "${OUT_DIR_ABS}/artifacts" "${dataset}" "${SEED}" "${SPGCL_ARTIFACT_METHOD}" <<'PY'
 from pathlib import Path
 import json
 import sys
@@ -84,20 +92,22 @@ raw_path = Path(sys.argv[1])
 out_root = Path(sys.argv[2])
 dataset = sys.argv[3]
 seed = int(sys.argv[4])
+method = sys.argv[5]
 obj = torch.load(raw_path, map_location='cpu')
-run_dir = out_root / f'{dataset}_spgcl_official_seed{seed}_split0'
+run_dir = out_root / f'{dataset}_{method}_seed{seed}_split0'
 run_dir.mkdir(parents=True, exist_ok=True)
 args = {
     'dataset': dataset,
-    'method': 'spgcl_official',
+    'method': method,
     'seed': seed,
     'resolved_seed': seed,
     'split_index': 0,
     'source_raw_path': str(raw_path),
+    'source_spgcl_args': obj.get('args', {}),
 }
 torch.save({'embeddings': obj['embeddings'], 'args': args}, run_dir / 'artifacts.pt')
 with (run_dir / 'metadata.json').open('w') as handle:
-    json.dump(args, handle, indent=2)
+    json.dump(args, handle, indent=2, default=str)
 print(f'[artifact] {run_dir / "artifacts.pt"}')
 PY
 done

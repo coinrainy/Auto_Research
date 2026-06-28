@@ -627,6 +627,88 @@ python train.py --dataset Chameleon --method sparc_gcl --epochs 2 \
 
 这些结果远低于 official SP-GCL embedding 与 SPARC artifact-level method。因此当前训练时 `sparc_gcl` 只能作为工程原型和后续消融入口，不能作为主方法结果。主方法应继续围绕 strong SP-GCL embedding 的 residual calibration，下一步若要摆脱 post-hoc 质疑，应修改/扩展 official SP-GCL 训练流程本身，而不是在当前 GRACE scaffold 上继续小调 residual loss。
 
+## Official SP-GCL 内部 residual branch
+
+为避免 SPARC 被质疑为 post-hoc linear-probe trick，已新增可复现 patcher/runner，把 residual branch 注入 official SP-GCL 训练流程：
+
+- `experiments/grace_idea/patch_spgcl_sparc.py`
+- `experiments/grace_idea/scripts/run_spgcl_sparc_residual_export.sh`
+
+patch 内容：
+
+- 在 `SPGCL` 中新增 residual embedding：`r = z - Pz`；
+- 新增 residual auxiliary projector；
+- 在 official SP-GCL 的 sample top-k positive / negative loss 上，对 residual projection 复用同一批 positive/negative index，加入 `sparc_residual_weight * residual_loss`；
+- 新增 `--sparc_residual_weight` 与 `--sparc_embed_mode hidden|resid|hidden_resid`；
+- runner 默认把 artifact method 标记为 `spgcl_sparc_residual`，避免和 `spgcl_official` 混淆。
+
+验证命令：
+
+```bash
+python patch_spgcl_sparc.py --spgcl-root ../../third_party_baselines/SPGCL
+
+DATASETS="Chameleon" \
+OUT_DIR="runs/spgcl_sparc_residual_smoke_v2" \
+RESET_EPOCHS=1 \
+LINEAR_EPOCHS=10 \
+RESET_HIDDEN=64 \
+RESET_SEED_NUM=4 \
+RESET_MAX_SIZE=64 \
+RESET_SUBG_NUM_HOPS=2 \
+SEED=0 \
+SPARC_RESIDUAL_WEIGHT=0.1 \
+SPARC_EMBED_MODE=hidden_resid \
+bash scripts/run_spgcl_sparc_residual_export.sh
+```
+
+smoke 产物：
+
+- `runs/spgcl_sparc_residual_smoke_v2/artifacts/Chameleon_spgcl_sparc_residual_seed0_split0/artifacts.pt`
+- embedding shape 为 `(2277, 128)`，对应 hidden 64 的 `hidden_resid` 双分支输出；
+- metadata 中 `method=spgcl_sparc_residual`、`sparc_embed_mode=hidden_resid`、`sparc_residual_weight=0.1`。
+
+进一步执行 seed0 / 100 epoch early gate：
+
+```bash
+DATASETS="Chameleon Squirrel" \
+OUT_DIR="runs/spgcl_sparc_residual_seed0_e100" \
+RESET_EPOCHS=100 \
+LINEAR_EPOCHS=10 \
+RESET_HIDDEN=256 \
+RESET_SEED_NUM=32 \
+RESET_MAX_SIZE=512 \
+RESET_SUBG_NUM_HOPS=2 \
+SEED=0 \
+SPARC_RESIDUAL_WEIGHT=0.1 \
+SPARC_EMBED_MODE=hidden_resid \
+bash scripts/run_spgcl_sparc_residual_export.sh
+
+python evaluate_propagation_calibration.py \
+  --runs-dir runs/spgcl_sparc_residual_seed0_e100/artifacts \
+  --include-methods spgcl_sparc_residual \
+  --modes ssl \
+  --max-hop 1 \
+  --split-indices 0 1 2 3 4 5 6 7 8 9 \
+  --c-values 4 16 64 \
+  --max-iter 500 \
+  --out runs/summaries/spgcl_sparc_residual_seed0_e100_cgrid.csv \
+  --aggregate-out runs/summaries/spgcl_sparc_residual_seed0_e100_cgrid_aggregate.csv
+```
+
+seed0 C-grid 结果：
+
+| Dataset | Patched `spgcl_sparc_residual` | Post-hoc `spgcl_official_sparc_resid1` | Patched - post-hoc |
+| --- | ---: | ---: | ---: |
+| Chameleon | 0.661404 / 0.662057 | 0.636623 / 0.636698 | +0.024781 / +0.025359 |
+| Squirrel | 0.484534 / 0.479518 | 0.479443 / 0.475803 | +0.005091 / +0.003715 |
+
+当前解释：
+
+- 这是 SPARC 从 post-hoc calibration 向训练时方法推进的第一条强正向证据；
+- Chameleon 的提升尤其重要，因为此前 residual post-hoc 在 Chameleon 上只是小幅正均值且 split-level 不稳；
+- 但该结果目前只有 seed0，不能据此声称 SOTA 或稳定改进；
+- 下一步硬门槛是补 seed1/seed7/seed42 patched official SP-GCL，并与原 official SP-GCL、post-hoc residual、prop2 artifact 做同 C-grid 对齐。
+
 ## 研究假设
 
 SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embedding 仍混合了两类信息：
@@ -650,7 +732,7 @@ SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embeddin
 
 3. 方法化：
    - `sparc_gcl` 在当前 GRACE scaffold 上的训练时原型 early gate 失败，不应继续小调；
-   - 下一步应修改 official SP-GCL 训练流程，在 strong subgraph-contrastive encoder 内加入 residual projector / residual branch；
+   - official SP-GCL 内部 residual branch seed0 early gate 已正向，下一步应补多 seed 复核；
    - 若继续做 selection/gate，应优先做 node-level local-homophily/degree proxy，避免 Chameleon high-local-homophily 区域被 residual branch 伤害。
 
 4. 强基线：
@@ -667,6 +749,7 @@ SPARC-GCL 是当前最值得继续的 active candidate。
 - 在 Squirrel 的 four official seeds × 10 split 上有稳定正向信号；
 - 在 Chameleon 的 four official seeds 上均为正均值，但 split-level 稳定性弱于 Squirrel；
 - 已有 artifact-level method 入口 `spgcl_official_sparc_resid1`，不再只依赖临时 evaluation mode；
+- 已有 official SP-GCL 内部 residual branch patch/runner，seed0 early gate 强于 post-hoc residual；
 - 创新点更清楚：不是再做 augmentation，也不是简单 high/low-pass filter，而是 strong GCL embedding 的 propagation residual calibration；
 - 算力友好，适合 RTX 3060。
 
@@ -674,6 +757,7 @@ SPARC-GCL 是当前最值得继续的 active candidate。
 
 - 当前只是 post-hoc representation calibration；
 - 当前 GRACE scaffold 上的训练时 `sparc_gcl` 原型早筛失败，不能作为主结果；
+- official SP-GCL 内部 residual branch 目前只有 seed0 正向证据，需要多 seed 复核；
 - Chameleon 增益小且 best mode 可能不同于 Squirrel；
 - 需要证明不是 validation/C-grid 偶然；
 - 需要扩展到更多数据集和更多 seed。
