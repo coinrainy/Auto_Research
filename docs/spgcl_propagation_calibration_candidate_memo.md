@@ -303,6 +303,70 @@ python select_sparc_mode_proxy.py \
 - 目前只覆盖 Chameleon/Squirrel 与一个 official SP-GCL seed42 embedding；不能宣称最终 SOTA。
 - 下一步必须补不同 SP-GCL seed / epoch artifacts，并尝试把该 gate 扩展到更多 heterophily 数据集或至少补足同配图 safety。
 
+## Official seed7 复核与 selector 裁决修正
+
+为检查 seed42 是否偶然，已重新导出 official SP-GCL seed7 embedding：
+
+```bash
+cd /root/autodl-tmp/Auto_Research/experiments/grace_idea
+DATASETS="Chameleon Squirrel" \
+OUT_DIR="runs/spgcl_official_embeddings_seed7_e100" \
+RESET_EPOCHS=100 \
+LINEAR_EPOCHS=10 \
+RESET_HIDDEN=256 \
+RESET_SEED_NUM=32 \
+RESET_MAX_SIZE=512 \
+RESET_SUBG_NUM_HOPS=2 \
+SEED=7 \
+bash scripts/run_spgcl_embedding_export.sh
+```
+
+随后复跑 C-grid：
+
+```bash
+python evaluate_propagation_calibration.py \
+  --runs-dir runs/spgcl_official_embeddings_seed7_e100/artifacts \
+  --include-methods spgcl_official \
+  --modes ssl ssl_prop1 ssl_prop2 ssl_resid1 ssl_resid2 \
+  --max-hop 2 \
+  --split-indices 0 1 2 3 4 5 6 7 8 9 \
+  --c-values 4 16 64 \
+  --max-iter 500 \
+  --out runs/summaries/sparc_seed7_cgrid.csv \
+  --aggregate-out runs/summaries/sparc_seed7_cgrid_aggregate.csv
+```
+
+结果：
+
+| Seed | Dataset | `ssl` F1Mi/F1Ma | `ssl_prop2` F1Mi/F1Ma | `ssl_resid1` F1Mi/F1Ma | Best |
+| --- | --- | ---: | ---: | ---: | --- |
+| seed42 | Chameleon | 0.631798 / 0.632267 | 0.640570 / 0.641855 | 0.639254 / 0.639301 | `ssl_prop2` |
+| seed42 | Squirrel | 0.450817 / 0.445798 | 0.480307 / 0.476469 | 0.488953 / 0.485416 | `ssl_resid1` |
+| seed7 | Chameleon | 0.631360 / 0.631923 | 0.641009 / 0.641697 | 0.645175 / 0.645380 | `ssl_resid1` |
+| seed7 | Squirrel | 0.448991 / 0.443961 | 0.476753 / 0.473270 | 0.483093 / 0.479099 | `ssl_resid1` |
+
+跨 seed 的 selector 汇总：
+
+| Selector | Rule | Mean F1Mi | Mean F1Ma | Mean delta vs `ssl` |
+| --- | --- | ---: | ---: | ---: |
+| `ssl` | 不校准 | 0.540741 | 0.538488 | 0.000000 |
+| `prop2` | 固定 `ssl_prop2` | 0.559660 | 0.558323 | +0.018918 |
+| `feature_adaptive_v1` | Chameleon 选 `ssl_prop2`，Squirrel 选 `ssl_resid1` | 0.563406 | 0.562017 | +0.022665 |
+| `resid1` | 固定 `ssl_resid1` / effective-rank route | 0.564119 | 0.562299 | +0.023378 |
+
+裁决修正：
+
+- seed7 继续支持 SPARC：`ssl_prop2` 与 `ssl_resid1` 在 Chameleon/Squirrel 上均高于 `ssl`。
+- feature-adaptive v1 仍然稳定正向，但不是最强 selector；它在 seed7 Chameleon 上选 `ssl_prop2`，而 `ssl_resid1` 实际更强。
+- 当前主线应从 “feature-disassortativity adaptive selector” 收缩为 “propagation-residual calibration, with residual/effective-rank route as the most robust default”。
+- feature contrast 可以保留为解释变量和未来 gate 信号，但不应作为当前主 selector claim。
+- 更强的下一步不是继续手调 selector，而是把 `ssl_resid1` 形式方法化为训练时 residual calibration branch，并补同配图 safety 与更多 official seed。
+
+运行策略记录：
+
+- 本轮曾启动 `select_sparc_mode_proxy.py` 的完整 seed7 selector 评估，但它与 C-grid 重复训练同一批 linear probes，耗时过长，已中断。
+- seed7 selector 所需的核心结论可由 C-grid 直接得到；后续应重构 selector 脚本，使其可读取已有 C-grid candidate scores，避免重复 fit logistic regression。
+
 ## 研究假设
 
 SP-GCL 已经通过局部子图相似性学到强 embedding，但这个 embedding 仍混合了两类信息：

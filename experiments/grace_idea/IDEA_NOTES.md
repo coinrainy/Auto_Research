@@ -239,7 +239,9 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - Chameleon 诊断显示：`ssl_prop2` 较稳，整体 gain/loss=167/127；`ssl_resid1` 对 local-homophily low/mid 桶有明显收益（约 +0.0349/+0.0250），但伤害 high local-homophily 桶（约 -0.0386，9/10 split 为负）。
 - 已新增 `select_sparc_mode_proxy.py` 并完成 label-free mode selection v1 早筛：balanced proxy v1 固定选择 `ssl_prop1`，稳定超过 `ssl` 但低于更简单的 feature-adaptive rule。
 - Feature-adaptive rule 使用原始特征 edge-random contrast 分流：Chameleon 的 feature contrast 为 +0.008638，选择 `ssl_prop2`，F1Mi/F1Ma=0.640570/0.641855；Squirrel 的 feature contrast 为 -0.001591，选择 `ssl_resid1`，F1Mi/F1Ma=0.488953/0.485416。
-- 当前裁决：SPARC-GCL 仍是 active candidate，下一步主线应转为 Feature-disassortativity Adaptive SPARC；它是 label-free 方法化的第一条正向证据，但目前只覆盖 Chameleon/Squirrel 与一个 official SP-GCL seed42 embedding，必须继续做多 seed / 更多数据集验证。
+- 已完成 official SP-GCL seed7 复核：Chameleon `ssl` 为 0.631360/0.631923，`ssl_prop2` 为 0.641009/0.641697，`ssl_resid1` 为 0.645175/0.645380；Squirrel `ssl` 为 0.448991/0.443961，`ssl_prop2` 为 0.476753/0.473270，`ssl_resid1` 为 0.483093/0.479099。
+- 跨 seed42/seed7 汇总显示：固定 `ssl_resid1` / effective-rank route 的平均 F1Mi/F1Ma=0.564119/0.562299，略高于 feature-adaptive v1 的 0.563406/0.562017，也高于固定 `ssl_prop2` 的 0.559660/0.558323。
+- 当前裁决：SPARC-GCL 仍是 active candidate，但主线从 Feature-disassortativity Adaptive SPARC 收缩为 propagation-residual calibration，其中 `ssl_resid1` / effective-rank route 是当前最稳默认。feature contrast 保留为解释变量和未来 gate 信号，不作为当前主 selector claim。
 - 详细记录见 `docs/spgcl_propagation_calibration_candidate_memo.md`。
 
 ## 当前实验入口能力
