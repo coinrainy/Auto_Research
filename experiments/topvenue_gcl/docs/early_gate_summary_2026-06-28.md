@@ -112,3 +112,46 @@ Aggregate：
 | Squirrel | +0.003842 | +0.002403 | 小幅正向 |
 
 当前裁决：DANV 是 active-but-risky candidate，不是成功方法。它达到“值得扩到 splits 0-2”的边缘标准，但 Texas 退化是 major warning。下一步必须做 split0-2 复核和 penalty/gate 消融。
+
+## 2026-06-28 追加：DANV-GCL splits 0/1/2 复核
+
+已执行：
+
+```bash
+DATASETS="Texas Actor Chameleon Squirrel" \
+METHODS="gcn_mlp_gcl danv_gcl" \
+SPLITS="0 1 2" \
+SEEDS="0" \
+EPOCHS=50 \
+RUNS_DIR="runs/split_study_danv_s0_splits0-2_e50" \
+OVERWRITE=1 \
+bash scripts/run_split_study.sh
+```
+
+并以 `gcn_mlp_gcl` 为 baseline 重新汇总：
+
+```bash
+python summarize_split_study.py \
+  --runs-dir runs/split_study_danv_s0_splits0-2_e50 \
+  --baseline-method gcn_mlp_gcl \
+  --out runs/split_study_danv_s0_splits0-2_e50/runs_vs_gcn_mlp.csv \
+  --aggregate-out runs/split_study_danv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv
+```
+
+Aggregate：
+
+| Dataset | DANV F1Mi mean | DANV F1Ma mean | ΔF1Mi vs GCN-MLP | ΔF1Ma vs GCN-MLP | Positive/Negative F1Mi | 裁决 |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| Texas | 0.621622 | 0.282129 | +0.027027 | -0.030448 | 3/0 | micro 正向，macro 不安全 |
+| Actor | 0.352632 | 0.308947 | +0.002412 | -0.002621 | 1/2 | split 不稳定 |
+| Chameleon | 0.425439 | 0.416210 | +0.005117 | +0.007722 | 3/0 | 稳定小正向 |
+| Squirrel | 0.322446 | 0.310770 | +0.008005 | +0.007299 | 3/0 | 稳定小正向 |
+
+裁决更新：
+
+- DANV 不应被包装为已成功的 SOTA idea；它只是通过了继续做消融的最低门槛。
+- Chameleon/Squirrel 的 6/6 split micro 正向是目前最干净的机制信号。
+- Texas macro 退化与 Actor split 不稳定是 major risk。
+- 下一步不扩大数据集，先做 DANV penalty/gate ablation：`danv_disagreement_weight=0`、`0.02`、温度与 min-align 消融；如果无法同时保住 Texas macro 与 Actor 稳定性，应放弃 DANV 主线或收缩到 WikipediaNetwork 条件性方法。
+
+工程补充：`train.py` 已支持 `--danv-alignment-weight`、`--danv-disagreement-weight`、`--danv-gate-temperature`、`--danv-min-align-weight`，方便下一轮不改 YAML 直接跑消融。

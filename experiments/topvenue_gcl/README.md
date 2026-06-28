@@ -8,9 +8,10 @@
 
 核心假设：
 
-- 高能量/propagation-residual 表示保留更有效的 positive learning signal；
-- MLP/ego 分支用于保留 raw-feature 与 fast-inference 潜力，graph 分支只在训练期提供结构教师信号；
-- low-pass positive cache 已在 early gate 中失败，保留为消融而非主线。
+- MLP/ego 分支与 GCN/graph 分支是异配图上更自然的双视图；
+- 不是所有节点都应该强制对齐 ego view 与 graph view；
+- DANV 使用 label-free gate 判断何时对齐、何时保留分歧；
+- high-energy residual 与 low-pass positive cache 已在 early gate 中降级为失败/条件性消融，不作为当前主线。
 
 最小 smoke：
 
@@ -35,6 +36,7 @@ DATASETS="Texas Actor" METHODS="grace gcn_mlp_gcl" SPLITS="0 1 2" SEEDS="0" EPOC
 ```bash
 python train.py --dataset Texas --method gcn_mlp_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method danv_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method danv_gcl --epochs 5 --split-index 0 --seed 0 --danv-disagreement-weight 0.0
 python train.py --dataset Texas --method energy_spgcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_residual_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_cache_gcl --epochs 5 --split-index 0 --seed 0

@@ -103,6 +103,49 @@ python summarize_split_study.py \
 - Texas 明显伤害，说明当前 gate 或 disagreement penalty 会破坏 WebKB 小图上的强 alignment；
 - 下一步必须跑 splits 0/1/2，并做 gate ablation：`danv_disagreement_weight=0`、更小 penalty、或 Texas-safe fallback。
 
+## DANV splits 0/1/2 early gate
+
+命令：
+
+```bash
+DATASETS="Texas Actor Chameleon Squirrel" \
+METHODS="gcn_mlp_gcl danv_gcl" \
+SPLITS="0 1 2" \
+SEEDS="0" \
+EPOCHS=50 \
+RUNS_DIR="runs/split_study_danv_s0_splits0-2_e50" \
+OVERWRITE=1 \
+bash scripts/run_split_study.sh
+
+python summarize_split_study.py \
+  --runs-dir runs/split_study_danv_s0_splits0-2_e50 \
+  --baseline-method gcn_mlp_gcl \
+  --out runs/split_study_danv_s0_splits0-2_e50/runs_vs_gcn_mlp.csv \
+  --aggregate-out runs/split_study_danv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv
+```
+
+Aggregate vs GCN-MLP：
+
+| Dataset | DANV F1Mi mean | DANV F1Ma mean | ΔF1Mi | ΔF1Ma | Positive/Negative F1Mi | 裁决 |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| Texas | 0.621622 | 0.282129 | +0.027027 | -0.030448 | 3/0 | micro 正向但 macro 风险大 |
+| Actor | 0.352632 | 0.308947 | +0.002412 | -0.002621 | 1/2 | 不稳定 |
+| Chameleon | 0.425439 | 0.416210 | +0.005117 | +0.007722 | 3/0 | 稳定小正向 |
+| Squirrel | 0.322446 | 0.310770 | +0.008005 | +0.007299 | 3/0 | 稳定小正向 |
+
+裁决更新：
+
+- DANV 通过“至少 3/4 数据集 mean micro 超过 GCN-MLP”的 early gate，但没有通过“macro safety / split robustness”的硬标准。
+- 最强信号集中在 WikipediaNetwork：Chameleon/Squirrel 共 6 个 split 全部 micro 正向，macro 也为正。
+- Texas 的 split0 macro 明显受伤，说明当前 disagreement penalty 会破坏小图少数类或强 alignment 区域。
+- Actor 的 3 个 split 中只有 1 个 micro 正向，说明当前 gate 对 Actor 不够稳。
+- DANV 继续保留为 active candidate，但主张必须收窄为：天然双视图上的 label-free disagreement calibration 对部分 WikipediaNetwork-style heterophily 图稳定有效；WebKB/Actor 需要 safety gate 或 fallback。
+
+工程更新：
+
+- `train.py` 已支持 DANV 参数命令行覆盖：`--danv-alignment-weight`、`--danv-disagreement-weight`、`--danv-gate-temperature`、`--danv-min-align-weight`。
+- 下一轮优先做 penalty/gate 消融，而不是扩大到更多方法名。
+
 ## 保留标准
 
 下一轮实现 DANV-GCL 时，最低 early gate：

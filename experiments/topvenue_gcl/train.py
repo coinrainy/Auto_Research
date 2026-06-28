@@ -63,6 +63,10 @@ def parse_args():
     parser.add_argument("--cache-key-mode", default=None,
                         choices=[None, "raw_low", "raw_signature", "learned_low"])
     parser.add_argument("--cache-update-interval", type=int, default=None)
+    parser.add_argument("--danv-alignment-weight", type=float, default=None)
+    parser.add_argument("--danv-disagreement-weight", type=float, default=None)
+    parser.add_argument("--danv-gate-temperature", type=float, default=None)
+    parser.add_argument("--danv-min-align-weight", type=float, default=None)
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -95,6 +99,14 @@ def override_config(config, args):
         merged["cache_key_mode"] = args.cache_key_mode
     if args.cache_update_interval is not None:
         merged["cache_update_interval"] = args.cache_update_interval
+    if args.danv_alignment_weight is not None:
+        merged["danv_alignment_weight"] = args.danv_alignment_weight
+    if args.danv_disagreement_weight is not None:
+        merged["danv_disagreement_weight"] = args.danv_disagreement_weight
+    if args.danv_gate_temperature is not None:
+        merged["danv_gate_temperature"] = args.danv_gate_temperature
+    if args.danv_min_align_weight is not None:
+        merged["danv_min_align_weight"] = args.danv_min_align_weight
     return merged
 
 
