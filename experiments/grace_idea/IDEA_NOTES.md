@@ -230,6 +230,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - 核心表示是 `[normalize(z), normalize(z - Pz)]` 或 `[normalize(z), normalize(P^k z)]`，其中 `z` 为 strong GCL embedding，`P` 为带 self-loop 的 row-normalized propagation。
 - official SP-GCL embedding 的 10 split fast gate：Squirrel `ssl_resid1` 相对 `ssl` F1Mi/F1Ma +0.028434/+0.029695，10/10 split micro 为正；Chameleon `ssl_resid1` +0.008991/+0.008465，7/10 正、2/10 负、1/10 持平。
 - `ssl_prop2` 也有正向：Squirrel +0.019116/+0.020091，Chameleon +0.002193/+0.002739。
+- C-grid 复核（`C={4,16,64}`、10 splits）：Squirrel `ssl_resid1` 相对 `ssl` F1Mi/F1Ma +0.034294/+0.035169，10/10 split micro 为正；Chameleon `ssl_resid1` +0.008333/+0.007952，`ssl_prop2` +0.005263/+0.005584。
 - 简单 raw concat 在 split0 上低于 SP-GCL embedding，说明新信号不是 raw-preserving concat，而是 propagation residual / calibrated propagation。
 - 当前裁决：SPARC-GCL 是下一轮最值得继续的 active candidate，但仍需多 seed、完整 C grid、mode selection 与机制诊断后才可能进入论文主线。
 - 详细记录见 `docs/spgcl_propagation_calibration_candidate_memo.md`。
@@ -261,6 +262,7 @@ python train.py --dataset Cora --method es_weighted --epochs 2 --warmup-epochs 1
 - `raw_complement_gcl` 支持 `--raw-complement-weight`、`--raw-complement-detach-anchor/--no-raw-complement-detach-anchor`、`--raw-complement-eval-mode anchor|hidden|graph|anchor_graph|raw_graph`，并记录 raw/complement correlation diagnostics；当前 `--raw-complement-weight` 默认值已改为 `0.0`，`0.05` 仅作为附录消融/robustness check。
 - `pgsp_gcl` 支持 `--pgsp-hops`、`--pgsp-topk`、`--pgsp-neg-topk`、`--pgsp-max-size`、`--pgsp-target-blend`、`--pgsp-neg-selection`、`--pgsp-anchor-sampling`、`--pgsp-seed-num`、`--pgsp-anchor-hops`、`--pgsp-square-sample`、`--pgsp-hidden`、`--pgsp-dropout`、`--pgsp-use-bn`。
 - `evaluate_propagation_calibration.py` 支持 `--max-hop`、`--modes`、`--split-indices`、`--c-values` 与 `--max-iter`，用于 SPARC-GCL 的 post-hoc propagation calibration gate。
+- `scripts/run_spgcl_embedding_export.sh` 可导出 Geom-GCN 数据、运行本地 official SP-GCL、保存 embedding，并转换为 `evaluate_propagation_calibration.py` 可读的 `artifacts.pt`。
 - `evaluate_raw_features.py` 支持对原始 `data.x` 使用当前同一套 mask/random linear evaluation 协议，作为 ego/residual/GRACE 的 feature-only 硬 baseline。
 - `evaluate_feature_fusion.py` 支持递归读取 `artifacts.pt`，在同一 split 下评估 `raw`、`ssl`、`raw+ssl concat`，并输出 concat 相对 raw/ssl 的 paired delta 与 aggregate summary。
 - `select_representation.py` 支持读取 `artifacts.pt` 并用验证集选择 raw/saved/anchor/graph/complement/hidden 候选表示；当前定位为单 run / 小批量诊断工具，全候选完整 C 网格在 Actor 上过慢，不作为正式大规模评估主入口。

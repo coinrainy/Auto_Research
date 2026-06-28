@@ -53,6 +53,9 @@ SPARC-GCL 的新信号：
 评估脚本：
 
 - `experiments/grace_idea/evaluate_propagation_calibration.py`
+- `experiments/grace_idea/scripts/run_spgcl_embedding_export.sh`
+
+后者会自动导出 Geom-GCN 数据、给本地 ignored SP-GCL 克隆注入 `SPGCL_EMBED_OUT` 保存钩子、运行 official SP-GCL，并转换为当前评估脚本可读取的 `artifacts.pt`。
 
 快速 gate：
 
@@ -87,6 +90,40 @@ python evaluate_propagation_calibration.py \
 - Chameleon 的提升较小，但 `ssl_resid1` 仍为正均值；
 - 这只是 fixed `C=16` 的 fast gate，不是正式结果；
 - 当前证据足以把 SPARC-GCL 作为下一轮 active candidate，但还不足以声称 SOTA。
+
+## C-grid 复核
+
+为排除 fixed `C=16` 偶然性，已用 `C={4,16,64}`、`max_iter=500` 复核 Chameleon/Squirrel 10 splits：
+
+```bash
+python evaluate_propagation_calibration.py \
+  --runs-dir /tmp/spgcl_embedding_artifacts \
+  --include-methods spgcl_official \
+  --modes ssl ssl_prop1 ssl_prop2 ssl_resid1 ssl_resid2 \
+  --max-hop 2 \
+  --split-indices 0 1 2 3 4 5 6 7 8 9 \
+  --c-values 4 16 64 \
+  --max-iter 500 \
+  --out runs/summaries/spgcl_propagation_calibration_splits0-9_cgrid.csv \
+  --aggregate-out runs/summaries/spgcl_propagation_calibration_splits0-9_cgrid_aggregate.csv
+```
+
+结果：
+
+| Dataset | Mode | F1Mi mean | F1Ma mean | Delta vs SSL F1Mi | Delta vs SSL F1Ma | Positive/Negative F1Mi |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Chameleon | ssl | 0.629167 | 0.629475 | 0.000000 | 0.000000 | - |
+| Chameleon | ssl_prop1 | 0.630263 | 0.631050 | +0.001096 | +0.001575 | 5/4 |
+| Chameleon | ssl_prop2 | 0.634430 | 0.635059 | +0.005263 | +0.005584 | 7/3 |
+| Chameleon | ssl_resid1 | 0.637500 | 0.637427 | +0.008333 | +0.007952 | 5/5 |
+| Chameleon | ssl_resid2 | 0.636404 | 0.636519 | +0.007237 | +0.007044 | 7/2 |
+| Squirrel | ssl | 0.451201 | 0.446531 | 0.000000 | 0.000000 | - |
+| Squirrel | ssl_prop1 | 0.478482 | 0.475293 | +0.027281 | +0.028761 | 10/0 |
+| Squirrel | ssl_prop2 | 0.483093 | 0.479413 | +0.031892 | +0.032882 | 10/0 |
+| Squirrel | ssl_resid1 | 0.485495 | 0.481700 | +0.034294 | +0.035169 | 10/0 |
+| Squirrel | ssl_resid2 | 0.479923 | 0.476676 | +0.028722 | +0.030144 | 10/0 |
+
+C-grid 复核后，Squirrel 的提升幅度更强且 10/10 split 稳定为正；Chameleon 仍是小幅正向，`ssl_resid1/2` 与 `ssl_prop2` 均高于原始 SSL embedding。
 
 ## 研究假设
 

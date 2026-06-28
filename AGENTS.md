@@ -786,3 +786,11 @@
   - 当前 active candidate 切换为 SPARC-GCL：Strong Propagation-residual Adaptive Representation Calibration for Graph Contrastive Learning。
   - 已新增备忘录：`docs/spgcl_propagation_calibration_candidate_memo.md`。
   - 下一步建议：固化 official SP-GCL embedding 导出/转换流程，跑完整 C grid 与多 seed；随后做 mode selection 与 class/degree/local homophily 机制诊断。
+- 2026-06-28 SPARC-GCL C-grid 复核与导出流程固化：
+  - 已执行 C-grid 复核：`C={4,16,64}`、`max_iter=500`、Chameleon/Squirrel × splits0-9 × modes `ssl/ssl_prop1/ssl_prop2/ssl_resid1/ssl_resid2`。
+  - 输出文件：`experiments/grace_idea/runs/summaries/spgcl_propagation_calibration_splits0-9_cgrid.csv` 与 `experiments/grace_idea/runs/summaries/spgcl_propagation_calibration_splits0-9_cgrid_aggregate.csv`。
+  - Chameleon：`ssl` 为 0.629167/0.629475；`ssl_prop2` 为 0.634430/0.635059（+0.005263/+0.005584，7/10 micro 正）；`ssl_resid1` 为 0.637500/0.637427（+0.008333/+0.007952，5/10 micro 正、5/10 非正）；`ssl_resid2` 为 0.636404/0.636519（+0.007237/+0.007044，7/10 micro 正）。
+  - Squirrel：`ssl` 为 0.451201/0.446531；`ssl_prop1` 为 0.478482/0.475293（+0.027281/+0.028761，10/10 micro 正）；`ssl_prop2` 为 0.483093/0.479413（+0.031892/+0.032882，10/10 micro 正）；`ssl_resid1` 为 0.485495/0.481700（+0.034294/+0.035169，10/10 micro 正）。
+  - 结论：SPARC-GCL 的 Squirrel 信号通过更可信 C-grid 复核，Chameleon 小幅正向但不稳定；当前仍值得继续推进，但不能声称全面 SOTA。
+  - 已新增 `experiments/grace_idea/scripts/run_spgcl_embedding_export.sh`：自动导出 Geom-GCN 数据、为本地 ignored SP-GCL 克隆注入 embedding 保存钩子、运行 official SP-GCL，并转换为当前评估脚本可读的 `artifacts.pt`。
+  - 下一步建议：用该脚本重新生成非 `/tmp` 的 official SP-GCL artifacts，然后跑多 seed / 多 mode / class-degree-local homophily 诊断。
