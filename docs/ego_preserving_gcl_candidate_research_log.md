@@ -660,3 +660,40 @@ python train.py --dataset Texas --method raw_complement_gcl --raw-complement-eva
 - `anchor_graph` 保留为诊断模式，不作为 active candidate。
 
 下一步必须实现显式 output selection/gate：在图级或节点级决定使用 `graph` 还是 `anchor`，而不是把所有通道直接拼接给下游分类器。
+
+## 2026-06-28 output selection 候选诊断
+
+目标：在 `anchor`、`graph`、`anchor_graph` 三个候选之间做显式选择诊断，验证“选择/gate”是否比简单拼接更合理。该诊断使用验证集选择，因此只作为 gate 方向的上界/行为分析，不作为最终无标签机制。
+
+新增命令：
+
+```bash
+python select_representation.py --run-dir /tmp/raw_complement_cora_graph/Cora_raw_complement_gcl_seed0 --run-dir /tmp/raw_complement_cora_graph_seed1/Cora_raw_complement_gcl_seed1 --run-dir /tmp/raw_complement_cora_graph_seed2/Cora_raw_complement_gcl_seed2 --selection-eval-mode random --random-repeats 3 --candidate-names anchor graph anchor_graph --c-min-power -8 --c-max-power 8 --out runs/summaries/raw_complement_cora_output_selection_candidates_s0-2.csv --aggregate-out runs/summaries/raw_complement_cora_output_selection_candidates_s0-2_aggregate.csv
+python select_representation.py --run-dir /tmp/raw_complement_actor_anchor_graph_seed0_split0/Actor_raw_complement_gcl_seed0_split0 --run-dir /tmp/raw_complement_texas_anchor_graph_seed0_split0/Texas_raw_complement_gcl_seed0_split0 --selection-eval-mode mask --candidate-names anchor graph anchor_graph --c-min-power -8 --c-max-power 8 --out runs/summaries/raw_complement_actor_texas_output_selection_candidates.csv --aggregate-out runs/summaries/raw_complement_actor_texas_output_selection_candidates_aggregate.csv
+```
+
+### Cora seeds0-2
+
+| Candidate | F1Mi mean | F1Ma mean | 选择情况 |
+| --- | ---: | ---: | --- |
+| anchor | 0.673688 | 0.629499 | 0/9 |
+| graph | 0.810834 | 0.790843 | 9/9 |
+| anchor_graph | 0.781570 | 0.741479 | 0/9 |
+
+判断：Cora 上 validation selection 稳定选择 `graph`，明显避开 `anchor` 与 `anchor_graph`。这说明 Cora 的安全输出不是“拼接更多通道”，而是必须压制 raw/complement 通道。
+
+### Actor/Texas split0
+
+| Dataset | Selected | selected F1Mi/F1Ma | 逐候选观察 |
+| --- | --- | ---: | --- |
+| Actor | anchor_graph | 0.364474 / 0.343554 | `anchor` val micro 与 `anchor_graph` 并列；anchor test micro 更高 0.366447，但 macro 更低 0.325090 |
+| Texas | anchor_graph | 0.810811 / 0.619968 | anchor_graph val/macro 高于 anchor；graph 明显差 |
+
+判断：在异配小图上，验证集选择能排除明显差的 `graph`，但 Actor 上单一 val micro 选择并不稳，可能牺牲 micro 换 macro。未来 gate 不应只依赖单一图级验证分数；更合理的是结合 graph-safe fallback、候选表示稳定性、以及 dataset/region-level 互补信号。
+
+### 设计约束
+
+- Cora 类同配图：必须强制或高概率选择 `graph`；
+- Texas 类 WebKB 图：`anchor` / `anchor_graph` 均可，但不能退回纯 `graph`；
+- Actor 类图：需要处理 micro/macro trade-off，单一 validation micro 不足以定义最优 gate；
+- 下一步应实现候选选择的无标签 proxy 或轻量 validation protocol，并与 shuffled/random selection control 对比，证明不是后验挑结果。
