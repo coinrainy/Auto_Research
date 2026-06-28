@@ -6,6 +6,8 @@
 
 当前裁决：**Disagreement-Aware Natural-View GCL (DANV-GCL)** 家族已降级为失败/条件性消融。`gcn_mlp_gcl` 仍是 strong foundation；下一代 active idea 需要换机制，而不是继续调 DANV penalty。
 
+当前新候选：**Filter-Decoupled Natural-View GCL (FDNV-GCL)**，入口为 `--method fdnv_gcl`。它在 Natural-View foundation 上显式学习 low-pass / high-pass filtered targets，先以 split0 early gate 判断是否保留。
+
 核心假设：
 
 - MLP/ego 分支与 GCN/graph 分支是异配图上更自然的双视图；
@@ -38,6 +40,7 @@ python train.py --dataset Texas --method gcn_mlp_gcl --epochs 5 --split-index 0 
 python train.py --dataset Texas --method danv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method danv_gcl --epochs 5 --split-index 0 --seed 0 --danv-disagreement-weight 0.0
 python train.py --dataset Texas --method danv_degree_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method fdnv_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method energy_spgcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_residual_gcl --epochs 5 --split-index 0 --seed 0
 python train.py --dataset Texas --method er_cache_gcl --epochs 5 --split-index 0 --seed 0

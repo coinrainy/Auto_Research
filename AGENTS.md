@@ -965,3 +965,13 @@
   - 外部边界核对：近期 GCL/heterophily 趋势仍强调 simple/fast inference、filter/high-pass-low-pass、semantic/structure decoupling 与 adaptive fusion；这支持放弃固定 penalty DANV。
   - 已新增文档：`experiments/topvenue_gcl/docs/danv_ablation_decision_2026-06-28.md`；并更新 `README.md`、`docs/early_gate_summary_2026-06-28.md`、`docs/natural_view_gcl_foundation_memo.md`、`docs/implementation_principles.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && rg -n "filter|high|low|spectral|propagation|decoupl" ../../third_party_baselines/reference_gcl -g '*.py' -g '*.md'`，从 GraphECL/S3GCL/PolyGCL 参考实现中抽取下一代非 DANV 机制。
+- 2026-06-28 FDNV-GCL 第一版实现与早筛：
+  - 已抽取参考实现线索：S3GCL 强调 spectral high/low-pass biased graph views、MLP inference 与 semantic/spatial positives；PolyGCL 使用 Chebyshev high/low-pass filters；GraphECL 强调结构编码与 MLP 推理。
+  - 已实现 `--method fdnv_gcl`：在 Natural-View foundation 上显式学习 low-pass target `P graph` 与 high-pass target `graph - P graph`，用 raw feature residual、raw-neighbor agreement 与 log-degree 构造 filter gate。
+  - 新增配置：`fdnv_route_weight`、`fdnv_bootstrap_weight`、`fdnv_filter_temperature`、`fdnv_min_filter_weight`；默认 final representation 为 `ego_graph`。
+  - 已新增备忘录：`experiments/topvenue_gcl/docs/filter_decoupled_natural_view_candidate.md`。
+  - 已验证：`python -m py_compile train.py summarize_split_study.py src/*.py`、`bash -n scripts/run_split_study.sh && bash -n scripts/run_smoke.sh`、Texas/Squirrel 的 `fdnv_gcl` 2 epoch smoke。
+  - 默认 `fdnv_route_weight=0.5` split0 vs GCN-MLP：Texas 0.000000/0.000000，Actor +0.008553/+0.010262，Chameleon -0.004386/-0.012705，Squirrel 0.000000/-0.000494；Chameleon 失败，不扩大。
+  - 保守 `fdnv_route_weight=0.1` split0 vs GCN-MLP：Texas 0.000000/+0.045083，Actor +0.001316/+0.010971，Chameleon -0.008772/-0.011839，Squirrel +0.003842/+0.006560；仍因 Chameleon 失败，不进入 splits 0/1/2。
+  - 当前裁决：FDNV 第一版有局部信号，但不作为 active main idea；下一步应重构 filter objective，而不是继续调 route weight。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && rg -n "pos_mask|dense_adj|infonce|semantic|structure" ../../third_party_baselines/reference_gcl/S3GCL ../../third_party_baselines/reference_gcl/GraphECL -g '*.py'`，转向 semantic/spatial positive split 的实现。

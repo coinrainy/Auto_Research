@@ -74,3 +74,11 @@ DANV 消融裁决：
 - degree-aware disagreement gate 在 split0 上未超过 early gate；
 - DANV 家族降级为失败/条件性消融资产，不再作为当前 active idea；
 - 下一代方法仍可继承 `gcn_mlp_gcl` natural-view foundation，但必须换机制。
+
+FDNV 第一版裁决：
+
+- `fdnv_gcl` 显式学习 low/high filtered targets，比 DANV penalty 更贴近 S3GCL/PolyGCL 的 filter 方向；
+- `fdnv_route_weight=0.5` 与 `0.1` 都在 Chameleon split0 上失败；
+- FDNV 第一版不进入 splits 0/1/2，不作为 active main idea；
+- 后续若继续 filter 方向，必须改 objective，而不是继续调 route weight；
+- 下一步优先考虑 semantic/spatial positive split 或 high/low branch complementarity。

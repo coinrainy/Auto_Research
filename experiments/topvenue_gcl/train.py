@@ -45,6 +45,7 @@ def parse_args():
                             "grace",
                             "danv_gcl",
                             "danv_degree_gcl",
+                            "fdnv_gcl",
                             "energy_spgcl",
                             "gcn_mlp_gcl",
                             "er_residual_gcl",
@@ -70,6 +71,10 @@ def parse_args():
     parser.add_argument("--danv-min-align-weight", type=float, default=None)
     parser.add_argument("--danv-degree-threshold", type=float, default=None)
     parser.add_argument("--danv-degree-temperature", type=float, default=None)
+    parser.add_argument("--fdnv-route-weight", type=float, default=None)
+    parser.add_argument("--fdnv-bootstrap-weight", type=float, default=None)
+    parser.add_argument("--fdnv-filter-temperature", type=float, default=None)
+    parser.add_argument("--fdnv-min-filter-weight", type=float, default=None)
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -114,6 +119,14 @@ def override_config(config, args):
         merged["danv_degree_threshold"] = args.danv_degree_threshold
     if args.danv_degree_temperature is not None:
         merged["danv_degree_temperature"] = args.danv_degree_temperature
+    if args.fdnv_route_weight is not None:
+        merged["fdnv_route_weight"] = args.fdnv_route_weight
+    if args.fdnv_bootstrap_weight is not None:
+        merged["fdnv_bootstrap_weight"] = args.fdnv_bootstrap_weight
+    if args.fdnv_filter_temperature is not None:
+        merged["fdnv_filter_temperature"] = args.fdnv_filter_temperature
+    if args.fdnv_min_filter_weight is not None:
+        merged["fdnv_min_filter_weight"] = args.fdnv_min_filter_weight
     return merged
 
 
@@ -272,6 +285,35 @@ def _degree_disagreement_gate(data, config):
 
 
 @torch.no_grad()
+def _fdnv_filter_gate(data, config):
+    raw_low_raw = row_normalized_propagate(data.x.detach(), data.edge_index, add_self=True)
+    raw = F.normalize(data.x.detach().float(), dim=1)
+    raw_low = F.normalize(raw_low_raw.float(), dim=1)
+    raw_agreement = (raw * raw_low).sum(dim=1)
+    raw_residual = (data.x.detach().float() - raw_low_raw.float()).norm(dim=1)
+    raw_scale = data.x.detach().float().norm(dim=1).clamp_min(1e-12)
+    raw_residual_energy = raw_residual / raw_scale
+
+    degree = torch.zeros(data.num_nodes, device=data.edge_index.device, dtype=torch.float32)
+    ones = torch.ones(data.edge_index.size(1), device=data.edge_index.device)
+    degree.scatter_add_(0, data.edge_index[0], ones)
+    degree.scatter_add_(0, data.edge_index[1], ones)
+    log_degree = torch.log1p(degree)
+
+    score = (
+        _standardize(raw_residual_energy)
+        - _standardize(raw_agreement)
+        + 0.5 * _standardize(log_degree)
+    )
+    temperature = max(float(config["fdnv_filter_temperature"]), 1e-12)
+    high_gate = torch.sigmoid(score / temperature)
+    min_weight = float(config["fdnv_min_filter_weight"])
+    high_gate = high_gate * (1.0 - min_weight) + min_weight
+    low_gate = (1.0 - high_gate) * (1.0 - min_weight) + min_weight
+    return high_gate, low_gate
+
+
+@torch.no_grad()
 def _static_cache_keys(data, config):
     mode = config.get("cache_key_mode", "raw_signature")
     if mode == "raw_low":
@@ -320,13 +362,20 @@ def train_er_cache_gcl(model, data, config, args):
     energy_spgcl = args.method == "energy_spgcl"
     danv_gcl = args.method in {"danv_gcl", "danv_degree_gcl"}
     danv_degree_gcl = args.method == "danv_degree_gcl"
+    fdnv_gcl = args.method == "fdnv_gcl"
     residual_only = args.method in {
         "er_residual_gcl",
         "gcn_mlp_gcl",
         "danv_gcl",
         "danv_degree_gcl",
+        "fdnv_gcl",
     }
-    graph_target = args.method in {"gcn_mlp_gcl", "danv_gcl", "danv_degree_gcl"}
+    graph_target = args.method in {
+        "gcn_mlp_gcl",
+        "danv_gcl",
+        "danv_degree_gcl",
+        "fdnv_gcl",
+    }
     topk = 0 if (args.disable_cache or residual_only) else int(config["cache_topk"])
     cache_update = max(1, int(config["cache_update_interval"]))
     cache_idx = None
@@ -375,6 +424,21 @@ def train_er_cache_gcl(model, data, config, args):
             loss_self = (
                 float(config["danv_alignment_weight"]) * loss_align
                 + float(config["danv_disagreement_weight"]) * loss_disagreement
+            )
+            loss_cache = parts["final"].new_tensor(0.0)
+        elif fdnv_gcl:
+            high_gate, low_gate = _fdnv_filter_gate(data, config)
+            loss_route = 0.5 * (
+                weighted_negative_cosine(pred_ego, parts["high"], high_gate)
+                + weighted_negative_cosine(pred_ego, parts["low"], low_gate)
+            )
+            loss_bootstrap = 0.5 * (
+                negative_cosine(pred_ego, parts["graph"])
+                + negative_cosine(pred_high, parts["ego"])
+            )
+            loss_self = (
+                float(config["fdnv_route_weight"]) * loss_route
+                + float(config["fdnv_bootstrap_weight"]) * loss_bootstrap
             )
             loss_cache = parts["final"].new_tensor(0.0)
         elif energy_spgcl:
@@ -454,8 +518,15 @@ def train_er_cache_gcl(model, data, config, args):
             degree_gate = _degree_disagreement_gate(data, config)
             diagnostics["danv_degree_gate_mean"] = float(degree_gate.mean().item())
             diagnostics["danv_degree_gate_std"] = float(degree_gate.std(unbiased=False).item())
+        if fdnv_gcl:
+            high_gate, low_gate = _fdnv_filter_gate(data, config)
+            diagnostics["fdnv_high_gate_mean"] = float(high_gate.mean().item())
+            diagnostics["fdnv_high_gate_std"] = float(high_gate.std(unbiased=False).item())
+            diagnostics["fdnv_low_gate_mean"] = float(low_gate.mean().item())
+            diagnostics["fdnv_low_gate_std"] = float(low_gate.std(unbiased=False).item())
     diagnostics["cache_control"] = (
         ("danv_degree" if danv_degree_gcl else "danv") if danv_gcl else
+        "fdnv" if fdnv_gcl else
         "energy_spgcl" if energy_spgcl else
         "gcn_mlp_only" if graph_target else
         "residual_only" if residual_only else
@@ -493,7 +564,7 @@ def main():
     config = override_config(load_yaml(args.config), args)
     if args.method == "gcn_mlp_gcl" and args.final_repr is None:
         config["final_repr"] = "ego_graph"
-    if args.method in {"danv_gcl", "danv_degree_gcl"} and args.final_repr is None:
+    if args.method in {"danv_gcl", "danv_degree_gcl", "fdnv_gcl"} and args.final_repr is None:
         config["final_repr"] = "ego_graph"
     if args.method == "energy_spgcl" and args.final_repr is None:
         config["final_repr"] = "ego_high"

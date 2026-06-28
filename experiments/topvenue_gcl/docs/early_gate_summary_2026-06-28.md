@@ -181,3 +181,18 @@ Aggregate：
 - degree-aware gate 没有救回 Squirrel/Chameleon 的主张；
 - DANV 家族不再作为当前主方法推进，只保留为失败/条件性消融资产；
 - `gcn_mlp_gcl` 仍是 Natural-View strong foundation，下一代 idea 必须换机制。
+
+## 2026-06-28 追加：FDNV-GCL 第一版
+
+已新增 `--method fdnv_gcl` 与备忘录：`docs/filter_decoupled_natural_view_candidate.md`。
+
+方法：在 GCN-MLP Natural-View foundation 上显式学习 low-pass / high-pass filtered targets，用 raw feature residual、raw-neighbor agreement 与 degree 构造 filter gate。
+
+split0 early gate：
+
+| Variant | Texas ΔF1Mi/ΔF1Ma | Actor ΔF1Mi/ΔF1Ma | Chameleon ΔF1Mi/ΔF1Ma | Squirrel ΔF1Mi/ΔF1Ma | 裁决 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| FDNV `route=0.5` | 0.000000/0.000000 | +0.008553/+0.010262 | -0.004386/-0.012705 | 0.000000/-0.000494 | Chameleon 失败 |
+| FDNV `route=0.1` | 0.000000/+0.045083 | +0.001316/+0.010971 | -0.008772/-0.011839 | +0.003842/+0.006560 | Chameleon 失败 |
+
+裁决：FDNV 第一版有局部信号，但不作为 active main idea，不进入 splits 0/1/2。下一步应重构 filter objective，而不是继续调 route weight。
