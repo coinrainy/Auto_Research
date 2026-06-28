@@ -732,3 +732,10 @@
   - 与 no-penalty `anchor_graph_weight0` 的 paired 差异：Chameleon F1Mi/F1Ma 约 +0.000000/+0.000056，Squirrel +0.000672/-0.000118；pos/neg 都是 5/5，说明它基本不改变主战场均值。
   - 当前裁决：该模块没有明显伤害 Chameleon/Squirrel，但也没有提供主战场增益；结合 Cora macro 仍明显低于 GRACE，不能作为核心创新。保留实现作为 optional safety refinement / appendix ablation，不继续做大范围权重搜索。
   - 下一步建议：转向强 baseline 对比与更结构性的 homophily fallback；当前主方法仍是 no-penalty raw-relative graph complement。
+- 2026-06-28 Raw-Complement final candidate 汇总与状态备忘录：
+  - 已生成 no-penalty Raw-Complement 最终候选汇总：`experiments/grace_idea/runs/summaries/raw_complement_final_candidate_wiki_s0-2_paired.csv` 与 `experiments/grace_idea/runs/summaries/raw_complement_final_candidate_wiki_s0-2_aggregate.csv`，共 60 个 computed pair。
+  - Chameleon × 10 splits × seeds0-2：相对 raw F1Mi/F1Ma +0.036769/+0.036744，30/30 为正；相对 GRACE +0.072880/+0.078006，30/30 为正。
+  - Squirrel × 10 splits × seeds0-2：相对 raw F1Mi/F1Ma +0.010471/+0.012456，micro 26/30 为正、2/30 持平、2/30 为负；相对 GRACE +0.062568/+0.079629，30/30 为正。
+  - 已新增备忘录：`docs/raw_complement_candidate_status_memo.md`，记录当前证据、已放弃模块、Cora safety 风险、文献边界与下一步硬门槛。
+  - 文献边界判断：HLCL、PolyGCL、SP-GCL 等已经覆盖 heterophily GCL 的高低频/滤波式叙事，Raw-Complement 不能包装成泛化 heterophily GCL；当前创新点必须聚焦 raw-feature anchored complement learning。
+  - 当前裁决：继续保留 Raw-Complement 作为 active candidate，但进入强 baseline 与机制诊断阶段；若无法超过 HLCL/PolyGCL/SP-GCL 等 heterophily-specific GCL，应放弃顶会主方法路线，转为机制诊断或负结果路线。
