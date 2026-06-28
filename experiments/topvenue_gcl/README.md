@@ -1,24 +1,29 @@
-# Top-Venue GCL Experiment Scaffold
+# Top-Venue GCL 工作区
 
-本目录用于重启 Graph Contrastive Learning 研究主线。
+本目录用于从头实现新的图对比学习候选方法，避免继续依赖 patch 第三方官方代码或旧 `grace_idea/` 中累积的失败原型。
 
-核心原则：
+当前 active candidate：**Energy-SPGCL**，`GCN-MLP Natural View GCL` 是必须击败的强对照，`ER-Residual-GCL` 已降级为失败/条件性消融。
 
-- 不再依赖 patch third-party official code 作为主方法实现；
-- 新 idea 必须拥有独立训练入口、模型定义、配置、脚本与 evaluator；
-- 实验协议优先对齐近年顶会代码范式，如 PolyGCL、S3GCL、GraphECL；
-- `runs/` 仅保存本地实验输出，不提交到 git；
-- 第三方代码只放在 `../../third_party_baselines/reference_gcl/` 作为参考。
+核心假设：
 
-当前推荐候选方向：
+- 高能量/propagation-residual 表示保留更有效的 positive learning signal；
+- MLP/ego 分支用于保留 raw-feature 与 fast-inference 潜力，graph 分支只在训练期提供结构教师信号；
+- low-pass positive cache 已在 early gate 中失败，保留为消融而非主线。
 
-1. Inference-efficient heterophily GCL with neighbor-cache distillation；
-2. Distribution-aware positive pair construction；
-3. Spectrum-conditioned augmentation-free GCL。
+最小 smoke：
 
-第一阶段任务：
+```bash
+cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl
+bash scripts/run_smoke.sh
+```
 
-1. 固化 dataset loader 与 10 split evaluator；
-2. 复现一个轻量 MLP-inference GCL baseline；
-3. 实现 neighbor-cache / semantic-positive reliability 原型；
-4. 在 heterophily + homophily safety 数据集上做小规模 gate。
+单次运行示例：
+
+```bash
+python train.py --dataset Texas --method gcn_mlp_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method energy_spgcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method er_residual_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method er_cache_gcl --epochs 5 --split-index 0 --seed 0
+python train.py --dataset Texas --method er_cache_gcl --epochs 5 --split-index 0 --seed 0 --shuffle-cache
+python train.py --dataset Texas --method grace --epochs 5 --split-index 0 --seed 0
+```

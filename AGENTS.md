@@ -906,3 +906,18 @@
   - 当前推荐新候选：优先探索 inference-efficient heterophily GCL with neighbor-cache distillation，其次 distribution-aware positive pair construction；实现范式参考 GraphECL/S3GCL/PolyGCL。
   - 已创建新主工作区：`experiments/topvenue_gcl/`，包含 `configs/`、`scripts/`、`src/`、`docs/`、`runs/`、`README.md`、局部 `.gitignore` 与 `docs/implementation_principles.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && find ../../third_party_baselines/reference_gcl -maxdepth 3 -name 'run*.sh' -o -name '*train*.py' -o -name 'main*.py'`，继续抽取 GraphECL/S3GCL/PolyGCL 的标准训练入口与 evaluator 设计。
+- 2026-06-28 自主 topvenue_gcl scaffold 与候选早筛：
+  - 用户要求后续不再频繁询问选择，由 Codex 自主判断、搜索、尝试、失败即放弃；本轮按 `academic-research-suite` 的 research + experiment 路线执行。
+  - 已检索并纳入 2024-2026 GCL 方向边界：GraphECL / S3GCL / PolyGCL / CaliGCL / Less-is-More GCL / 2026 positive-sample revisit 等共同显示，当前强趋势是 fast inference、天然双视图、spectral/Dirichlet energy、single-pass 或 calibrated contrast，而不是继续堆随机增强小 trick。
+  - 已在 `experiments/topvenue_gcl/` 实现独立标准 scaffold：`train.py`、`src/data.py`、`src/models.py`、`src/losses.py`、`src/eval.py`、`src/utils.py`、`configs/default.yaml`、`scripts/run_smoke.sh`。
+  - 数据加载支持 Planetoid、WebKB、Actor、WikipediaNetwork、HeterophilousGraphDataset；默认数据根修正为项目根目录 `data/`，避免重复下载和 PyG/fsspec GitHub raw 超时。
+  - 已实现方法入口：`grace` baseline、`er_cache_gcl`、`er_residual_gcl`、`gcn_mlp_gcl`、`energy_spgcl`；所有 run 保存 `run.json`、`artifacts.pt`、`train_log.csv` 与 `runs/summary.csv`。
+  - 已完成 smoke：`cd experiments/topvenue_gcl && bash scripts/run_smoke.sh`，Cora/Texas 的 GRACE、GCN-MLP、ER-Residual、ER-Cache normal/shuffled 均可跑通。
+  - `er_cache_gcl` 裁决：放弃。Texas split0 seed0 20 epoch 下 normal cache 低于 shuffled/self-only，说明 low-pass positive cache 作为 bootstrap 拉近目标不成立。
+  - `er_residual_gcl` 裁决：放弃主线。Texas/Chameleon 明显低于 GRACE；Squirrel 只有 micro 弱正但 macro 下降；Actor 正向但不够支撑通用主张。
+  - `gcn_mlp_gcl` 裁决：保留为强对照而非新方法。Texas 追平 GRACE，Chameleon micro 小正但 macro 下降，Squirrel 失败，Actor 正向。
+  - `energy_spgcl` 裁决：当前实现放弃。Texas/Chameleon split0 seed0 20 epoch 均低于 GRACE，说明“raw signature 采样 + high-residual sampled InfoNCE”第一版不值得扩大。
+  - 新增早筛总结文档：`experiments/topvenue_gcl/docs/early_gate_summary_2026-06-28.md`；新增/更新研究日志：`experiments/topvenue_gcl/docs/energy_routed_cache_gcl_research_log.md` 与 `experiments/topvenue_gcl/docs/implementation_principles.md`。
+  - 已修复 `experiments/README.md` 开头乱码，并明确 `grace_idea/` 是历史候选资产、`topvenue_gcl/` 是新主工作区。
+  - 当前裁决：本轮自实现的小 loss 候选全部未过 early gate；不要继续调这些 loss 的小参数。下一步应回到已验证强信号，优先做 SP-GCL/GraphACL/GraphECL/PolyGCL 级强基线的非 patch、标准化复现或训练时模块重构。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && python train.py --dataset Actor --method gcn_mlp_gcl --epochs 100 --split-index 0 --seed 0` 仅用于确认强对照上限；更推荐先实现 `scripts/run_split_study.sh`，按 dataset/split/seed 批量对齐 GRACE、GCN-MLP 与后续强基线复现。

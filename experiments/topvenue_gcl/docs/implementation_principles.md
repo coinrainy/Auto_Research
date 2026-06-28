@@ -22,17 +22,24 @@
 - S3GCL：MLP inference + spectral biased views + semantic/spatial positives；
 - GraphECL：fast inference + structure encoder / MLP encoder + heterophily scripts。
 
-## 当前新候选：Neighbor-Cache Distillation GCL
+## 当前新候选：Energy-SPGCL
 
 工作假设：
 
-训练期使用图结构和 semantic/spatial neighbor cache 构造可靠 positives，将结构 encoder 的信号蒸馏到 MLP encoder；推理期只使用 MLP，从而同时满足 heterophily robustness 与 fast inference。
+用 raw low-pass / propagation signature 构造 positive sampler，但在 high-energy propagation residual 表示上执行 sampled InfoNCE；GCN-MLP Natural View GCL 是必须击败的强对照。
+
+low-pass positive cache 在 Texas split0 seed0 early gate 中 normal 低于 shuffled，当前已降级为失败消融，不作为主贡献。
+
+high-energy residual bootstrap 在 Texas/Chameleon 失败，只在 Actor 清楚正向，当前也降级为失败/条件性消融。
+
+GCN-MLP Natural View GCL 只作为强对照；若 Energy-SPGCL 无法稳定超过它和 GRACE，也必须降级。
 
 第一版不要追求复杂模型，先实现：
 
 - MLP online encoder；
-- lightweight structure teacher；
-- semantic/spatial neighbor cache；
-- cache confidence / staleness weighting；
-- InfoNCE 或 bootstrap loss；
+- lightweight graph teacher；
+- high-energy residual sampled InfoNCE；
+- raw low-pass / propagation-signature positive sampler；
+- GCN-MLP bootstrap strong control；
+- high-energy residual 与 low-pass positive cache 仅作消融；
 - 10 split node classification evaluator。
