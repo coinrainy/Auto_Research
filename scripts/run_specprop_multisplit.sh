@@ -25,3 +25,4 @@ done
 python -m homogcl.summarize --input-dir results/specprop_safe_multisplit --output-csv results/specprop_safe_multisplit_summary.csv
 python -m homogcl.select --input-dir results/specprop_safe_multisplit --output-csv results/specprop_safe_multisplit_selected.csv --mode run
 python -m homogcl.compare --input-dirs results/specprop_safe_multisplit --baseline autopropcat --candidate specprop --output-csv results/specprop_safe_multisplit_paired.csv
+python -m homogcl.diagnose --input-dirs results/specprop_safe_multisplit --baseline autopropcat --candidate specprop --output-csv results/specprop_safe_multisplit_diagnostics.csv

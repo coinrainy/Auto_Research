@@ -24,3 +24,4 @@ done
 
 python -m homogcl.summarize --input-dir results/specprop_amazon_multisplit --output-csv results/specprop_amazon_multisplit_summary.csv
 python -m homogcl.compare --input-dirs results/specprop_amazon_multisplit --baseline autopropcat --candidate specprop --output-csv results/specprop_amazon_multisplit_paired.csv
+python -m homogcl.diagnose --input-dirs results/specprop_amazon_multisplit --baseline autopropcat --candidate specprop --output-csv results/specprop_amazon_multisplit_diagnostics.csv

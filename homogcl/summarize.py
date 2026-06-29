@@ -37,6 +37,11 @@ def main() -> None:
                 "autoprop_plateau_ratio": item["hparams"].get("autoprop_plateau_ratio", ""),
                 "specprop_high_concentration": item["hparams"].get("specprop_high_concentration", ""),
                 "specprop_mid_concentration": item["hparams"].get("specprop_mid_concentration", ""),
+                "corespecprop_min_rank": item["hparams"].get("corespecprop_min_rank", ""),
+                "corespecprop_max_rank": item["hparams"].get("corespecprop_max_rank", ""),
+                "corespecprop_participation_divisor": item["hparams"].get(
+                    "corespecprop_participation_divisor", ""
+                ),
                 "edge_drop": item["hparams"].get("edge_drop", ""),
                 "feat_drop": item["hparams"].get("feat_drop", ""),
                 "epochs": item["hparams"].get("epochs", ""),
@@ -69,6 +74,9 @@ def main() -> None:
         "autoprop_plateau_ratio",
         "specprop_high_concentration",
         "specprop_mid_concentration",
+        "corespecprop_min_rank",
+        "corespecprop_max_rank",
+        "corespecprop_participation_divisor",
         "edge_drop",
         "feat_drop",
         "epochs",
