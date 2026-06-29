@@ -27,6 +27,7 @@
 - 新增当前最佳候选 `tierspecprop`：top-10 PCA 能量 < 0.34 回退；0.34-0.36 选择窄 rank=16；>=0.36 选择宽 rank=32。WikiCS rank 消融显示固定 rank=32 平均 0.7833 vs AutoProp 0.7636，delta +0.0197，20 胜 0 负，显著优于 core rank16 的 0.7702；PubMed rank32 出现 3 个负 split，因此采用分层 rank。
 - `tierspecprop` 当前关键结果：PubMed seeds 0-9 平均 0.7739 vs 0.7541，delta +0.0198，10 胜 0 负；Photo seeds 0-9 平均 0.9035 vs 0.8817，delta +0.0218，10 胜 0 负；WikiCS 官方 20 split 平均 0.7833 vs 0.7636，delta +0.0197，20 胜 0 负，Wilcoxon greater p=4.42e-05。
 - 用户明确要求 Coauthor CS/Physics 先不做；后续建议暂缓 Coauthor 扩展。
+- 新增非 Coauthor 本地基线面板脚本：`scripts/run_local_baseline_key_multisplit.sh` 覆盖 PubMed/Photo，`scripts/run_local_baseline_wikics_multisplit.sh` 覆盖 WikiCS；默认比较 `tierspecprop`、`autopropcat`、`propccat`、`ccacat`、`gracecat`，用于下一轮强基线前的仓库内快速压力测试。
 - 协议细节见：
   - `docs/gcl_experiment_protocol_checklist.md`
   - `docs/context_reset_protocol_only_2026-06-29.md`
@@ -58,5 +59,9 @@ bash scripts/run_corespecprop_wikics_rank_ablation.sh
 bash scripts/run_tierspecprop_multisplit.sh
 bash scripts/run_tierspecprop_key_multisplit.sh
 bash scripts/run_tierspecprop_wikics_multisplit.sh
+EPOCHS=1 SPLIT_SEEDS="0" METHODS="autopropcat tierspecprop" OUT_DIR=results/local_baseline_key_syntax bash scripts/run_local_baseline_key_multisplit.sh
+EPOCHS=1 SPLIT_INDICES="0" METHODS="autopropcat tierspecprop" OUT_DIR=results/local_baseline_wikics_syntax bash scripts/run_local_baseline_wikics_multisplit.sh
+bash scripts/run_local_baseline_key_multisplit.sh
+bash scripts/run_local_baseline_wikics_multisplit.sh
 python -m homogcl.compare --input-dirs results/specprop_safe_multisplit --baseline autopropcat --candidate specprop --output-csv results/specprop_safe_multisplit_paired.csv
 ```

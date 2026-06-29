@@ -46,6 +46,7 @@
   - Photo class-random seeds 0-9：0.9035 vs AutoProp 0.8817，delta +0.0218，10 胜 0 负，rank=32。
   - WikiCS 官方 20 split：0.7833 vs AutoProp 0.7636，delta +0.0197，20 胜 0 负，rank=32。
 - 这些结果只能作为早筛，不足以支撑 SOTA 或顶会投稿结论。
+- `scripts/run_local_baseline_key_multisplit.sh` 和 `scripts/run_local_baseline_wikics_multisplit.sh` 提供非 Coauthor 的本地基线面板，用于把 `tierspecprop` 与仓库内已有的 `propccat`、`ccacat`、`gracecat` 诊断实现做同 split 对比；这些不是官方强 baseline 的替代品，只用于下一轮筛查。
 
 ## 快速运行
 
@@ -70,6 +71,8 @@ bash scripts/run_corespecprop_wikics_multisplit.sh
 bash scripts/run_tierspecprop_multisplit.sh
 bash scripts/run_tierspecprop_key_multisplit.sh
 bash scripts/run_tierspecprop_wikics_multisplit.sh
+bash scripts/run_local_baseline_key_multisplit.sh
+bash scripts/run_local_baseline_wikics_multisplit.sh
 ```
 
 ## 当前协议
