@@ -258,6 +258,21 @@ def select_corespecprop_rank(
     return max(min_rank, min(max_rank, int(core_rank)))
 
 
+def select_tierspecprop_rank(
+    profile: dict[str, float],
+    high_concentration: float,
+    wide_concentration: float,
+    narrow_rank: int,
+    wide_rank: int,
+) -> int:
+    top10 = profile["spectral_top10_energy"]
+    if top10 < high_concentration:
+        return 0
+    if top10 >= wide_concentration:
+        return wide_rank
+    return narrow_rank
+
+
 def specprop_embedding(
     x: torch.Tensor,
     edge_index: torch.Tensor,
@@ -286,6 +301,45 @@ def specprop_embedding(
         "ssl_loss": 0.0,
         "selected_prop_steps": float(selected_steps),
         "selected_pca_rank": float(selected_rank),
+        **profile,
+    }
+    if selected_rank <= 0:
+        return bank, metrics
+    rank = min(selected_rank, s.numel())
+    return u[:, :rank] * s[:rank], metrics
+
+
+def tierspecprop_embedding(
+    x: torch.Tensor,
+    edge_index: torch.Tensor,
+    max_steps: int,
+    plateau_ratio: float,
+    max_rank: int,
+    high_concentration: float,
+    wide_concentration: float,
+    narrow_rank: int,
+    wide_rank: int,
+) -> tuple[torch.Tensor, dict[str, float]]:
+    selected_steps = select_autoprop_steps(
+        x,
+        edge_index,
+        max_steps=max_steps,
+        plateau_ratio=plateau_ratio,
+    )
+    bank = propagation_bank(x, edge_index, selected_steps)
+    u, s, profile = spectral_profile(bank, max_rank=max_rank)
+    selected_rank = select_tierspecprop_rank(
+        profile,
+        high_concentration=high_concentration,
+        wide_concentration=wide_concentration,
+        narrow_rank=narrow_rank,
+        wide_rank=wide_rank,
+    )
+    metrics = {
+        "ssl_loss": 0.0,
+        "selected_prop_steps": float(selected_steps),
+        "selected_pca_rank": float(selected_rank),
+        "tierspecprop_wide_concentration": float(wide_concentration),
         **profile,
     }
     if selected_rank <= 0:
@@ -479,6 +533,18 @@ def build_embedding(args: argparse.Namespace, graph) -> tuple[torch.Tensor, dict
             max_core_rank=args.corespecprop_max_rank,
             participation_divisor=args.corespecprop_participation_divisor,
         )
+    if args.method == "tierspecprop":
+        return tierspecprop_embedding(
+            x,
+            edge_index,
+            max_steps=args.max_prop_steps,
+            plateau_ratio=args.autoprop_plateau_ratio,
+            max_rank=args.specprop_max_rank,
+            high_concentration=args.specprop_high_concentration,
+            wide_concentration=args.tierspecprop_wide_concentration,
+            narrow_rank=args.tierspecprop_narrow_rank,
+            wide_rank=args.tierspecprop_wide_rank,
+        )
     if args.method == "horp":
         return horp_embedding(
             x,
@@ -513,6 +579,7 @@ def parse_args() -> argparse.Namespace:
             "autopropcat",
             "specprop",
             "corespecprop",
+            "tierspecprop",
             "propcca",
             "propccat",
             "ccassg",
@@ -548,6 +615,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--corespecprop-min-rank", type=int, default=16)
     parser.add_argument("--corespecprop-max-rank", type=int, default=32)
     parser.add_argument("--corespecprop-participation-divisor", type=float, default=3.0)
+    parser.add_argument("--tierspecprop-wide-concentration", type=float, default=0.36)
+    parser.add_argument("--tierspecprop-narrow-rank", type=int, default=16)
+    parser.add_argument("--tierspecprop-wide-rank", type=int, default=32)
     parser.add_argument("--pos-k", type=int, default=4)
     parser.add_argument("--neg-k", type=int, default=16)
     parser.add_argument("--max-dense-nodes", type=int, default=6000)
@@ -593,6 +663,15 @@ def result_signature(args: argparse.Namespace) -> str:
             f"hc{args.specprop_high_concentration:g}",
             f"cr{args.corespecprop_min_rank}-{args.corespecprop_max_rank}",
             f"pd{args.corespecprop_participation_divisor:g}",
+        ]
+    if args.method == "tierspecprop":
+        parts = [
+            f"maxk{args.max_prop_steps}",
+            f"plateau{args.autoprop_plateau_ratio:g}",
+            f"sr{args.specprop_max_rank}",
+            f"hc{args.specprop_high_concentration:g}",
+            f"wc{args.tierspecprop_wide_concentration:g}",
+            f"tr{args.tierspecprop_narrow_rank}-{args.tierspecprop_wide_rank}",
         ]
     if args.method in {"homogcl", "horpgcl"}:
         parts.extend([f"pk{args.pos_k}", f"ed{args.edge_drop:g}", f"fd{args.feat_drop:g}"])

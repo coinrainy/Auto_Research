@@ -42,6 +42,11 @@ def main() -> None:
                 "corespecprop_participation_divisor": item["hparams"].get(
                     "corespecprop_participation_divisor", ""
                 ),
+                "tierspecprop_wide_concentration": item["hparams"].get(
+                    "tierspecprop_wide_concentration", ""
+                ),
+                "tierspecprop_narrow_rank": item["hparams"].get("tierspecprop_narrow_rank", ""),
+                "tierspecprop_wide_rank": item["hparams"].get("tierspecprop_wide_rank", ""),
                 "edge_drop": item["hparams"].get("edge_drop", ""),
                 "feat_drop": item["hparams"].get("feat_drop", ""),
                 "epochs": item["hparams"].get("epochs", ""),
@@ -77,6 +82,9 @@ def main() -> None:
         "corespecprop_min_rank",
         "corespecprop_max_rank",
         "corespecprop_participation_divisor",
+        "tierspecprop_wide_concentration",
+        "tierspecprop_narrow_rank",
+        "tierspecprop_wide_rank",
         "edge_drop",
         "feat_drop",
         "epochs",

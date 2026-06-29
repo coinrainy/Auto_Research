@@ -20,11 +20,12 @@
 - 当前 full C-grid public split 快速结果：SpecProp 相对 AutoProp 为 Cora +0.010、CiteSeer +0.000、PubMed +0.005。
 - 当前 strict SpecProp class-balanced random split seeds 0/1/2 paired 结果：Cora +0.000（回退持平）、CiteSeer +0.000（回退持平）、PubMed +0.018（3 胜 0 负）。
 - Amazon class-random seeds 0/1/2 paired 结果：Photo 平均 0.9071 vs AutoProp 0.8745，delta +0.0326，3 胜 0 负；Computers 平均 0.7965 vs AutoProp 0.7965，回退持平。
-- 新增当前最佳条件性候选 `corespecprop`：AutoProp 传播银行 + 安全谱集中度门控 + 参与秩自适应核心压缩；top-10 PCA 能量占比 < 0.34 时回退到 AutoProp，触发时将 rank 裁剪到 16-32。
+- 新增条件性候选 `corespecprop`：AutoProp 传播银行 + 安全谱集中度门控 + 参与秩自适应核心压缩；top-10 PCA 能量占比 < 0.34 时回退到 AutoProp，触发时将 rank 裁剪到 16-32。该版本后续被 WikiCS rank 消融修正，不再是当前最佳主线。
 - `corespecprop` 5 数据集 seeds 0/1/2 paired 结果：Cora/CiteSeer/Computers 回退持平；PubMed 平均 0.7804 vs AutoProp 0.7530，delta +0.0274，3 胜 0 负；Photo 平均 0.9051 vs AutoProp 0.8745，delta +0.0306，3 胜 0 负。
 - `corespecprop` 正例图 seeds 0-9 压力测试：PubMed 平均 0.7739 vs AutoProp 0.7541，delta +0.0198，10 胜 0 负，Wilcoxon greater p=0.000977；Photo 平均 0.9002 vs AutoProp 0.8817，delta +0.0185，10 胜 0 负，Wilcoxon greater p=0.000977。
 - 新增 WikiCS 官方 20 split 支持与结果：CoreSpecProp 平均 0.7702 vs AutoProp 0.7636，delta +0.0066，18 胜 2 负，Wilcoxon greater p=0.000182；这说明高谱集中图上总体有效，但不再是严格逐 split 无损。
-- 本轮已复核当前 idea 结果表：`corespecprop` 仍是主候选；WikiCS rank 消融显示固定 rank=32 平均 0.7833 vs AutoProp 0.7636，delta +0.0197，20 胜 0 负，但暂作为消融线索，尚未并入当前主方法定义。
+- 新增当前最佳候选 `tierspecprop`：top-10 PCA 能量 < 0.34 回退；0.34-0.36 选择窄 rank=16；>=0.36 选择宽 rank=32。WikiCS rank 消融显示固定 rank=32 平均 0.7833 vs AutoProp 0.7636，delta +0.0197，20 胜 0 负，显著优于 core rank16 的 0.7702；PubMed rank32 出现 3 个负 split，因此采用分层 rank。
+- `tierspecprop` 当前关键结果：PubMed seeds 0-9 平均 0.7739 vs 0.7541，delta +0.0198，10 胜 0 负；Photo seeds 0-9 平均 0.9035 vs 0.8817，delta +0.0218，10 胜 0 负；WikiCS 官方 20 split 平均 0.7833 vs 0.7636，delta +0.0197，20 胜 0 负，Wilcoxon greater p=4.42e-05。
 - 用户明确要求 Coauthor CS/Physics 先不做；后续建议暂缓 Coauthor 扩展。
 - 协议细节见：
   - `docs/gcl_experiment_protocol_checklist.md`
@@ -35,7 +36,7 @@
 
 ## 后续原则
 
-- 下一轮研究主线应围绕 safe-gated `corespecprop` 在高谱集中同配图（PubMed/Photo/WikiCS）上的低秩去噪收益，扩展更多非 Coauthor 同配数据集和强 baseline；不要继续微调已失败的 `homogcl` / `horpgcl`。
+- 下一轮研究主线应围绕 safe-gated `tierspecprop` 在高谱集中同配图（PubMed/Photo/WikiCS）上的分层谱核心去噪收益，扩展更多非 Coauthor 同配数据集和强 baseline；不要继续微调已失败的 `homogcl` / `horpgcl`。
 - 若继续做学习式 GCL，必须纳入 HomoGCL(KDD 2023)、PROPGCL、IRGCL、RELGCL、SGRL、BGRL、CCA-SSG 等强 baseline。
 - 论文级证据必须扩展到多 split、多 seed、更大同配图，并报告测试集不可见的超参选择规则。
 - 如果需要写新方法，应保持在当前仓库内清晰隔离，不能参考其他目录代码。
@@ -54,5 +55,8 @@ bash scripts/run_corespecprop_multisplit.sh
 bash scripts/run_corespecprop_key_multisplit.sh
 bash scripts/run_corespecprop_wikics_multisplit.sh
 bash scripts/run_corespecprop_wikics_rank_ablation.sh
+bash scripts/run_tierspecprop_multisplit.sh
+bash scripts/run_tierspecprop_key_multisplit.sh
+bash scripts/run_tierspecprop_wikics_multisplit.sh
 python -m homogcl.compare --input-dirs results/specprop_safe_multisplit --baseline autopropcat --candidate specprop --output-csv results/specprop_safe_multisplit_paired.csv
 ```

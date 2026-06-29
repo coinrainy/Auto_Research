@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-csv", default="results/selected_summary.csv")
     parser.add_argument(
         "--candidates",
-        default="corespecprop,specprop,autopropcat,propcat,gracecat,ccacat,grace,prop",
+        default="tierspecprop,corespecprop,specprop,autopropcat,propcat,gracecat,ccacat,grace,prop",
         help="Comma-separated method names eligible for validation selection.",
     )
     parser.add_argument(
@@ -55,6 +55,9 @@ def main() -> None:
                 "corespecprop_min_rank": hp.get("corespecprop_min_rank", ""),
                 "corespecprop_max_rank": hp.get("corespecprop_max_rank", ""),
                 "corespecprop_participation_divisor": hp.get("corespecprop_participation_divisor", ""),
+                "tierspecprop_wide_concentration": hp.get("tierspecprop_wide_concentration", ""),
+                "tierspecprop_narrow_rank": hp.get("tierspecprop_narrow_rank", ""),
+                "tierspecprop_wide_rank": hp.get("tierspecprop_wide_rank", ""),
                 "edge_drop": hp.get("edge_drop", ""),
                 "feat_drop": hp.get("feat_drop", ""),
                 "epochs": hp.get("epochs", ""),
@@ -79,6 +82,9 @@ def main() -> None:
         "corespecprop_min_rank",
         "corespecprop_max_rank",
         "corespecprop_participation_divisor",
+        "tierspecprop_wide_concentration",
+        "tierspecprop_narrow_rank",
+        "tierspecprop_wide_rank",
         "edge_drop",
         "feat_drop",
         "epochs",
