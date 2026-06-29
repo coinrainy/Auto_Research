@@ -36,6 +36,18 @@
 
 当前证据说明 `SpecProp` 是本仓库第一条没有损伤 Planetoid 三图、且越过 AutoProp full-grid 边界的候选。但它仍是单 seed public split 证据，不能宣称 SOTA。
 
+### SpecProp 多随机划分压力测试
+
+使用 class-balanced random split seeds 0/1/2，训练/验证每类分别为 20/30，剩余节点为测试集。相对 AutoProp 的 paired delta：
+
+| Dataset | AutoProp Mean | SpecProp Mean | Mean Delta | Wins/Losses | Interpretation |
+|---|---:|---:|---:|---:|---|
+| Cora | 0.8212 | 0.8212 | +0.0000 | 1/2 | 谱压缩不稳定，需要更细判据。 |
+| CiteSeer | 0.7107 | 0.7107 | +0.0000 | 0/0 | 谱分散触发回退，按设计持平。 |
+| PubMed | 0.7530 | 0.7710 | +0.0180 | 3/0 | 低秩去噪稳定有效，是当前最强信号。 |
+
+结论：`SpecProp` 不是已完成的通用 SOTA idea，而是一个有明确条件边界的候选：在传播银行谱高度集中时低秩瓶颈有价值；在谱分散时应回退；中等谱集中图（Cora）需要更好的压缩判据。
+
 ## Research Question Brief
 
 ### Topic Area
@@ -44,7 +56,7 @@
 
 ### Primary Research Question
 
-在同配属性图的节点分类任务中，无标签传播银行的谱集中度是否能预测何时需要低秩去噪，并使 `SpecProp` 稳定超过自动选择传播深度的训练免费强基线？
+在同配属性图的节点分类任务中，无标签传播银行的谱集中度是否能预测何时需要低秩去噪，并解释 `SpecProp` 何时能够稳定超过自动选择传播深度的训练免费强基线？
 
 ### FINER Assessment
 
@@ -67,9 +79,9 @@
 
 ### Sub-questions
 
-1. `specprop` 在多 split、多 seed 下是否仍能超过或持平 `autopropcat`？
+1. 为什么 `specprop` 在 PubMed 稳定超过 `autopropcat`，但在 Cora 不稳定？
 2. 谱集中度阈值和 rank 规则是否真正解释收益，而不是 Planetoid public split 偶然现象？
-3. 哪些图统计量可以预测“传播已足够”“需要低秩去噪”或“需要学习式对比目标”？
+3. 哪些图统计量可以预测“传播已足够”“需要低秩去噪”或“应回退到 AutoProp”？
 
 ### Candidate Questions Considered
 

@@ -40,6 +40,8 @@ def main() -> None:
                 "dataset": item["dataset"],
                 "method": item["method"],
                 "split_index": item["protocol"]["split_index"],
+                "split_seed": item["protocol"].get("split_seed", item["protocol"]["split_index"]),
+                "split_protocol": item["protocol"].get("split_protocol", ""),
                 "model_seed": item["protocol"]["model_seed"],
                 "eval_seed": item["protocol"]["eval_seed"],
                 "probe": hp.get("probe", ""),
@@ -81,9 +83,9 @@ def main() -> None:
                 ["dataset", "split_index", "model_seed", "eval_seed", "val_acc", "method"],
                 ascending=[True, True, True, True, False, True],
             )
-            .groupby(["dataset", "split_index", "model_seed", "eval_seed"], as_index=False)
+            .groupby(["dataset", "split_protocol", "split_seed", "model_seed", "eval_seed"], as_index=False)
             .head(1)
-            .sort_values(["dataset", "model_seed", "eval_seed"])
+            .sort_values(["dataset", "split_seed", "model_seed", "eval_seed"])
         )
     else:
         ranked = (
@@ -95,7 +97,7 @@ def main() -> None:
             .head(1)
         )
         selected = df.merge(ranked[config_cols], on=config_cols, how="inner")
-        selected = selected.sort_values(["dataset", "model_seed", "eval_seed"])
+        selected = selected.sort_values(["dataset", "split_seed", "model_seed", "eval_seed"])
     Path(args.output_csv).parent.mkdir(parents=True, exist_ok=True)
     selected.to_csv(args.output_csv, index=False)
     summary = selected.groupby("dataset")["test_acc"].agg(["count", "mean", "std", "min", "max"])
@@ -105,6 +107,7 @@ def main() -> None:
             [
                 "dataset",
                 "model_seed",
+                "split_seed",
                 "method",
                 "prop_steps",
                 "selected_prop_steps",

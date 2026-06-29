@@ -435,6 +435,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-root", default="data")
     parser.add_argument("--split", default="public")
     parser.add_argument("--split-index", type=int, default=0)
+    parser.add_argument("--split-seed", type=int, default=-1)
+    parser.add_argument("--train-per-class", type=int, default=20)
+    parser.add_argument("--val-per-class", type=int, default=30)
+    parser.add_argument("--test-per-class", type=int, default=0, help="0 means all remaining nodes.")
     parser.add_argument(
         "--method",
         choices=[
@@ -527,10 +531,24 @@ def result_signature(args: argparse.Namespace) -> str:
     return "_".join(parts)
 
 
+def split_signature(args: argparse.Namespace, graph) -> str:
+    safe_split = args.split.replace("_", "-")
+    return f"{safe_split}_split{graph.split_index}_sseed{graph.split_seed}"
+
+
 def main() -> None:
     args = parse_args()
     set_seed(args.seed)
-    graph = load_graph(args.dataset, root=args.data_root, split=args.split, split_index=args.split_index)
+    graph = load_graph(
+        args.dataset,
+        root=args.data_root,
+        split=args.split,
+        split_index=args.split_index,
+        split_seed=None if args.split_seed < 0 else args.split_seed,
+        train_per_class=args.train_per_class,
+        val_per_class=args.val_per_class,
+        test_per_class=args.test_per_class,
+    )
     graph.data = graph.data.to(args.device)
     emb, train_metrics = build_embedding(args, graph)
 
@@ -563,6 +581,7 @@ def main() -> None:
             "encoder_eval": f"frozen_encoder_{args.probe}_linear_probe",
             "split_protocol": graph.split_protocol,
             "split_index": graph.split_index,
+            "split_seed": graph.split_seed,
             "mask_counts": mask_counts(data),
             "edge_homophily_diagnostic_uses_labels": edge_homophily(data),
             "model_seed": args.seed,
@@ -577,7 +596,7 @@ def main() -> None:
     out_dir = ensure_dir(args.output_dir)
     out_file = out_dir / (
         f"{graph.name}_{args.method}_{result_signature(args)}_"
-        f"split{args.split_index}_seed{args.seed}_eval{args.eval_seed}.json"
+        f"{split_signature(args, graph)}_seed{args.seed}_eval{args.eval_seed}.json"
     )
     write_json(out_file, payload)
     print(
