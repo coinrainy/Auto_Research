@@ -10,7 +10,9 @@
 
 ## 当前候选
 
-当前 active candidate：**RPGCL-Auto**，即 Raw-Preserved Graph Contrastive Learning with validation-gated representation selection。
+当前状态：**RPGCL-Auto selector 已降级**。它在 10 split 上优于 GRACE-light，但 selector-control 表明它没有超过 best fixed representation control，因此不再作为主方法继续扩大。
+
+下一步 active subdirection：**Complement-gated raw-preserved GCL**。核心问题从“用 validation accuracy 选全图表示”收缩为“无标签判断何时应保留 raw feature separability，何时应引入 graph contrastive complement”。
 
 此前候选 **HPFS-GCL**：Homophily-Preserving positive expansion + False-negative Suppression，已保留为 RPGCL-Auto 的训练分支，但不是当前单独主方法。
 
@@ -22,7 +24,7 @@
 
 当前主指标统一为 **accuracy**。F1Mi/F1Ma 只作为附属记录。代码中的 `grace` 是本工作区的 `GRACE-light`：轻量 sampled GRACE-style baseline，用于同协议公平早筛，不等同于论文官方调参 GRACE。
 
-RPGCL-Auto 在 Cora/CiteSeer/PubMed × splits 0-9 × seed0 × 50 epoch 的 1:1:8 协议下，相对 `GRACE-light` 的 accuracy 结果：
+RPGCL-Auto 在 Cora/CiteSeer/PubMed × splits 0-9 × model seed0 × 50 epoch 的 1:1:8 协议下，相对 `GRACE-light` 的 accuracy 结果：
 
 | Dataset | GRACE-light Acc | RPGCL-Auto Acc | mean ΔAcc | positive/negative/zero |
 | --- | ---: | ---: | ---: | ---: |
@@ -30,10 +32,24 @@ RPGCL-Auto 在 Cora/CiteSeer/PubMed × splits 0-9 × seed0 × 50 epoch 的 1:1:8
 | CiteSeer | 0.699624 | 0.715333 | +0.015708 | 10 / 0 / 0 |
 | PubMed | 0.833412 | 0.851176 | +0.017765 | 10 / 0 / 0 |
 
+但 selector-control gate 显示 Auto 不超过 best fixed control：
+
+| Dataset | HPFS Acc | Raw+HPFS Acc | RPGCL-Auto Acc | Best fixed Acc | Auto - Best fixed |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Cora | 0.799445 | 0.779344 | 0.800139 | 0.800185 | -0.000046 |
+| CiteSeer | 0.711650 | 0.718828 | 0.715295 | 0.720669 | -0.005374 |
+| PubMed | 0.834065 | 0.851176 | 0.851113 | 0.851176 | -0.000063 |
+
+当前解释：
+
+- Cora 主要适合 HPFS；Raw+HPFS 会伤害 accuracy。
+- CiteSeer/PubMed 主要适合 Raw+HPFS；固定融合已经解释了 Auto 的收益。
+- 因此后续不继续调 validation selector，而是转向 complement gate。
+
 下一步必须通过的早筛：
 
-- selector control 证明 validation-gated selection 优于固定 HPFS 或固定 raw-preserved；
-- 不能只靠 raw feature 或单数据集偶然提升。
+- complement gate 在 Cora 上接近 HPFS，同时在 CiteSeer/PubMed 上接近 Raw+HPFS；
+- 不能只靠 validation label selection；
 - 对齐官方/强调参 GRACE 与更多强 baseline，避免把 GRACE-light 的低数值误当作论文级结论。
 
 ## 快速运行

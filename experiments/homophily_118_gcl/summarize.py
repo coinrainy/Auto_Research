@@ -27,6 +27,8 @@ def read_run(path):
         "dataset": p["dataset"],
         "method": p["method"],
         "seed": p["seed"],
+        "model_seed": p.get("model_seed", p["seed"]),
+        "split_seed": p.get("split_seed", int(p["config"].get("split_base_seed", 2026)) + int(p["split_index"])),
         "split_index": p["split_index"],
         "accuracy": m["accuracy"],
         "F1Mi": m["F1Mi"],

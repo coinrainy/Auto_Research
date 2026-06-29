@@ -1335,3 +1335,14 @@
   - 当前裁决：RPGCL-Auto 继续作为 active candidate；最强证据在 PubMed 和 CiteSeer，Cora 为小幅正向但仍有 3/10 split 负。该结果足以进入 selector controls 与 strong baseline 阶段，但不足以声称 SOTA。
   - 已更新文档：`experiments/homophily_118_gcl/docs/rpgcl_auto_candidate_log.md` 与 `experiments/homophily_118_gcl/README.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/homophily_118_gcl && DATASETS="Cora CiteSeer PubMed" METHODS="raw_features grace hpfs_gcl rpgcl_hpfs rpgcl_auto" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/rpgcl_auto_selector_controls_splits0-9_e50" OVERWRITE=1 bash scripts/run_homophily_118_study.sh`；随后补官方/强调参 GRACE 或 CCA-style baseline。
+- 2026-06-29 RPGCL-Auto selector-control gate：
+  - 用户指出不同划分随机种子问题；当前实现已确认 `split_seed = split_base_seed + split_index`，因此 splits0-9 是 10 个不同数据划分。后续 metadata 已新增 `model_seed` 与 `split_seed`，避免把模型初始化随机种子和划分随机种子混写。
+  - 已新增 `summarize_selector_controls.py`，用于对齐 `raw_features`、`GRACE-light`、`HPFS`、`Raw+HPFS` 与 `RPGCL-Auto`，并直接计算 Auto 相对 best fixed control 的 accuracy 差值。
+  - 已将 `scripts/run_homophily_118_study.sh` 的默认汇总文件名改为 `runs_vs_grace_light.csv` 与 `aggregate_vs_grace_light.csv`，避免把轻量 sampled GRACE-style baseline 误写成论文官方 GRACE。
+  - 已执行 selector-control 实验：Cora/CiteSeer/PubMed × splits0-9 × model seed0 × 50 epoch，方法为 `raw_features`、`grace`、`hpfs_gcl`、`rpgcl_hpfs`、`rpgcl_auto`，共 150/150 run 完成；输出目录 `experiments/homophily_118_gcl/runs/rpgcl_auto_selector_controls_splits0-9_e50/`。
+  - Selector-control accuracy：Cora HPFS 0.799445、Raw+HPFS 0.779344、Auto 0.800139、best fixed 0.800185、Auto-best -0.000046；CiteSeer HPFS 0.711650、Raw+HPFS 0.718828、Auto 0.715295、best fixed 0.720669、Auto-best -0.005374；PubMed HPFS 0.834065、Raw+HPFS 0.851176、Auto 0.851113、best fixed 0.851176、Auto-best -0.000063。
+  - 当前裁决：RPGCL-Auto validation selector 降级为失败分支，不再作为主方法继续扩大；Auto 在三数据集上均未超过 best fixed representation control。
+  - 保留的正向线索：Cora 适合 HPFS-only，Raw+HPFS 明显伤害；CiteSeer/PubMed 适合 Raw+HPFS，说明 raw feature separability 与 graph contrastive branch 的互补性是真信号，但需要无标签 gate 判断何时融合。
+  - 新 active subdirection：Complement-gated raw-preserved GCL。目标是在无标签、协议一致的条件下接近 Cora 的 HPFS-only 表现，同时接近 CiteSeer/PubMed 的 Raw+HPFS 表现。
+  - 已更新 `experiments/homophily_118_gcl/docs/rpgcl_auto_candidate_log.md` 与 `experiments/homophily_118_gcl/README.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/homophily_118_gcl && python summarize_selector_controls.py --runs-vs runs/rpgcl_auto_selector_controls_splits0-9_e50/runs_vs_grace_light.csv --out runs/rpgcl_auto_selector_controls_splits0-9_e50/selector_control_pairs.csv --aggregate-out runs/rpgcl_auto_selector_controls_splits0-9_e50/selector_control_aggregate.csv && cat runs/rpgcl_auto_selector_controls_splits0-9_e50/selector_control_aggregate.csv`；随后实现 complement-gated variant。

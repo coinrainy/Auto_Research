@@ -173,7 +173,9 @@ def train_gcl(model, data, cfg, args, keys, semantic_pos):
 def main():
     args = parse_args()
     cfg = merged_config(args)
-    set_seed(int(cfg["seed"]))
+    model_seed = int(cfg["seed"])
+    split_seed = int(cfg["split_base_seed"]) + int(args.split_index)
+    set_seed(model_seed)
     device = device_from_args(args)
     project_root = Path(__file__).resolve().parents[2]
     data_root = args.data_root or str(project_root / "data")
@@ -272,7 +274,9 @@ def main():
     payload = {
         "dataset": args.dataset,
         "method": args.method,
-        "seed": int(cfg["seed"]),
+        "seed": model_seed,
+        "model_seed": model_seed,
+        "split_seed": split_seed,
         "split_index": int(args.split_index),
         "config": cfg,
         "graph_stats": stats,
@@ -288,7 +292,9 @@ def main():
         "run_dir": str(run_dir),
         "dataset": args.dataset,
         "method": args.method,
-        "seed": int(cfg["seed"]),
+        "seed": model_seed,
+        "model_seed": model_seed,
+        "split_seed": split_seed,
         "split_index": int(args.split_index),
         **{f"metric_{k}": v for k, v in metrics.items()},
         **{f"split_{k}": v for k, v in splits.items()},

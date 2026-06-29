@@ -65,7 +65,7 @@ Selector 选择：
 
 ## 当前裁决
 
-RPGCL-Auto 继续作为 **active candidate**，但还不能称为 SOTA idea。
+RPGCL-Auto selector 降级为 **failed selector branch**，不再作为主方法继续扩大。
 
 理由：
 
@@ -75,17 +75,41 @@ RPGCL-Auto 继续作为 **active candidate**，但还不能称为 SOTA idea。
 - HPFS 训练目标本身不是稳定主贡献，raw-preserved validation-gated representation selection 才是当前最强信号；
 - PubMed 上 10/10 split 均选择 Raw+HPFS，支持 raw feature separability 与 learned graph context 的互补假设。
 
+## Selector-control gate
+
+新增 selector-control 实验：Cora/CiteSeer/PubMed × splits 0-9 × model seed 0 × 50 epoch，比较 `raw_features`、`GRACE-light`、固定 `HPFS`、固定 `Raw+HPFS` 与 `RPGCL-Auto`。
+
+| Dataset | HPFS Acc | Raw+HPFS Acc | RPGCL-Auto Acc | Best fixed Acc | Auto - Best fixed |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Cora | 0.799445 | 0.779344 | 0.800139 | 0.800185 | -0.000046 |
+| CiteSeer | 0.711650 | 0.718828 | 0.715295 | 0.720669 | -0.005374 |
+| PubMed | 0.834065 | 0.851176 | 0.851113 | 0.851176 | -0.000063 |
+
+| Dataset | Auto positive vs best fixed | Auto negative vs best fixed | Auto zero vs best fixed | Auto choices |
+| --- | ---: | ---: | ---: | --- |
+| Cora | 3 | 4 | 3 | HPFS 9 / Raw+HPFS 1 / Raw 0 |
+| CiteSeer | 0 | 4 | 6 | HPFS 4 / Raw+HPFS 6 / Raw 0 |
+| PubMed | 4 | 6 | 0 | HPFS 0 / Raw+HPFS 10 / Raw 0 |
+
+结论：
+
+- Auto selector 没有超过 best fixed control，尤其 CiteSeer 明显低于固定 Raw+HPFS；
+- Cora 的收益主要来自 HPFS，Raw+HPFS 明显伤害；
+- PubMed 的收益几乎完全来自固定 Raw+HPFS，HPFS-only 接近 GRACE-light；
+- 因此主问题应从 “validation-gated representation selection” 收缩为 “何时保留 raw feature separability，何时引入 graph contrastive complement”。
+
+后续 active subdirection：**Complement-gated raw-preserved GCL**。核心不再是用 validation accuracy 选全图表示，而是设计无标签、协议一致的 gate，避免 Cora 式 Raw+HPFS 伤害，同时保留 CiteSeer/PubMed 式 Raw+HPFS 互补增益。
+
 ## 下一步停止/推进标准
 
 推进：
 
-- 加 `rpgcl_auto` 的 selector control：always-HPFS、always-raw-preserved、raw-only、oracle upper bound；
-- 加 `--selector-margin`，避免 validation 差距太小时过度切换；
+- 放弃当前 validation selector 作为主方法，不继续调 `selector-margin`；
+- 设计无标签 complement gate，用结构/特征/embedding complementarity 判断 raw 与 graph branch 的融合强度；
 - 对齐官方/强调参 GRACE，当前 `GRACE-light` 不能用于论文级 claim；
 - 对比 CCA-SSG/BGRL/GraphECL 或至少补 CCA-style baseline。
 
 停止：
 
-- 若 validation selector 不优于 fixed raw-preserved 或 fixed HPFS；
-- 若 raw-only 与 raw-preserved 的差距解释不了，说明贡献只是线性探针选择技巧。
-- 若补强 baseline 后 PubMed/CiteSeer 增益消失，或 selector control 证明固定 Raw+HPFS 足够，则需要降级为 representation-selection 诊断而不是完整方法。
+- 若 complement gate 不能在 Cora 上接近 HPFS，同时在 CiteSeer/PubMed 上接近 Raw+HPFS，则放弃该方法路线；
+- 若补强 baseline 后 PubMed/CiteSeer 的 Raw+HPFS 增益消失，则降级为 representation-selection 诊断而不是完整方法。

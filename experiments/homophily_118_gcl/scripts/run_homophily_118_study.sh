@@ -14,6 +14,7 @@ CONFIG="${CONFIG:-configs/default.yaml}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"
 RUN_TAG="${RUN_TAG:-}"
 OVERWRITE="${OVERWRITE:-0}"
+BASELINE_LABEL="${BASELINE_LABEL:-grace_light}"
 
 mkdir -p "$RUNS_DIR"
 
@@ -56,5 +57,5 @@ done
 
 python summarize.py \
   --runs-dir "$RUNS_DIR" \
-  --out "$RUNS_DIR/runs_vs_grace.csv" \
-  --aggregate-out "$RUNS_DIR/aggregate_vs_grace.csv"
+  --out "$RUNS_DIR/runs_vs_${BASELINE_LABEL}.csv" \
+  --aggregate-out "$RUNS_DIR/aggregate_vs_${BASELINE_LABEL}.csv"
