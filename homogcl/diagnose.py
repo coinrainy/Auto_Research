@@ -42,6 +42,9 @@ def load_rows(input_dirs: str) -> pd.DataFrame:
                     "spectral_participation_rank": metrics.get("spectral_participation_rank", ""),
                     "spectral_energy_80_rank": metrics.get("spectral_energy_80_rank", ""),
                     "spectral_energy_95_rank": metrics.get("spectral_energy_95_rank", ""),
+                    "fusion_applied": metrics.get("fusion_applied", ""),
+                    "fusion_core_dim": metrics.get("fusion_core_dim", ""),
+                    "fusion_residual_dim": metrics.get("fusion_residual_dim", ""),
                     "edge_homophily": protocol.get("edge_homophily_diagnostic_uses_labels", ""),
                     "file": str(path),
                 }
@@ -78,6 +81,9 @@ def main() -> None:
         "spectral_participation_rank_candidate",
         "spectral_energy_80_rank_candidate",
         "spectral_energy_95_rank_candidate",
+        "fusion_applied_candidate",
+        "fusion_core_dim_candidate",
+        "fusion_residual_dim_candidate",
         "edge_homophily_candidate",
     ]
     diagnostics = paired[out_cols].sort_values(["dataset", "split_seed"])

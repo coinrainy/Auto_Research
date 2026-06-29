@@ -2,7 +2,7 @@
 
 ## 阶段判定
 
-`TierCCACat` 是当前待验证主候选。它不是回到已失败的随机增强 GCL 主线，而是在 `TierSpecProp` 已经证明强于 AutoProp 的基础上，吸收 `ccacat` 在部分 PubMed split 上的互补优势。
+`TierCCACat` 是当前保留的主候选。它不是回到已失败的随机增强 GCL 主线，而是在 `TierSpecProp` 已经证明强于 AutoProp 的基础上，吸收 `ccacat` 在部分 PubMed split 上的互补优势，同时在高谱集中图上安全退回纯 `TierSpecProp`。
 
 关键判断：纯 `TierSpecProp` 不能继续包装成最终主方法。PubMed 本地基线面板显示，它对 `propccat` 和 `gracecat` 仍然较稳，但对 `ccacat` 只有很小均值优势且 split 胜负不稳。因此下一步应验证“安全谱核心 + 去相关残差”的条件融合，而不是继续微调纯谱压缩。
 
@@ -32,6 +32,15 @@
 
 这个结果支持继续验证 `TierCCACat`，但还不能宣称已达到 SOTA。尤其相对 `ccacat` 的 p 值仍不足，需要更多数据集和 split。
 
+### Photo 与 WikiCS 宽谱安全性
+
+`TierCCACat` 在 Photo 和 WikiCS 上均选择宽核心 rank=32，因此 `fusion_applied=0`，逐 split 等价于 `TierSpecProp`。这验证了条件门控修复了无条件融合在 Photo seed 0 上的损伤。
+
+| Dataset | Splits | Fusion Applied | Mean Acc | vs TierSpecProp | vs AutoProp |
+|---|---:|---:|---:|---:|---:|
+| Photo | 10 | 0/10 | 0.9035 | +0.0000, 0 胜 10 平 0 负 | +0.0218, 10 胜 0 负, p=0.0010 |
+| WikiCS | 20 | 0/20 | 0.7833 | +0.0000, 0 胜 20 平 0 负 | +0.0197, 20 胜 0 负, p=4.42e-05 |
+
 ### 条件融合必要性
 
 无条件拼接在 Photo split 0 上会损伤强谱核心：`TierSpecProp` 为 0.8985，而无条件融合为 0.8898。因此当前实现改为条件融合：
@@ -43,14 +52,14 @@
 
 ## 失败边界
 
-- `TierCCACat` 目前只在 PubMed 10 split 上完成候选级验证；Photo 只有 seed 0 条件门控检查。
+- `TierCCACat` 目前在 PubMed/Photo/WikiCS 上完成候选级验证，但仍缺少更多非 Coauthor 数据集和官方强 baseline。
 - 相对 `ccacat` 的 PubMed 优势尚未达到很强统计显著性，不能作为论文结论。
 - 条件规则依赖当前谱能量阈值 0.34/0.36，必须在 WikiCS、Photo 多 split、更多非 Coauthor 同配图上继续验证。
 - 现有 `ccacat`、`gracecat`、`propccat` 是仓库内轻量实现，不是官方强 baseline。论文级比较仍需 PROPGCL/PROP、HomoGCL、BGRL、CCA-SSG、GRACE/GCA、SGRL/RELGCL/IRGCL 等官方或复现级 baseline。
 
 ## 下一步门槛
 
-1. 跑 `TierCCACat` 在 Photo seeds 0-9 和 WikiCS 官方 20 split，确认宽谱跳过残差不会损伤。
-2. 跑 PubMed/Photo/WikiCS 的 `TierCCACat` vs `TierSpecProp`、`ccacat`、`propccat`、`gracecat` paired 表。
-3. 若 `TierCCACat` 在 Photo/WikiCS 持平或提升，并在 PubMed 稳定优于 `ccacat`，再进入官方强 baseline 阶段。
-4. 若它相对 `ccacat` 的优势不能扩大，应放弃 `TierCCACat` 作为主方法，仅把谱门控保留为诊断工具。
+1. 扩展更多非 Coauthor 同配数据集，优先考虑 ogbn-arxiv 或可承受规模的公开同配图。
+2. 跑 PubMed/Photo/WikiCS 的 `TierCCACat` vs `ccacat`、`propccat`、`gracecat` 更完整本地面板，尤其补齐 Photo/WikiCS 上训练型 baseline。
+3. 若 `TierCCACat` 相对 `ccacat` 的优势不能扩大，应放弃 `TierCCACat` 作为主方法，仅把谱门控保留为诊断工具。
+4. 若更多数据集保持稳定，再进入 PROPGCL/PROP、HomoGCL、BGRL、CCA-SSG、GRACE/GCA、SGRL/RELGCL/IRGCL 等官方强 baseline 阶段。

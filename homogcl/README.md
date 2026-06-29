@@ -49,6 +49,7 @@
 - 这些结果只能作为早筛，不足以支撑 SOTA 或顶会投稿结论。
 - `scripts/run_local_baseline_key_multisplit.sh` 和 `scripts/run_local_baseline_wikics_multisplit.sh` 提供非 Coauthor 的本地基线面板，用于把 `tierccacat` / `tierspecprop` 与仓库内已有的 `propccat`、`ccacat`、`gracecat` 诊断实现做同 split 对比；这些不是官方强 baseline 的替代品，只用于下一轮筛查。
 - PubMed 本地基线面板发现：TierSpecProp 对 `propccat` / `gracecat` 仍为 9 胜 1 负，但对 `ccacat` 只有均值 +0.0025 且 4 胜 6 负。因此不能继续把纯 TierSpecProp 当最终主方法，当前应优先验证 `tierccacat`。`tierccacat` 在 PubMed seeds 0-9 上相对 TierSpecProp 为 +0.0089、8 胜 2 负，Wilcoxon greater p=0.0098；相对 `ccacat` 为 +0.0115、7 胜 1 平 2 负，p=0.0820。
+- 当前代码复跑后，`tierccacat` 在 PubMed seeds 0-9 相对 TierSpecProp 为 +0.0090、8 胜 2 负；Photo seeds 0-9 和 WikiCS 官方 20 split 均因 rank=32 跳过融合，与 TierSpecProp 逐 split 持平。
 
 ## 快速运行
 
@@ -75,6 +76,7 @@ bash scripts/run_tierspecprop_key_multisplit.sh
 bash scripts/run_tierspecprop_wikics_multisplit.sh
 bash scripts/run_local_baseline_key_multisplit.sh
 bash scripts/run_local_baseline_wikics_multisplit.sh
+bash scripts/run_tierccacat_multisplit.sh
 ```
 
 ## 当前协议
