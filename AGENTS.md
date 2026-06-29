@@ -16,10 +16,10 @@
 - 原 `homogcl` 候选（同配增强 + 多正样本 InfoNCE）未通过 smoke test，已标记为失败候选，不应继续包装为主方法。
 - 新增 `horp` / `horpgcl` 诊断路线；`horpgcl` 在 Cora 快速测试中未超过传播证伪器，暂判失败。
 - `autopropcat`：基于无标签传播残差平台期自动选择传播深度，作为后续 GCL 候选必须击败的强证伪器。
-- 新增当前条件性候选 `specprop`：AutoProp + 无标签谱集中度门控 + 低秩去噪；谱分散时回退到 AutoProp。
+- 新增当前条件性候选 `specprop`：AutoProp + 安全谱集中度门控 + 低秩去噪；仅当 top-10 PCA 能量占比 >= 0.34 时压缩到 rank=32，否则回退到 AutoProp。
 - 当前 full C-grid public split 快速结果：SpecProp 相对 AutoProp 为 Cora +0.010、CiteSeer +0.000、PubMed +0.005。
 - 当前 strict SpecProp class-balanced random split seeds 0/1/2 paired 结果：Cora +0.000（回退持平）、CiteSeer +0.000（回退持平）、PubMed +0.018（3 胜 0 负）。
-- Amazon Photo class-random seed 0 smoke：SpecProp 0.8985 vs AutoProp 0.8644，delta +0.0341，rank=32。
+- Amazon smoke：Photo 0.8985 vs AutoProp 0.8644，delta +0.0341，rank=32；Computers 回退持平 0.7984，避免低阈值压缩损伤。
 - 协议细节见：
   - `docs/gcl_experiment_protocol_checklist.md`
   - `docs/context_reset_protocol_only_2026-06-29.md`
@@ -28,7 +28,7 @@
 
 ## 后续原则
 
-- 下一轮研究主线应围绕 strict `specprop` 在高谱集中同配图（PubMed/Photo）上的低秩去噪收益，扩展更多同配数据集和多 split；不要继续微调已失败的 `homogcl` / `horpgcl`。
+- 下一轮研究主线应围绕 safe-gated `specprop` 在高谱集中同配图（PubMed/Photo）上的低秩去噪收益，扩展更多同配数据集和多 split；不要继续微调已失败的 `homogcl` / `horpgcl`。
 - 若继续做学习式 GCL，必须纳入 HomoGCL(KDD 2023)、PROPGCL、IRGCL、RELGCL、SGRL、BGRL、CCA-SSG 等强 baseline。
 - 论文级证据必须扩展到多 split、多 seed、更大同配图，并报告测试集不可见的超参选择规则。
 - 如果需要写新方法，应保持在当前仓库内清晰隔离，不能参考其他目录代码。
@@ -40,6 +40,6 @@ git status --short
 bash scripts/run_autoprop_smoke.sh
 bash scripts/run_specprop_smoke.sh
 bash scripts/run_specprop_multisplit.sh
-bash scripts/run_specprop_photo_smoke.sh
-python -m homogcl.compare --input-dirs results/specprop_multisplit --baseline autopropcat --candidate specprop --output-csv results/specprop_multisplit_paired.csv
+bash scripts/run_specprop_amazon_smoke.sh
+python -m homogcl.compare --input-dirs results/specprop_safe_multisplit --baseline autopropcat --candidate specprop --output-csv results/specprop_safe_multisplit_paired.csv
 ```

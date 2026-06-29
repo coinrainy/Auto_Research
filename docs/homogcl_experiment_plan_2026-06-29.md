@@ -13,7 +13,7 @@
 - 原 `homogcl` 候选已按失败标准放弃：未超过 `propcat`，尤其 CiteSeer 明显落后。
 - 新增 `horp` / `horpgcl`：用于验证 HoRP 教师排序是否能改进 GCL；Cora 快速结果显示 `horpgcl=0.796`，暂判失败。
 - 新增 `autopropcat`：无标签传播残差平台期自动选择传播深度，作为后续所有学习式 GCL 候选必须击败的强证伪器。
-- 新增 strict `specprop`：AutoProp + 无标签谱集中度门控 + 低秩去噪。仅在 top-10 PCA 能量占比 >= 0.30 时压缩到 rank=32，否则回退到 AutoProp。class-balanced random split 下 PubMed 稳定提升，Cora/CiteSeer 回退持平；Amazon Photo smoke 显示显著提升。
+- 新增 safe-gated `specprop`：AutoProp + 无标签谱集中度门控 + 低秩去噪。仅在 top-10 PCA 能量占比 >= 0.34 时压缩到 rank=32，否则回退到 AutoProp。class-balanced random split 下 PubMed 稳定提升，Cora/CiteSeer 回退持平；Amazon Photo smoke 显示显著提升，Computers 回退持平。
 
 ## Experiment Overview
 
@@ -74,10 +74,11 @@
 | Cora | specprop strict random split mean | 0.8212 | delta +0.0000，回退持平 |
 | CiteSeer | specprop random split mean | 0.7107 | delta +0.0000，回退持平 |
 | PubMed | specprop random split mean | 0.7710 | delta +0.0180，3 胜 0 负 |
-| Photo | specprop strict random split seed 0 | 0.8985 | AutoProp 0.8644，delta +0.0341 |
+| Photo | specprop safe random split seed 0 | 0.8985 | AutoProp 0.8644，delta +0.0341 |
+| Computers | specprop safe random split seed 0 | 0.7984 | AutoProp 0.7984，回退持平 |
 | Cora | horpgcl | 0.796 | 失败候选 |
 | Cora | propccat | 0.821 | 未超过 AutoProp |
 
 ## 当前结论
 
-Strict `SpecProp` 是当前最值得继续的条件性候选：它在 class-balanced random split seeds 0/1/2 上对 Cora/CiteSeer 无损回退，对 PubMed 稳定提升；Amazon Photo smoke 也出现大幅提升。下一步必须扩展到 Amazon Computers、Coauthor CS/Physics 和更多 split，验证“高谱集中 -> 低秩去噪有效”的规律是否稳健。
+Safe-gated `SpecProp` 是当前最值得继续的条件性候选：它在 class-balanced random split seeds 0/1/2 上对 Cora/CiteSeer 无损回退，对 PubMed 稳定提升；Amazon Photo smoke 也出现大幅提升，而 Computers 反例被 0.34 阈值安全回退。下一步必须扩展到更多 Amazon/Coauthor split，验证“高谱集中 -> 低秩去噪有效”的规律是否稳健。
