@@ -1,4 +1,0 @@
-dataset,method,shuffle_positives,neg_suppression,num_runs,accuracy_mean,F1Mi_mean,F1Ma_mean,delta_vs_grace_F1Mi_mean,delta_vs_grace_F1Ma_mean,positive_F1Mi,negative_F1Mi
-Cora,grace,False,True,1,0.7199630314232902,0.7199630314232902,0.691353188718992,,,0,0
-Cora,hpfs_gcl,False,True,1,0.7241219963031423,0.7241219963031423,0.7021296915257397,0.004158964879852123,0.01077650280674769,1,0
-Cora,raw_features,False,True,1,0.583641404805915,0.583641404805915,0.5498366385642323,-0.13632162661737524,-0.14151655015475972,0,1
