@@ -28,10 +28,11 @@
   - Cora：0.834 vs 0.824，selected `K=6`、PCA rank=647
   - CiteSeer：0.723 vs 0.723，selected `K=6`、不压缩
   - PubMed：0.798 vs 0.793，selected `K=7`、PCA rank=32
-- `specprop` 在 class-balanced random split seeds 0/1/2 上相对 `autopropcat` 的 paired delta：
-  - Cora：平均 +0.000，1 胜 2 负，效果不稳定
+- `specprop` strict rule 在 class-balanced random split seeds 0/1/2 上相对 `autopropcat` 的 paired delta：
+  - Cora：平均 +0.000，回退持平
   - CiteSeer：平均 +0.000，完全回退持平
   - PubMed：平均 +0.018，3 胜 0 负，谱压缩信号最强
+- `specprop` strict rule 在 Amazon Photo class-random seed 0 上取得 0.8985 vs AutoProp 0.8644，delta +0.0341，rank=32。
 - 这些结果只能作为早筛，不足以支撑 SOTA 或顶会投稿结论。
 
 ## 快速运行
@@ -48,6 +49,7 @@ bash scripts/run_homogcl_smoke.sh
 bash scripts/run_autoprop_smoke.sh
 bash scripts/run_specprop_smoke.sh
 bash scripts/run_specprop_multisplit.sh
+bash scripts/run_specprop_photo_smoke.sh
 ```
 
 ## 当前协议

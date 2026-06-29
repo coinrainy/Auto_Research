@@ -478,7 +478,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--specprop-max-rank", type=int, default=1024)
     parser.add_argument("--specprop-low-rank", type=int, default=32)
     parser.add_argument("--specprop-high-concentration", type=float, default=0.30)
-    parser.add_argument("--specprop-mid-concentration", type=float, default=0.20)
+    parser.add_argument("--specprop-mid-concentration", type=float, default=0.30)
     parser.add_argument("--pos-k", type=int, default=4)
     parser.add_argument("--neg-k", type=int, default=16)
     parser.add_argument("--max-dense-nodes", type=int, default=6000)

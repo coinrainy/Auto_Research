@@ -38,15 +38,15 @@
 
 ### SpecProp 多随机划分压力测试
 
-使用 class-balanced random split seeds 0/1/2，训练/验证每类分别为 20/30，剩余节点为测试集。相对 AutoProp 的 paired delta：
+使用 strict rule：只有 top-10 PCA 能量占比 >= 0.30 时才压缩到 rank=32，否则回退到 AutoProp。class-balanced random split seeds 0/1/2，训练/验证每类分别为 20/30，剩余节点为测试集。相对 AutoProp 的 paired delta：
 
 | Dataset | AutoProp Mean | SpecProp Mean | Mean Delta | Wins/Losses | Interpretation |
 |---|---:|---:|---:|---:|---|
-| Cora | 0.8212 | 0.8212 | +0.0000 | 1/2 | 谱压缩不稳定，需要更细判据。 |
+| Cora | 0.8212 | 0.8212 | +0.0000 | 0/0 | strict rule 回退，避免中等谱集中区域损伤。 |
 | CiteSeer | 0.7107 | 0.7107 | +0.0000 | 0/0 | 谱分散触发回退，按设计持平。 |
 | PubMed | 0.7530 | 0.7710 | +0.0180 | 3/0 | 低秩去噪稳定有效，是当前最强信号。 |
 
-结论：`SpecProp` 不是已完成的通用 SOTA idea，而是一个有明确条件边界的候选：在传播银行谱高度集中时低秩瓶颈有价值；在谱分散时应回退；中等谱集中图（Cora）需要更好的压缩判据。
+Amazon Photo class-random seed 0 smoke 显示同一 strict rule 取得 0.8985 vs AutoProp 0.8644，delta +0.0341，rank=32。结论：`SpecProp` 不是已完成的通用 SOTA idea，而是一个有明确条件边界的候选：在传播银行谱高度集中时低秩瓶颈有价值；在谱分散或中等集中时应回退。
 
 ## Research Question Brief
 
@@ -79,7 +79,7 @@
 
 ### Sub-questions
 
-1. 为什么 `specprop` 在 PubMed 稳定超过 `autopropcat`，但在 Cora 不稳定？
+1. 为什么 `specprop` 在 PubMed/Photo 这类高谱集中图上稳定超过 `autopropcat`？
 2. 谱集中度阈值和 rank 规则是否真正解释收益，而不是 Planetoid public split 偶然现象？
 3. 哪些图统计量可以预测“传播已足够”“需要低秩去噪”或“应回退到 AutoProp”？
 
