@@ -24,6 +24,7 @@
 - `corespecprop` 5 数据集 seeds 0/1/2 paired 结果：Cora/CiteSeer/Computers 回退持平；PubMed 平均 0.7804 vs AutoProp 0.7530，delta +0.0274，3 胜 0 负；Photo 平均 0.9051 vs AutoProp 0.8745，delta +0.0306，3 胜 0 负。
 - `corespecprop` 正例图 seeds 0-9 压力测试：PubMed 平均 0.7739 vs AutoProp 0.7541，delta +0.0198，10 胜 0 负，Wilcoxon greater p=0.000977；Photo 平均 0.9002 vs AutoProp 0.8817，delta +0.0185，10 胜 0 负，Wilcoxon greater p=0.000977。
 - 新增 WikiCS 官方 20 split 支持与结果：CoreSpecProp 平均 0.7702 vs AutoProp 0.7636，delta +0.0066，18 胜 2 负，Wilcoxon greater p=0.000182；这说明高谱集中图上总体有效，但不再是严格逐 split 无损。
+- 本轮已复核当前 idea 结果表：`corespecprop` 仍是主候选；WikiCS rank 消融显示固定 rank=32 平均 0.7833 vs AutoProp 0.7636，delta +0.0197，20 胜 0 负，但暂作为消融线索，尚未并入当前主方法定义。
 - 用户明确要求 Coauthor CS/Physics 先不做；后续建议暂缓 Coauthor 扩展。
 - 协议细节见：
   - `docs/gcl_experiment_protocol_checklist.md`
@@ -52,5 +53,6 @@ bash scripts/run_corespecprop_smoke.sh
 bash scripts/run_corespecprop_multisplit.sh
 bash scripts/run_corespecprop_key_multisplit.sh
 bash scripts/run_corespecprop_wikics_multisplit.sh
+bash scripts/run_corespecprop_wikics_rank_ablation.sh
 python -m homogcl.compare --input-dirs results/specprop_safe_multisplit --baseline autopropcat --candidate specprop --output-csv results/specprop_safe_multisplit_paired.csv
 ```
