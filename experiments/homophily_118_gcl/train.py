@@ -257,6 +257,7 @@ def main():
         diagnostics["rpgcl_auto_choice"] = choice
         for name, values in candidate_metrics.items():
             diagnostics[f"rpgcl_auto_{name}_val_accuracy"] = float(values["val_accuracy"])
+            diagnostics[f"rpgcl_auto_{name}_test_accuracy"] = float(values["accuracy"])
             diagnostics[f"rpgcl_auto_{name}_test_F1Mi"] = float(values["F1Mi"])
             diagnostics[f"rpgcl_auto_{name}_test_F1Ma"] = float(values["F1Ma"])
     else:

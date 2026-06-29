@@ -12,9 +12,9 @@
 
 - 数据集：Cora、CiteSeer、PubMed。
 - split：按类别分层构造 `train:val:test ~= 0.1:0.1:0.8`。
-- 当前早筛：splits 0/1/2、seed 0、50 epoch。
-- baseline：`raw_features` 与纯 `grace`。
-- 输出目录：`runs/rpgcl_auto_homophily_splits0-2_e50/`。
+- 当前早筛：splits 0-9、seed 0、50 epoch。
+- baseline：`raw_features` 与 `GRACE-light`。代码中方法名仍为 `grace`，但该实现是本工作区的轻量 sampled GRACE-style baseline，不等同于论文官方调参 GRACE。
+- 输出目录：`runs/rpgcl_auto_homophily_splits0-9_e50/`。
 
 实际 split 比例示例：
 
@@ -45,37 +45,47 @@
 
 ## 早筛结果
 
-`rpgcl_auto` vs `grace`，主指标 accuracy：
+`rpgcl_auto` vs `GRACE-light`，主指标 accuracy：
 
-| Dataset | splits | mean ΔAcc | positive/negative |
-| --- | ---: | ---: | ---: |
-| Cora | 3 | +0.002311 | 2 / 1 |
-| CiteSeer | 3 | +0.013905 | 3 / 0 |
-| PubMed | 3 | +0.016653 | 3 / 0 |
-| Overall | 9 | +0.010956 | 8 / 1 |
+| Dataset | splits | GRACE-light Acc | RPGCL-Auto Acc | mean ΔAcc | positive/negative/zero |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Cora | 10 | 0.792699 | 0.799168 | +0.006470 | 7 / 3 / 0 |
+| CiteSeer | 10 | 0.699624 | 0.715333 | +0.015708 | 10 / 0 / 0 |
+| PubMed | 10 | 0.833412 | 0.851176 | +0.017765 | 10 / 0 / 0 |
+
+Selector 选择：
+
+| Dataset | HPFS | Raw+HPFS | Raw | Oracle gap |
+| --- | ---: | ---: | ---: | ---: |
+| Cora | 9 | 1 | 0 | 0.000462 |
+| CiteSeer | 4 | 6 | 0 | 0.005487 |
+| PubMed | 0 | 10 | 0 | 0.000000 |
+
+注意：`GRACE-light` 的数值低于 GRACE 论文报告值，主要因为这里采用用户指定的 `1:1:8` 协议、50 epoch、sampled contrastive loss 与统一默认超参数；它只能作为本地公平早筛 baseline，不能直接代表官方 GRACE。
 
 ## 当前裁决
 
-RPGCL-Auto 升级为 **active candidate**，但还不能称为 SOTA idea。
+RPGCL-Auto 继续作为 **active candidate**，但还不能称为 SOTA idea。
 
 理由：
 
-- 在 1:1:8 同配协议下，三个同配图均值均高于纯 GRACE；
-- PubMed 与 CiteSeer 的 accuracy 增益较清楚；
-- Cora 只有小正且有 1/3 split 轻微负，说明 selector 仍需更稳；
-- HPFS 训练目标本身不是稳定主贡献，raw-preserved validation-gated representation selection 才是当前最强信号。
+- 在 1:1:8 同配协议下，三个同配图 10 split 均值均高于 GRACE-light；
+- PubMed 与 CiteSeer 的 accuracy 增益较清楚，且 10/10 split 均为正；
+- Cora 仍是小正，存在 3/10 split 轻微负，说明方法在 Cora 上还不够强；
+- HPFS 训练目标本身不是稳定主贡献，raw-preserved validation-gated representation selection 才是当前最强信号；
+- PubMed 上 10/10 split 均选择 Raw+HPFS，支持 raw feature separability 与 learned graph context 的互补假设。
 
 ## 下一步停止/推进标准
 
 推进：
 
-- 扩展到 splits 0-9；
 - 加 `rpgcl_auto` 的 selector control：always-HPFS、always-raw-preserved、raw-only、oracle upper bound；
 - 加 `--selector-margin`，避免 validation 差距太小时过度切换；
+- 对齐官方/强调参 GRACE，当前 `GRACE-light` 不能用于论文级 claim；
 - 对比 CCA-SSG/BGRL/GraphECL 或至少补 CCA-style baseline。
 
 停止：
 
-- 若 splits 0-9 上 Cora 平均 accuracy 负，或 overall 平均 ΔAcc 低于 +0.005；
 - 若 validation selector 不优于 fixed raw-preserved 或 fixed HPFS；
 - 若 raw-only 与 raw-preserved 的差距解释不了，说明贡献只是线性探针选择技巧。
+- 若补强 baseline 后 PubMed/CiteSeer 增益消失，或 selector control 证明固定 Raw+HPFS 足够，则需要降级为 representation-selection 诊断而不是完整方法。

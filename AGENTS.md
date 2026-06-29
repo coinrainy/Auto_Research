@@ -1324,3 +1324,14 @@
   - 当前裁决：RPGCL-Auto 升级为 active candidate，但尚不能称为 SOTA；需要补 splits0-9、selector control（fixed HPFS / fixed raw-preserved / raw-only / oracle upper bound）、更强 baseline（至少 CCA-style/GraphECL 类轻量对照）与 selector margin。
   - 已新增研究记录：`experiments/homophily_118_gcl/docs/rpgcl_auto_candidate_log.md`；已更新 `experiments/homophily_118_gcl/README.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/homophily_118_gcl && DATASETS="Cora CiteSeer PubMed" METHODS="raw_features grace rpgcl_auto" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/rpgcl_auto_homophily_splits0-9_e50" OVERWRITE=1 bash scripts/run_homophily_118_study.sh`；随后实现 selector controls 与 accuracy-only paper table。
+- 2026-06-29 RPGCL-Auto 10-split accuracy 复核：
+  - 用户要求后续评估指标全部改为 `accuracy`，并要求实验结果尽量用表格展示以便了解进度；后续汇报和文档主表均以 accuracy 为主，F1Mi/F1Ma 仅保留为附属记录。
+  - 已修复 `experiments/homophily_118_gcl/train.py`：`rpgcl_auto` 的候选表示诊断新增 `test_accuracy` 字段，避免继续只写 `test_F1Mi`。
+  - 已修复 `experiments/homophily_118_gcl/summarize.py`：主聚合不再按 `raw_preserved` 拆分同一个方法，输出 method-level accuracy 表，并新增 selector 选择次数与 oracle accuracy gap。
+  - 已执行完整同配图复核：`Cora/CiteSeer/PubMed × splits0-9 × seed0 × 50 epoch`，方法为 `raw_features`、`grace`、`rpgcl_auto`，协议均为分层 `train:val:test ~= 1:1:8`；输出目录 `experiments/homophily_118_gcl/runs/rpgcl_auto_homophily_splits0-9_e50/`。
+  - 当前 `grace` 应表述为 `GRACE-light`：这是本工作区轻量 sampled GRACE-style baseline，用于同协议公平早筛；由于采用 `1:1:8`、50 epoch、sampled contrastive loss 与统一默认超参数，不等同于论文官方调参 GRACE，不能直接和论文报告值比较。
+  - 10-split RPGCL-Auto vs GRACE-light accuracy：Cora 0.799168 vs 0.792699，mean delta +0.006470，7/10 split 正；CiteSeer 0.715333 vs 0.699624，mean delta +0.015708，10/10 split 正；PubMed 0.851176 vs 0.833412，mean delta +0.017765，10/10 split 正。
+  - Selector 选择：Cora 9 次 HPFS、1 次 Raw+HPFS、0 次 Raw，oracle gap 0.000462；CiteSeer 4 次 HPFS、6 次 Raw+HPFS、0 次 Raw，oracle gap 0.005487；PubMed 0 次 HPFS、10 次 Raw+HPFS、0 次 Raw，oracle gap 0.000000。
+  - 当前裁决：RPGCL-Auto 继续作为 active candidate；最强证据在 PubMed 和 CiteSeer，Cora 为小幅正向但仍有 3/10 split 负。该结果足以进入 selector controls 与 strong baseline 阶段，但不足以声称 SOTA。
+  - 已更新文档：`experiments/homophily_118_gcl/docs/rpgcl_auto_candidate_log.md` 与 `experiments/homophily_118_gcl/README.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/homophily_118_gcl && DATASETS="Cora CiteSeer PubMed" METHODS="raw_features grace hpfs_gcl rpgcl_hpfs rpgcl_auto" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/rpgcl_auto_selector_controls_splits0-9_e50" OVERWRITE=1 bash scripts/run_homophily_118_study.sh`；随后补官方/强调参 GRACE 或 CCA-style baseline。
