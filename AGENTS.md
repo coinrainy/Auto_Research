@@ -1284,3 +1284,11 @@
   - Planetoid 当前在 `eval_mode=auto` 下仍走 random linear-probe evaluation，不使用 mask validation；因此 `ragc_auto_gcl` 对 Cora/CiteSeer/PubMed 会落入 `no_validation_mask` fallback，暂不能作为 Planetoid auto-selection 证据。
   - 当前方法定位更新：固定 RAGC 是强 active candidate；下一代若要冲更高层级，应把 raw/learned/RAGC 输出选择做成协议一致且可解释的 selector，而不是只固定拼接。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Actor Texas" METHODS="ragc_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/ragc_controls_actor_texas_s0_splits0-9_e50" RUN_TAG="shuffle" EXTRA_ARGS="--ragc-control shuffle" OVERWRITE=1 bash scripts/run_split_study.sh`；随后补 `RUN_TAG="random" EXTRA_ARGS="--ragc-control random"` 并汇总完整 controls。
+- 2026-06-29 RAGC Actor/Texas 10-split control 补全：
+  - 已执行 Actor/Texas × splits0-9 × seed0 × 50 epoch 的 `--ragc-control shuffle` 与 `--ragc-control random` 对照，输出目录 `experiments/topvenue_gcl/runs/ragc_controls_actor_texas_s0_splits0-9_e50/`。
+  - Actor normal/raw/shuffle/random F1Mi mean：0.361118 / 0.351711 / 0.337566 / 0.329605；normal-shuffle +0.023553，normal-random +0.031513。结论：Actor 严格通过 learned-branch control，支持节点对应的 graph complement 不是维度扩张假象。
+  - Texas normal/raw/shuffle/random F1Mi mean：0.813514 / 0.808108 / 0.818919 / 0.718919；normal-shuffle -0.005405，normal-random +0.094595。结论：Texas 性能仍高于 raw/random，但 shuffle 略高于 normal，不能作为干净机制主证据，应作为 WebKB 小图边界与 selector/safety motivation。
+  - 结合此前 Chameleon/Squirrel controls，严格机制通过数据集为 Actor/Chameleon/Squirrel；Texas 保留为小图边界案例。
+  - 当前裁决：RAGC 继续作为最强 active candidate，但仍不是“已找到 SOTA 论文方法”。下一步必须补多 seed、强 baseline paper table，并推进协议一致的 raw/learned/RAGC selector；若不能在 strong baseline table 中保持至少 3 个异配数据集稳定正向，应收缩为机制诊断论文路线或放弃固定拼接主方法。
+  - 已更新文档：`experiments/topvenue_gcl/docs/raw_anchored_graph_complement_candidate.md`、`experiments/topvenue_gcl/README.md`、`experiments/topvenue_gcl/docs/implementation_principles.md` 与本 `AGENTS.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Actor Chameleon Squirrel Texas" METHODS="grace gcn_mlp_gcl raw_features ragc_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/ragc_strong_table_s1-2_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh`。

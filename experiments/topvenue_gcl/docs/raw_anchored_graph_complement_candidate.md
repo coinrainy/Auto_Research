@@ -124,6 +124,22 @@ RAGC normal vs `raw_features`：
 - shuffle control 保留 learned embedding 分布但破坏节点对应关系；normal-shuffle gap 说明节点对应的 graph complement 是核心信号。
 - Squirrel split3 中 shuffle 高于 normal，是需要保留的局部反例；当前机制主张应基于均值与大多数 split，而不是声称逐 split 全胜。
 
+### Actor/Texas 10-split learned-branch controls
+
+输出目录：`runs/ragc_controls_actor_texas_s0_splits0-9_e50/`
+
+| Dataset | Normal F1Mi | Raw F1Mi | Shuffle F1Mi | Random F1Mi | Normal - Shuffle | Normal - Random |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Actor | 0.361118 | 0.351711 | 0.337566 | 0.329605 | +0.023553 | +0.031513 |
+| Texas | 0.813514 | 0.808108 | 0.818919 | 0.718919 | -0.005405 | +0.094595 |
+
+解释：
+
+- Actor 严格通过 learned-branch control：normal 同时高于 raw、shuffle 与 random；random 低于 raw，进一步排除维度扩张解释。
+- Texas 未通过严格 normal-vs-shuffle control：shuffle 均值略高于 normal，说明 WebKB 小图上 learned branch 的节点对应机制证据不干净。
+- Texas normal 仍高于 raw 与 random，说明 RAGC 在该数据集上有性能与随机控制优势；但论文机制主证据不应依赖 Texas，而应依赖 Actor/Chameleon/Squirrel。
+- 结合 Wiki 控制实验，当前严格机制通过的数据集是 Actor/Chameleon/Squirrel；Texas 保留为小图边界案例与 selector/safety motivation。
+
 ## Safety selector 尝试
 
 已实现 `--method ragc_auto_gcl`：
@@ -179,30 +195,30 @@ RAGC-GCL 升级为当前最强 active candidate，但仍不是最终成功主方
 - 在 Actor/Chameleon/Squirrel/Texas 的 10-split seed0 均值上，RAGC 对 raw-only 全部为正。
 - 在 Cora/CiteSeer/PubMed 的 5-seed random-probe safety 中，RAGC 对 raw-only 全部为正。
 - Chameleon/Squirrel 正是许多前序候选的失败边界，本候选在这两个数据集上同时超过 raw-only 与 learned-only。
-- learned-branch shuffle/random controls 在 Chameleon/Squirrel 的 10-split 上明显失败，说明 normal learned branch 的节点对应关系有机制价值。
+- learned-branch shuffle/random controls 在 Actor/Chameleon/Squirrel 的 10-split 上明显失败，说明 normal learned branch 的节点对应关系有机制价值。
 - 论文切口比“再调 reliability weight”更清楚：raw feature anchor 负责安全性，graph SSL branch 只证明 complement value。
 
 主要风险：
 
-- Texas 10-split 均值微正但 split 级不稳定，WebKB 小图仍需要 safety selector 或 learned-branch weight control。
-- 当前主要是 seed0 split study，仍需多 seed 与 homophily safety。
+- Texas 10-split 均值微正但 split 级不稳定，且 shuffle control 均值略高于 normal；WebKB 小图仍需要 safety selector 或 learned-branch weight control。
+- 当前主要是 seed0 split study，仍需多 seed 与更强 baseline 对齐。
 - Cora 上 learned-only 明显强于 RAGC，说明 fixed concatenation 不是全局最优；若要冲顶会，需要协议一致的 raw/learned/RAGC selector 或更细的 learned-branch scaling。
 
 ## 下一步硬门槛
 
 必须补做：
 
-- Cora/CiteSeer/PubMed homophily safety。
-- Actor/Texas 的 10-split shuffle/random controls。
 - 多 seed 或更标准的 split/seed 分离复核。
 - 与 `gcn_mlp_gcl`、GRACE、SSPNV/BSPNV 等已实现强候选固化为同表比较。
 - 设计可用于 Planetoid random-probe 协议的 selector，或明确将 selector 只用于具有 validation mask 的 transductive split。
+- 若 RAGC 不能在 strong baseline table 中保持至少 3 个异配数据集稳定正向，或 selector 无法修复 Texas/Cora 边界，应收缩为机制诊断论文路线或放弃固定拼接主方法。
 
 建议下一步命令：
 
 ```bash
 cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl
-DATASETS="Actor Chameleon Squirrel Texas" METHODS="raw_features ragc_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/ragc_s0_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh
-python summarize_split_study.py --runs-dir runs/ragc_s0_splits0-9_e50 --baseline-method raw_features --out runs/ragc_s0_splits0-9_e50/runs_vs_raw.csv --aggregate-out runs/ragc_s0_splits0-9_e50/aggregate_vs_raw.csv
-DATASETS="Cora CiteSeer PubMed" METHODS="raw_features ragc_gcl" SPLITS="0" SEEDS="0 1 2 3 4" EPOCHS=50 RUNS_DIR="runs/ragc_homophily_s0-4_e50" OVERWRITE=1 bash scripts/run_split_study.sh
+cat runs/ragc_s0_splits0-9_e50/aggregate_vs_raw.csv
+cat runs/ragc_controls_wiki_s0_splits0-9_e50/split_study_aggregate.csv
+cat runs/ragc_controls_actor_texas_s0_splits0-9_e50/split_study_aggregate.csv
+DATASETS="Actor Chameleon Squirrel Texas" METHODS="grace gcn_mlp_gcl raw_features ragc_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/ragc_strong_table_s1-2_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh
 ```
