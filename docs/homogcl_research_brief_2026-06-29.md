@@ -46,7 +46,7 @@
 | CiteSeer | 0.7107 | 0.7107 | +0.0000 | 0/0 | 谱分散触发回退，按设计持平。 |
 | PubMed | 0.7530 | 0.7710 | +0.0180 | 3/0 | 低秩去噪稳定有效，是当前最强信号。 |
 
-Amazon smoke 显示同一 safe gate 在 Photo 上取得 0.8985 vs AutoProp 0.8644，delta +0.0341，rank=32；在 Computers 上回退持平 0.7984，修复了 0.30 阈值版本的压缩损伤。结论：`SpecProp` 不是已完成的通用 SOTA idea，而是一个有明确条件边界的候选：在传播银行谱高度集中时低秩瓶颈有价值；在谱分散或中等集中时应回退。
+Amazon class-random seeds 0/1/2 显示同一 safe gate 在 Photo 上平均 0.9071 vs AutoProp 0.8745，delta +0.0326，3 胜 0 负，rank=32；在 Computers 上平均 0.7965 vs AutoProp 0.7965，回退持平，修复了 0.30 阈值版本的压缩损伤。结论：`SpecProp` 不是已完成的通用 SOTA idea，而是一个有明确条件边界的候选：在传播银行谱高度集中时低秩瓶颈有价值；在谱分散或中等集中时应回退。
 
 ## Research Question Brief
 

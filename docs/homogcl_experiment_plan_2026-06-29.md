@@ -74,11 +74,11 @@
 | Cora | specprop strict random split mean | 0.8212 | delta +0.0000，回退持平 |
 | CiteSeer | specprop random split mean | 0.7107 | delta +0.0000，回退持平 |
 | PubMed | specprop random split mean | 0.7710 | delta +0.0180，3 胜 0 负 |
-| Photo | specprop safe random split seed 0 | 0.8985 | AutoProp 0.8644，delta +0.0341 |
-| Computers | specprop safe random split seed 0 | 0.7984 | AutoProp 0.7984，回退持平 |
+| Photo | specprop safe random split mean | 0.9071 | AutoProp 0.8745，delta +0.0326，3 胜 0 负 |
+| Computers | specprop safe random split mean | 0.7965 | AutoProp 0.7965，回退持平 |
 | Cora | horpgcl | 0.796 | 失败候选 |
 | Cora | propccat | 0.821 | 未超过 AutoProp |
 
 ## 当前结论
 
-Safe-gated `SpecProp` 是当前最值得继续的条件性候选：它在 class-balanced random split seeds 0/1/2 上对 Cora/CiteSeer 无损回退，对 PubMed 稳定提升；Amazon Photo smoke 也出现大幅提升，而 Computers 反例被 0.34 阈值安全回退。下一步必须扩展到更多 Amazon/Coauthor split，验证“高谱集中 -> 低秩去噪有效”的规律是否稳健。
+Safe-gated `SpecProp` 是当前最值得继续的条件性候选：它在 class-balanced random split seeds 0/1/2 上对 Cora/CiteSeer/Computers 无损回退，对 PubMed/Photo 稳定提升。下一步必须扩展到 Coauthor CS/Physics 或设计更可扩展的谱统计实现，验证“高谱集中 -> 低秩去噪有效”的规律是否稳健。

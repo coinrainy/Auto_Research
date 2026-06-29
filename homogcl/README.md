@@ -32,7 +32,9 @@
   - Cora：平均 +0.000，回退持平
   - CiteSeer：平均 +0.000，完全回退持平
   - PubMed：平均 +0.018，3 胜 0 负，谱压缩信号最强
-- `specprop` safe gate 在 Amazon Photo class-random seed 0 上取得 0.8985 vs AutoProp 0.8644，delta +0.0341，rank=32；在 Amazon Computers 上回退持平 0.7984，修复了低阈值版本的压缩损伤。
+- `specprop` safe gate 在 Amazon class-random seeds 0/1/2 上取得：
+  - Photo：平均 0.9071 vs AutoProp 0.8745，delta +0.0326，3 胜 0 负，rank=32。
+  - Computers：平均 0.7965 vs AutoProp 0.7965，完全回退持平，修复了低阈值版本的压缩损伤。
 - 这些结果只能作为早筛，不足以支撑 SOTA 或顶会投稿结论。
 
 ## 快速运行
@@ -50,6 +52,7 @@ bash scripts/run_autoprop_smoke.sh
 bash scripts/run_specprop_smoke.sh
 bash scripts/run_specprop_multisplit.sh
 bash scripts/run_specprop_amazon_smoke.sh
+bash scripts/run_specprop_amazon_multisplit.sh
 ```
 
 ## 当前协议

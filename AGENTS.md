@@ -19,7 +19,7 @@
 - 新增当前条件性候选 `specprop`：AutoProp + 安全谱集中度门控 + 低秩去噪；仅当 top-10 PCA 能量占比 >= 0.34 时压缩到 rank=32，否则回退到 AutoProp。
 - 当前 full C-grid public split 快速结果：SpecProp 相对 AutoProp 为 Cora +0.010、CiteSeer +0.000、PubMed +0.005。
 - 当前 strict SpecProp class-balanced random split seeds 0/1/2 paired 结果：Cora +0.000（回退持平）、CiteSeer +0.000（回退持平）、PubMed +0.018（3 胜 0 负）。
-- Amazon smoke：Photo 0.8985 vs AutoProp 0.8644，delta +0.0341，rank=32；Computers 回退持平 0.7984，避免低阈值压缩损伤。
+- Amazon class-random seeds 0/1/2 paired 结果：Photo 平均 0.9071 vs AutoProp 0.8745，delta +0.0326，3 胜 0 负；Computers 平均 0.7965 vs AutoProp 0.7965，回退持平。
 - 协议细节见：
   - `docs/gcl_experiment_protocol_checklist.md`
   - `docs/context_reset_protocol_only_2026-06-29.md`
@@ -41,5 +41,6 @@ bash scripts/run_autoprop_smoke.sh
 bash scripts/run_specprop_smoke.sh
 bash scripts/run_specprop_multisplit.sh
 bash scripts/run_specprop_amazon_smoke.sh
+bash scripts/run_specprop_amazon_multisplit.sh
 python -m homogcl.compare --input-dirs results/specprop_safe_multisplit --baseline autopropcat --candidate specprop --output-csv results/specprop_safe_multisplit_paired.csv
 ```
