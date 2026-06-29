@@ -12,7 +12,7 @@
 
 - 原 `homogcl` 候选失败：在 `results/smoke_summary.csv` 中，CiteSeer 比 `propcat` 低 0.0685，Cora 低 0.0165，PubMed 仅高 0.004，不足以继续作为主线。
 - `horpgcl` 候选失败：Cora 快速测试 test accuracy 为 0.796，低于 `autopropcat` 的 0.831。
-- 当前保留方向：把 `autopropcat` 作为同配图 GCL 的强证伪器，并寻找能在多 split、多 seed、强 baseline 下超过自动传播边界的学习机制。
+- 当前保留方向：把 `autopropcat` 作为同配图 GCL 的强证伪器，并推进 `specprop`：基于无标签谱集中度判断传播银行是否需要低秩去噪。
 
 ### AutoProp 早筛结果
 
@@ -24,6 +24,18 @@
 
 这些结果是单 seed public split + 短 C 网格，不能声明 SOTA；它们只说明当前学习式候选没有越过传播充分性边界。
 
+### SpecProp 候选结果
+
+`SpecProp` 的无标签规则：先用 AutoProp 选择传播深度；计算传播银行 PCA 谱。若 top-10 能量占比 >= 0.30，则压缩到 rank=32；若 top-10 能量占比 >= 0.20，则压缩到 95% 能量 rank；否则不压缩，回退到 AutoProp。
+
+| Dataset | AutoProp Full Grid | SpecProp Full Grid | Selected K | Selected Rank | Delta |
+|---|---:|---:|---:|---:|---:|
+| Cora | 0.824 | 0.834 | 6 | 647 | +0.010 |
+| CiteSeer | 0.723 | 0.723 | 6 | 0 | +0.000 |
+| PubMed | 0.793 | 0.798 | 7 | 32 | +0.005 |
+
+当前证据说明 `SpecProp` 是本仓库第一条没有损伤 Planetoid 三图、且越过 AutoProp full-grid 边界的候选。但它仍是单 seed public split 证据，不能宣称 SOTA。
+
 ## Research Question Brief
 
 ### Topic Area
@@ -32,7 +44,7 @@
 
 ### Primary Research Question
 
-在同配属性图的节点分类任务中，是否存在一种无标签图对比学习机制，能稳定超过自动选择传播深度的训练免费强基线，并解释何时传播已经足够、何时学习式对比目标仍然必要？
+在同配属性图的节点分类任务中，无标签传播银行的谱集中度是否能预测何时需要低秩去噪，并使 `SpecProp` 稳定超过自动选择传播深度的训练免费强基线？
 
 ### FINER Assessment
 
@@ -40,7 +52,7 @@
 |---|---:|---|
 | Feasible | 5/5 | Planetoid 同配图、PyG 数据加载、GRACE/PROP/HomoGCL 可在当前仓库内自实现并快速验证。 |
 | Interesting | 4/5 | 2024-2026 文献共同指向“随机增强、传播强基线、结构可靠性”三类矛盾，适合形成清晰贡献。 |
-| Novel | 3/5 | 单纯同配正样本扩展已有 HomoGCL；新意需要转移到“传播充分性边界 + 相对/谱可靠学习何时超过该边界”的可证伪框架。 |
+| Novel | 4/5 | 单纯同配正样本扩展已有 HomoGCL；`SpecProp` 的新意在于把传播充分性边界、无标签谱集中度和低秩瓶颈连接成可证伪规则。 |
 | Ethical | 5/5 | 使用公开图数据和标准节点分类协议，无人类受试者或敏感数据收集。 |
 | Relevant | 4/5 | 若成立，可为 GCL 在同配图上摆脱随机增强和复杂 encoder 提供更简单有效的设计原则。 |
 | **Average** | **4.2/5** | 达到继续做原型与 smoke test 的阈值。 |
@@ -55,9 +67,9 @@
 
 ### Sub-questions
 
-1. `autopropcat` 在多 split、多 seed 下是否仍是同配图节点分类的强到离谱的训练免费基线？
-2. 学习式 GCL 若超过 AutoProp，收益来自结构可靠性、相对排序、度平衡，还是 propagation bank 的线性残差？
-3. 哪些图统计量可以预测“传播已足够”与“需要学习式对比目标”？
+1. `specprop` 在多 split、多 seed 下是否仍能超过或持平 `autopropcat`？
+2. 谱集中度阈值和 rank 规则是否真正解释收益，而不是 Planetoid public split 偶然现象？
+3. 哪些图统计量可以预测“传播已足够”“需要低秩去噪”或“需要学习式对比目标”？
 
 ### Candidate Questions Considered
 

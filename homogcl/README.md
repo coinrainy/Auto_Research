@@ -1,6 +1,6 @@
 # 同配图 GCL / 传播证伪原型
 
-本工作区用于快速证伪和孵化“优先面向同配图”的图对比学习研究想法。当前结论很明确：最初的 `homogcl` 候选没有通过 smoke test，不应继续包装为主方法；当前保留的更有价值方向是把自动多阶传播作为强证伪器，再寻找真正能超过该边界的 GCL 机制。
+本工作区用于快速证伪和孵化“优先面向同配图”的图对比学习研究想法。当前结论很明确：最初的 `homogcl` 候选没有通过 smoke test，不应继续包装为主方法；当前主线候选是 `specprop`，即在 AutoProp 传播边界之上加入无标签谱集中度门控和低秩去噪。
 
 ## 当前方法入口
 
@@ -8,6 +8,7 @@
 - `prop`：GCN 式训练免费特征传播。
 - `propcat`：多阶传播银行 `[X, SX, ..., S^KX]`。
 - `autopropcat`：用无标签传播残差平台期自动选择 `K` 的传播银行；当前作为所有 GCL 候选必须击败的强证伪器。
+- `specprop`：AutoProp + 谱集中度门控。若传播银行谱高度集中，压缩到低秩瓶颈；若中度集中，保留 95% 能量；若谱分散，则回退到 AutoProp，避免损伤 CiteSeer 这类图。
 - `grace` / `gracecat`：随机增强 InfoNCE 及其传播拼接诊断。
 - `homogcl`：失败候选；同配保真增强 + 多正样本 InfoNCE。
 - `horp`：HoRP 教师表示；节点级传播残差门控 + 传播轨迹/残差拼接。
@@ -23,13 +24,17 @@
   - Cora：0.831，selected `K=6`
   - CiteSeer：0.726，selected `K=6`
   - PubMed：0.789，selected `K=7`
+- `specprop` 在 full C-grid 单 seed public split 上相对 `autopropcat` full-grid 取得：
+  - Cora：0.834 vs 0.824，selected `K=6`、PCA rank=647
+  - CiteSeer：0.723 vs 0.723，selected `K=6`、不压缩
+  - PubMed：0.798 vs 0.793，selected `K=7`、PCA rank=32
 - 这些结果只能作为早筛，不足以支撑 SOTA 或顶会投稿结论。
 
 ## 快速运行
 
 ```bash
-python -m homogcl.train --dataset Cora --method autopropcat --max-prop-steps 10 --probe sklogreg --logreg-c-grid 0.25,1,4,16
-python -m homogcl.summarize --input-dir results/autoprop --output-csv results/autoprop_summary.csv
+python -m homogcl.train --dataset Cora --method specprop --max-prop-steps 10 --probe sklogreg
+python -m homogcl.summarize --input-dir results/specprop_fullgrid --output-csv results/specprop_fullgrid_summary.csv
 ```
 
 完整 smoke test：
@@ -37,6 +42,7 @@ python -m homogcl.summarize --input-dir results/autoprop --output-csv results/au
 ```bash
 bash scripts/run_homogcl_smoke.sh
 bash scripts/run_autoprop_smoke.sh
+bash scripts/run_specprop_smoke.sh
 ```
 
 ## 当前协议

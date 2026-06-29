@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-csv", default="results/selected_summary.csv")
     parser.add_argument(
         "--candidates",
-        default="autopropcat,propcat,gracecat,ccacat,grace,prop",
+        default="specprop,autopropcat,propcat,gracecat,ccacat,grace,prop",
         help="Comma-separated method names eligible for validation selection.",
     )
     parser.add_argument(
@@ -45,8 +45,11 @@ def main() -> None:
                 "probe": hp.get("probe", ""),
                 "prop_steps": hp.get("prop_steps", ""),
                 "selected_prop_steps": item["metrics"].get("selected_prop_steps", ""),
+                "selected_pca_rank": item["metrics"].get("selected_pca_rank", ""),
                 "max_prop_steps": hp.get("max_prop_steps", ""),
                 "autoprop_plateau_ratio": hp.get("autoprop_plateau_ratio", ""),
+                "specprop_high_concentration": hp.get("specprop_high_concentration", ""),
+                "specprop_mid_concentration": hp.get("specprop_mid_concentration", ""),
                 "edge_drop": hp.get("edge_drop", ""),
                 "feat_drop": hp.get("feat_drop", ""),
                 "epochs": hp.get("epochs", ""),
@@ -66,6 +69,8 @@ def main() -> None:
         "prop_steps",
         "max_prop_steps",
         "autoprop_plateau_ratio",
+        "specprop_high_concentration",
+        "specprop_mid_concentration",
         "edge_drop",
         "feat_drop",
         "epochs",
@@ -103,6 +108,7 @@ def main() -> None:
                 "method",
                 "prop_steps",
                 "selected_prop_steps",
+                "selected_pca_rank",
                 "edge_drop",
                 "feat_drop",
                 "val_acc",

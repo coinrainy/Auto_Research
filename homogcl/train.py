@@ -209,6 +209,77 @@ def select_autoprop_steps(
     return max_steps
 
 
+def spectral_profile(x: torch.Tensor, max_rank: int) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
+    x = x.float()
+    x_centered = x - x.mean(dim=0, keepdim=True)
+    q = min(max_rank, min(x_centered.shape) - 1)
+    q = max(q, 1)
+    u, s, _ = torch.pca_lowrank(x_centered, q=q, center=False, niter=4)
+    energy = s.square()
+    energy_share = energy / energy.sum().clamp_min(1e-12)
+    cumulative = energy_share.cumsum(dim=0)
+    participation = energy.sum().square() / energy.square().sum().clamp_min(1e-12)
+    top10 = energy_share[: min(10, energy_share.numel())].sum()
+    return u, s, {
+        "spectral_rank_limit": float(q),
+        "spectral_participation_rank": float(participation.item()),
+        "spectral_top10_energy": float(top10.item()),
+        "spectral_energy_80_rank": float((cumulative >= 0.80).nonzero()[0].item() + 1),
+        "spectral_energy_90_rank": float((cumulative >= 0.90).nonzero()[0].item() + 1),
+        "spectral_energy_95_rank": float((cumulative >= 0.95).nonzero()[0].item() + 1),
+    }
+
+
+def select_specprop_rank(
+    profile: dict[str, float],
+    high_concentration: float,
+    mid_concentration: float,
+    low_rank: int,
+) -> int:
+    top10 = profile["spectral_top10_energy"]
+    if top10 >= high_concentration:
+        return low_rank
+    if top10 >= mid_concentration:
+        return int(profile["spectral_energy_95_rank"])
+    return 0
+
+
+def specprop_embedding(
+    x: torch.Tensor,
+    edge_index: torch.Tensor,
+    max_steps: int,
+    plateau_ratio: float,
+    max_rank: int,
+    low_rank: int,
+    high_concentration: float,
+    mid_concentration: float,
+) -> tuple[torch.Tensor, dict[str, float]]:
+    selected_steps = select_autoprop_steps(
+        x,
+        edge_index,
+        max_steps=max_steps,
+        plateau_ratio=plateau_ratio,
+    )
+    bank = propagation_bank(x, edge_index, selected_steps)
+    u, s, profile = spectral_profile(bank, max_rank=max_rank)
+    selected_rank = select_specprop_rank(
+        profile,
+        high_concentration=high_concentration,
+        mid_concentration=mid_concentration,
+        low_rank=low_rank,
+    )
+    metrics = {
+        "ssl_loss": 0.0,
+        "selected_prop_steps": float(selected_steps),
+        "selected_pca_rank": float(selected_rank),
+        **profile,
+    }
+    if selected_rank <= 0:
+        return bank, metrics
+    rank = min(selected_rank, s.numel())
+    return u[:, :rank] * s[:rank], metrics
+
+
 def random_bank_drop(bank: torch.Tensor, drop_rate: float) -> torch.Tensor:
     if drop_rate <= 0:
         return bank
@@ -332,6 +403,17 @@ def build_embedding(args: argparse.Namespace, graph) -> tuple[torch.Tensor, dict
             "ssl_loss": 0.0,
             "selected_prop_steps": float(selected_steps),
         }
+    if args.method == "specprop":
+        return specprop_embedding(
+            x,
+            edge_index,
+            max_steps=args.max_prop_steps,
+            plateau_ratio=args.autoprop_plateau_ratio,
+            max_rank=args.specprop_max_rank,
+            low_rank=args.specprop_low_rank,
+            high_concentration=args.specprop_high_concentration,
+            mid_concentration=args.specprop_mid_concentration,
+        )
     if args.method == "horp":
         return horp_embedding(
             x,
@@ -360,6 +442,7 @@ def parse_args() -> argparse.Namespace:
             "prop",
             "propcat",
             "autopropcat",
+            "specprop",
             "propcca",
             "propccat",
             "ccassg",
@@ -388,6 +471,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prop-steps", type=int, default=2)
     parser.add_argument("--max-prop-steps", type=int, default=10)
     parser.add_argument("--autoprop-plateau-ratio", type=float, default=0.75)
+    parser.add_argument("--specprop-max-rank", type=int, default=1024)
+    parser.add_argument("--specprop-low-rank", type=int, default=32)
+    parser.add_argument("--specprop-high-concentration", type=float, default=0.30)
+    parser.add_argument("--specprop-mid-concentration", type=float, default=0.20)
     parser.add_argument("--pos-k", type=int, default=4)
     parser.add_argument("--neg-k", type=int, default=16)
     parser.add_argument("--max-dense-nodes", type=int, default=6000)
@@ -416,6 +503,15 @@ def result_signature(args: argparse.Namespace) -> str:
     parts = [f"k{args.prop_steps}"]
     if args.method == "autopropcat":
         parts = [f"maxk{args.max_prop_steps}", f"plateau{args.autoprop_plateau_ratio:g}"]
+    if args.method == "specprop":
+        parts = [
+            f"maxk{args.max_prop_steps}",
+            f"plateau{args.autoprop_plateau_ratio:g}",
+            f"sr{args.specprop_max_rank}",
+            f"lr{args.specprop_low_rank}",
+            f"hc{args.specprop_high_concentration:g}",
+            f"mc{args.specprop_mid_concentration:g}",
+        ]
     if args.method in {"homogcl", "horpgcl"}:
         parts.extend([f"pk{args.pos_k}", f"ed{args.edge_drop:g}", f"fd{args.feat_drop:g}"])
     if args.method == "horpgcl":
