@@ -24,20 +24,23 @@
 - `corespecprop` 5 数据集 seeds 0/1/2 paired 结果：Cora/CiteSeer/Computers 回退持平；PubMed 平均 0.7804 vs AutoProp 0.7530，delta +0.0274，3 胜 0 负；Photo 平均 0.9051 vs AutoProp 0.8745，delta +0.0306，3 胜 0 负。
 - `corespecprop` 正例图 seeds 0-9 压力测试：PubMed 平均 0.7739 vs AutoProp 0.7541，delta +0.0198，10 胜 0 负，Wilcoxon greater p=0.000977；Photo 平均 0.9002 vs AutoProp 0.8817，delta +0.0185，10 胜 0 负，Wilcoxon greater p=0.000977。
 - 新增 WikiCS 官方 20 split 支持与结果：CoreSpecProp 平均 0.7702 vs AutoProp 0.7636，delta +0.0066，18 胜 2 负，Wilcoxon greater p=0.000182；这说明高谱集中图上总体有效，但不再是严格逐 split 无损。
-- 新增当前最佳候选 `tierspecprop`：top-10 PCA 能量 < 0.34 回退；0.34-0.36 选择窄 rank=16；>=0.36 选择宽 rank=32。WikiCS rank 消融显示固定 rank=32 平均 0.7833 vs AutoProp 0.7636，delta +0.0197，20 胜 0 负，显著优于 core rank16 的 0.7702；PubMed rank32 出现 3 个负 split，因此采用分层 rank。
+- `tierspecprop`：top-10 PCA 能量 < 0.34 回退；0.34-0.36 选择窄 rank=16；>=0.36 选择宽 rank=32。WikiCS rank 消融显示固定 rank=32 平均 0.7833 vs AutoProp 0.7636，delta +0.0197，20 胜 0 负，显著优于 core rank16 的 0.7702；PubMed rank32 出现 3 个负 split，因此采用分层 rank。当前已降级为强谱核心分支，而不是最终主方法。
 - `tierspecprop` 当前关键结果：PubMed seeds 0-9 平均 0.7739 vs 0.7541，delta +0.0198，10 胜 0 负；Photo seeds 0-9 平均 0.9035 vs 0.8817，delta +0.0218，10 胜 0 负；WikiCS 官方 20 split 平均 0.7833 vs 0.7636，delta +0.0197，20 胜 0 负，Wilcoxon greater p=4.42e-05。
 - 用户明确要求 Coauthor CS/Physics 先不做；后续建议暂缓 Coauthor 扩展。
-- 新增非 Coauthor 本地基线面板脚本：`scripts/run_local_baseline_key_multisplit.sh` 覆盖 PubMed/Photo，`scripts/run_local_baseline_wikics_multisplit.sh` 覆盖 WikiCS；默认比较 `tierspecprop`、`autopropcat`、`propccat`、`ccacat`、`gracecat`，用于下一轮强基线前的仓库内快速压力测试。
+- 新增非 Coauthor 本地基线面板脚本：`scripts/run_local_baseline_key_multisplit.sh` 覆盖 PubMed/Photo，`scripts/run_local_baseline_wikics_multisplit.sh` 覆盖 WikiCS；默认比较 `tierccacat`、`tierspecprop`、`autopropcat`、`propccat`、`ccacat`、`gracecat`，用于下一轮强基线前的仓库内快速压力测试。
+- PubMed 本地基线面板已完成 seeds 0-9：TierSpecProp vs `propccat` 为均值 +0.0136、9 胜 1 负；vs `gracecat` 为均值 +0.0152、9 胜 1 负；但 vs `ccacat` 仅均值 +0.0025、4 胜 6 负。结论：纯 TierSpecProp 不再作为最终主方法包装，应降级为谱核心分支。
+- 新增当前待验证候选 `tierccacat`：仅在窄谱核心 rank=16 时拼接 L2-normalized TierSpecProp 谱核心与 CCA-GCN 去相关残差；回退或宽谱核心 rank=32 时保持纯 TierSpecProp。PubMed seeds 0-9 相对 TierSpecProp 为 +0.0089、8 胜 2 负，Wilcoxon greater p=0.0098；相对 `ccacat` 为 +0.0115、7 胜 1 平 2 负，p=0.0820。Photo seed 0 条件检查为 rank=32、fusion_applied=0、test 0.8985，避免了无条件融合的 0.8898 损伤。
 - 协议细节见：
   - `docs/gcl_experiment_protocol_checklist.md`
   - `docs/context_reset_protocol_only_2026-06-29.md`
   - `docs/homogcl_research_brief_2026-06-29.md`
   - `docs/homogcl_experiment_plan_2026-06-29.md`
   - `docs/corespecprop_research_brief_2026-06-29.md`
+  - `docs/tierccacat_research_brief_2026-06-29.md`
 
 ## 后续原则
 
-- 下一轮研究主线应围绕 safe-gated `tierspecprop` 在高谱集中同配图（PubMed/Photo/WikiCS）上的分层谱核心去噪收益，扩展更多非 Coauthor 同配数据集和强 baseline；不要继续微调已失败的 `homogcl` / `horpgcl`。
+- 下一轮研究主线应围绕 `tierccacat` 验证“安全谱核心 + 去相关残差”是否能稳定压过 TierSpecProp 与 `ccacat`；如果不能，应放弃该融合候选，不要继续微调已失败的 `homogcl` / `horpgcl`。
 - 若继续做学习式 GCL，必须纳入 HomoGCL(KDD 2023)、PROPGCL、IRGCL、RELGCL、SGRL、BGRL、CCA-SSG 等强 baseline。
 - 论文级证据必须扩展到多 split、多 seed、更大同配图，并报告测试集不可见的超参选择规则。
 - 如果需要写新方法，应保持在当前仓库内清晰隔离，不能参考其他目录代码。
@@ -59,9 +62,12 @@ bash scripts/run_corespecprop_wikics_rank_ablation.sh
 bash scripts/run_tierspecprop_multisplit.sh
 bash scripts/run_tierspecprop_key_multisplit.sh
 bash scripts/run_tierspecprop_wikics_multisplit.sh
-EPOCHS=1 SPLIT_SEEDS="0" METHODS="autopropcat tierspecprop" OUT_DIR=results/local_baseline_key_syntax bash scripts/run_local_baseline_key_multisplit.sh
-EPOCHS=1 SPLIT_INDICES="0" METHODS="autopropcat tierspecprop" OUT_DIR=results/local_baseline_wikics_syntax bash scripts/run_local_baseline_wikics_multisplit.sh
+EPOCHS=1 SPLIT_SEEDS="0" METHODS="autopropcat tierspecprop tierccacat" OUT_DIR=results/local_baseline_key_syntax bash scripts/run_local_baseline_key_multisplit.sh
+EPOCHS=1 SPLIT_INDICES="0" METHODS="autopropcat tierspecprop tierccacat" OUT_DIR=results/local_baseline_wikics_syntax bash scripts/run_local_baseline_wikics_multisplit.sh
 bash scripts/run_local_baseline_key_multisplit.sh
 bash scripts/run_local_baseline_wikics_multisplit.sh
+python -m homogcl.train --dataset PubMed --split class-random --split-seed 0 --method tierccacat --epochs 200 --prop-steps 10 --max-prop-steps 10 --autoprop-plateau-ratio 0.75 --specprop-high-concentration 0.34 --tierspecprop-wide-concentration 0.36 --tierspecprop-narrow-rank 16 --tierspecprop-wide-rank 32 --probe sklogreg --logreg-c-grid 0.25,1,4,16 --output-dir results/tierccacat_pubmed_probe
+python -m homogcl.compare --input-dirs results/local_baseline_key_multisplit,results/tierccacat_pubmed_probe --baseline tierspecprop --candidate tierccacat --output-csv results/tierccacat_pubmed_vs_tierspecprop.csv
+python -m homogcl.compare --input-dirs results/local_baseline_key_multisplit,results/tierccacat_pubmed_probe --baseline ccacat --candidate tierccacat --output-csv results/tierccacat_pubmed_vs_ccacat.csv
 python -m homogcl.compare --input-dirs results/specprop_safe_multisplit --baseline autopropcat --candidate specprop --output-csv results/specprop_safe_multisplit_paired.csv
 ```

@@ -3,7 +3,7 @@ set -euo pipefail
 
 DATASETS_STR="${DATASETS:-PubMed Photo}"
 SPLIT_SEEDS_STR="${SPLIT_SEEDS:-0 1 2 3 4 5 6 7 8 9}"
-METHODS_STR="${METHODS:-autopropcat tierspecprop propccat ccacat gracecat}"
+METHODS_STR="${METHODS:-autopropcat tierspecprop tierccacat propccat ccacat gracecat}"
 OUT_DIR="${OUT_DIR:-results/local_baseline_key_multisplit}"
 EPOCHS="${EPOCHS:-200}"
 PROP_STEPS="${PROP_STEPS:-10}"
@@ -45,12 +45,15 @@ done
 
 python -m homogcl.summarize --input-dir "${OUT_DIR}" --output-csv "${OUT_DIR}_summary.csv"
 
-for baseline in autopropcat propccat ccacat gracecat; do
-  if [[ " ${METHODS_STR} " == *" ${baseline} "* && " ${METHODS_STR} " == *" tierspecprop "* ]]; then
+for baseline in autopropcat tierspecprop propccat ccacat gracecat; do
+  if [[ "${baseline}" == "tierspecprop" && " ${METHODS_STR} " != *" tierccacat "* ]]; then
+    continue
+  fi
+  if [[ " ${METHODS_STR} " == *" ${baseline} "* && " ${METHODS_STR} " == *" tierccacat "* ]]; then
     python -m homogcl.compare \
       --input-dirs "${OUT_DIR}" \
       --baseline "${baseline}" \
-      --candidate tierspecprop \
-      --output-csv "${OUT_DIR}_tierspecprop_vs_${baseline}.csv"
+      --candidate tierccacat \
+      --output-csv "${OUT_DIR}_tierccacat_vs_${baseline}.csv"
   fi
 done

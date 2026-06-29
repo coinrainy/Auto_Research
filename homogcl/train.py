@@ -445,7 +445,11 @@ def train_propcca(args: argparse.Namespace, graph) -> tuple[torch.Tensor, dict[s
     return emb, last
 
 
-def train_cca_gcn(args: argparse.Namespace, graph) -> tuple[torch.Tensor, dict[str, float]]:
+def train_cca_gcn(
+    args: argparse.Namespace,
+    graph,
+    append_propagation_bank: bool | None = None,
+) -> tuple[torch.Tensor, dict[str, float]]:
     data = graph.data
     x = data.x.to(args.device)
     edge_index = data.edge_index.to(args.device)
@@ -484,9 +488,52 @@ def train_cca_gcn(args: argparse.Namespace, graph) -> tuple[torch.Tensor, dict[s
             )
 
     emb = model.embed(x, edge_index)
-    if args.method == "ccacat":
+    if append_propagation_bank is None:
+        append_propagation_bank = args.method == "ccacat"
+    if append_propagation_bank:
         emb = torch.cat([propagation_bank(x, edge_index, args.prop_steps), emb], dim=1)
     return emb, last
+
+
+def tierccacat_embedding(args: argparse.Namespace, graph) -> tuple[torch.Tensor, dict[str, float]]:
+    data = graph.data
+    x = data.x.to(args.device)
+    edge_index = data.edge_index.to(args.device)
+    core, core_metrics = tierspecprop_embedding(
+        x,
+        edge_index,
+        max_steps=args.max_prop_steps,
+        plateau_ratio=args.autoprop_plateau_ratio,
+        max_rank=args.specprop_max_rank,
+        high_concentration=args.specprop_high_concentration,
+        wide_concentration=args.tierspecprop_wide_concentration,
+        narrow_rank=args.tierspecprop_narrow_rank,
+        wide_rank=args.tierspecprop_wide_rank,
+    )
+    selected_rank = int(core_metrics.get("selected_pca_rank", 0))
+    if selected_rank <= 0 or selected_rank >= args.tierspecprop_wide_rank:
+        return core, {
+            **core_metrics,
+            "fusion_applied": 0.0,
+            "fusion_core_dim": float(core.size(1)),
+            "fusion_residual_dim": 0.0,
+        }
+    residual, residual_metrics = train_cca_gcn(args, graph, append_propagation_bank=False)
+    emb = torch.cat(
+        [
+            F.normalize(core, p=2, dim=1),
+            F.normalize(residual, p=2, dim=1),
+        ],
+        dim=1,
+    )
+    metrics = {
+        **core_metrics,
+        **residual_metrics,
+        "fusion_applied": 1.0,
+        "fusion_core_dim": float(core.size(1)),
+        "fusion_residual_dim": float(residual.size(1)),
+    }
+    return emb, metrics
 
 
 def build_embedding(args: argparse.Namespace, graph) -> tuple[torch.Tensor, dict[str, float]]:
@@ -545,6 +592,8 @@ def build_embedding(args: argparse.Namespace, graph) -> tuple[torch.Tensor, dict
             narrow_rank=args.tierspecprop_narrow_rank,
             wide_rank=args.tierspecprop_wide_rank,
         )
+    if args.method == "tierccacat":
+        return tierccacat_embedding(args, graph)
     if args.method == "horp":
         return horp_embedding(
             x,
@@ -580,6 +629,7 @@ def parse_args() -> argparse.Namespace:
             "specprop",
             "corespecprop",
             "tierspecprop",
+            "tierccacat",
             "propcca",
             "propccat",
             "ccassg",
@@ -664,7 +714,7 @@ def result_signature(args: argparse.Namespace) -> str:
             f"cr{args.corespecprop_min_rank}-{args.corespecprop_max_rank}",
             f"pd{args.corespecprop_participation_divisor:g}",
         ]
-    if args.method == "tierspecprop":
+    if args.method in {"tierspecprop", "tierccacat"}:
         parts = [
             f"maxk{args.max_prop_steps}",
             f"plateau{args.autoprop_plateau_ratio:g}",
@@ -673,6 +723,8 @@ def result_signature(args: argparse.Namespace) -> str:
             f"wc{args.tierspecprop_wide_concentration:g}",
             f"tr{args.tierspecprop_narrow_rank}-{args.tierspecprop_wide_rank}",
         ]
+        if args.method == "tierccacat":
+            parts.extend([f"ed{args.edge_drop:g}", f"fd{args.feat_drop:g}", f"cl{args.cca_lambd:g}"])
     if args.method in {"homogcl", "horpgcl"}:
         parts.extend([f"pk{args.pos_k}", f"ed{args.edge_drop:g}", f"fd{args.feat_drop:g}"])
     if args.method == "horpgcl":

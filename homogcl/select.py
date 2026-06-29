@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-csv", default="results/selected_summary.csv")
     parser.add_argument(
         "--candidates",
-        default="tierspecprop,corespecprop,specprop,autopropcat,propcat,gracecat,ccacat,grace,prop",
+        default="tierccacat,tierspecprop,corespecprop,specprop,autopropcat,propcat,gracecat,ccacat,grace,prop",
         help="Comma-separated method names eligible for validation selection.",
     )
     parser.add_argument(
@@ -58,6 +58,9 @@ def main() -> None:
                 "tierspecprop_wide_concentration": hp.get("tierspecprop_wide_concentration", ""),
                 "tierspecprop_narrow_rank": hp.get("tierspecprop_narrow_rank", ""),
                 "tierspecprop_wide_rank": hp.get("tierspecprop_wide_rank", ""),
+                "fusion_applied": item["metrics"].get("fusion_applied", ""),
+                "fusion_core_dim": item["metrics"].get("fusion_core_dim", ""),
+                "fusion_residual_dim": item["metrics"].get("fusion_residual_dim", ""),
                 "edge_drop": hp.get("edge_drop", ""),
                 "feat_drop": hp.get("feat_drop", ""),
                 "epochs": hp.get("epochs", ""),
@@ -85,6 +88,9 @@ def main() -> None:
         "tierspecprop_wide_concentration",
         "tierspecprop_narrow_rank",
         "tierspecprop_wide_rank",
+        "fusion_applied",
+        "fusion_core_dim",
+        "fusion_residual_dim",
         "edge_drop",
         "feat_drop",
         "epochs",

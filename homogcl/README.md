@@ -1,6 +1,6 @@
 # 同配图 GCL / 传播证伪原型
 
-本工作区用于快速证伪和孵化“优先面向同配图”的图对比学习研究想法。当前结论很明确：最初的 `homogcl` 候选没有通过 smoke test，不应继续包装为主方法；当前主线候选是 `tierspecprop`，即在 AutoProp 传播边界之上加入无标签谱集中度门控和分层谱核心压缩。
+本工作区用于快速证伪和孵化“优先面向同配图”的图对比学习研究想法。当前结论很明确：最初的 `homogcl` 候选没有通过 smoke test，不应继续包装为主方法；`tierspecprop` 已验证为强谱核心分支，但在 PubMed 本地基线面板中无法逐 split 压制 `ccacat`。当前新候选是 `tierccacat`，即在窄谱过渡区把 TierSpecProp 的无标签谱核心与 CCA-GCN 去相关残差拼接，在宽谱核心或回退区保持纯 TierSpecProp。
 
 ## 当前方法入口
 
@@ -10,7 +10,8 @@
 - `autopropcat`：用无标签传播残差平台期自动选择 `K` 的传播银行；当前作为所有 GCL 候选必须击败的强证伪器。
 - `specprop`：AutoProp + 安全谱集中度门控。只有传播银行 top-10 PCA 能量占比达到 0.34 时才压缩到 rank=32，否则回退到 AutoProp。
 - `corespecprop`：AutoProp + 安全谱集中度门控 + 参与秩自适应核心压缩。top-10 PCA 能量占比低于 0.34 时回退到 AutoProp；触发压缩时按参与秩选择核心 rank，并裁剪到 16-32。
-- `tierspecprop`：当前主线。top-10 PCA 能量低于 0.34 回退；0.34-0.36 选择 rank=16；不低于 0.36 选择 rank=32。
+- `tierspecprop`：强谱核心分支。top-10 PCA 能量低于 0.34 回退；0.34-0.36 选择 rank=16；不低于 0.36 选择 rank=32。
+- `tierccacat`：当前待验证融合候选。只在 TierSpecProp 选择窄 rank=16 时拼接 L2-normalized 谱核心与 CCA-GCN 去相关残差；回退或宽 rank=32 时不融合，用来避免 Photo/WikiCS 这类强谱核心图被残差分支损伤。
 - `grace` / `gracecat`：随机增强 InfoNCE 及其传播拼接诊断。
 - `homogcl`：失败候选；同配保真增强 + 多正样本 InfoNCE。
 - `horp`：HoRP 教师表示；节点级传播残差门控 + 传播轨迹/残差拼接。
@@ -46,7 +47,8 @@
   - Photo class-random seeds 0-9：0.9035 vs AutoProp 0.8817，delta +0.0218，10 胜 0 负，rank=32。
   - WikiCS 官方 20 split：0.7833 vs AutoProp 0.7636，delta +0.0197，20 胜 0 负，rank=32。
 - 这些结果只能作为早筛，不足以支撑 SOTA 或顶会投稿结论。
-- `scripts/run_local_baseline_key_multisplit.sh` 和 `scripts/run_local_baseline_wikics_multisplit.sh` 提供非 Coauthor 的本地基线面板，用于把 `tierspecprop` 与仓库内已有的 `propccat`、`ccacat`、`gracecat` 诊断实现做同 split 对比；这些不是官方强 baseline 的替代品，只用于下一轮筛查。
+- `scripts/run_local_baseline_key_multisplit.sh` 和 `scripts/run_local_baseline_wikics_multisplit.sh` 提供非 Coauthor 的本地基线面板，用于把 `tierccacat` / `tierspecprop` 与仓库内已有的 `propccat`、`ccacat`、`gracecat` 诊断实现做同 split 对比；这些不是官方强 baseline 的替代品，只用于下一轮筛查。
+- PubMed 本地基线面板发现：TierSpecProp 对 `propccat` / `gracecat` 仍为 9 胜 1 负，但对 `ccacat` 只有均值 +0.0025 且 4 胜 6 负。因此不能继续把纯 TierSpecProp 当最终主方法，当前应优先验证 `tierccacat`。`tierccacat` 在 PubMed seeds 0-9 上相对 TierSpecProp 为 +0.0089、8 胜 2 负，Wilcoxon greater p=0.0098；相对 `ccacat` 为 +0.0115、7 胜 1 平 2 负，p=0.0820。
 
 ## 快速运行
 
