@@ -992,6 +992,9 @@
   - 当前主要成果：`gcn_mlp_gcl` 已作为 strong foundation 稳定超过 GRACE；SSPNV 在 Texas/Actor/Chameleon/Squirrel 的 10 split seed0 early gate 中相对 `gcn_mlp_gcl` 的 mean micro/macro 均为正，Chameleon 10/10 split micro 正向，Squirrel 9/10 split micro 正向。
   - 当前风险：仍未完成多 model seed、semantic/spatial/random-positive 消融、homophily safety 与 SP-GCL/S3GCL/PolyGCL/GraphECL 等强基线同协议对齐，因此不能声称 SOTA。
   - 下一步建议：优先补 SSPNV 消融与多 seed，而不是继续新增复杂模块。
+- 2026-06-29 当前 idea 实验结果百分比输出：
+  - 本轮读取 `experiments/topvenue_gcl/runs/split_study_sspnv_s0_splits0-2_e50/aggregate_vs_gcn_mlp.csv` 与 `experiments/topvenue_gcl/runs/sspnv_controls_wiki_s0_splits0-9_e50/split_study_aggregate.csv`，按百分比整理 SSPNV 主结果与 Chameleon/Squirrel 控制实验结果。
+  - 当前主结果仍为：SSPNV 相对 GCN-MLP 在 Texas、Actor、Chameleon、Squirrel 的 10 split seed0 early gate 中 mean F1Mi/F1Ma 均为正；Chameleon 与 Squirrel 是最稳数据集，Actor 是弱正边界。
 - 2026-06-28 SSPNV control、AFPNV 实现与裁决：
   - 已实现 SSPNV random-positive controls：`--sspnv-random-semantic` 与 `--sspnv-random-spatial`，并在 `run.json` / `summarize_split_study.py` 中记录对应诊断字段。
   - 已将 `scripts/run_split_study.sh` 泛化为支持 `RUN_TAG`，便于在同一 `RUNS_DIR` 内保存 full、semantic-only、spatial-only、random control 等多变体。
