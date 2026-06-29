@@ -16,6 +16,12 @@ def parse_args() -> argparse.Namespace:
         default="autopropcat,propcat,gracecat,ccacat,grace,prop",
         help="Comma-separated method names eligible for validation selection.",
     )
+    parser.add_argument(
+        "--mode",
+        choices=["run", "config"],
+        default="config",
+        help="run selects per seed; config selects one validation-best configuration per dataset.",
+    )
     return parser.parse_args()
 
 
@@ -38,6 +44,9 @@ def main() -> None:
                 "eval_seed": item["protocol"]["eval_seed"],
                 "probe": hp.get("probe", ""),
                 "prop_steps": hp.get("prop_steps", ""),
+                "selected_prop_steps": item["metrics"].get("selected_prop_steps", ""),
+                "max_prop_steps": hp.get("max_prop_steps", ""),
+                "autoprop_plateau_ratio": hp.get("autoprop_plateau_ratio", ""),
                 "edge_drop": hp.get("edge_drop", ""),
                 "feat_drop": hp.get("feat_drop", ""),
                 "epochs": hp.get("epochs", ""),
@@ -50,19 +59,42 @@ def main() -> None:
         raise SystemExit(f"No eligible candidate JSON files found under {args.input_dir}")
 
     df = pd.DataFrame(rows)
-    selected = (
-        df.sort_values(
-            ["dataset", "split_index", "model_seed", "eval_seed", "val_acc", "method"],
-            ascending=[True, True, True, True, False, True],
+    config_cols = [
+        "dataset",
+        "method",
+        "probe",
+        "prop_steps",
+        "max_prop_steps",
+        "autoprop_plateau_ratio",
+        "edge_drop",
+        "feat_drop",
+        "epochs",
+    ]
+    if args.mode == "run":
+        selected = (
+            df.sort_values(
+                ["dataset", "split_index", "model_seed", "eval_seed", "val_acc", "method"],
+                ascending=[True, True, True, True, False, True],
+            )
+            .groupby(["dataset", "split_index", "model_seed", "eval_seed"], as_index=False)
+            .head(1)
+            .sort_values(["dataset", "model_seed", "eval_seed"])
         )
-        .groupby(["dataset", "split_index", "model_seed", "eval_seed"], as_index=False)
-        .head(1)
-        .sort_values(["dataset", "model_seed", "eval_seed"])
-    )
+    else:
+        ranked = (
+            df.groupby(config_cols, dropna=False)
+            .agg(val_mean=("val_acc", "mean"), val_count=("val_acc", "count"))
+            .reset_index()
+            .sort_values(["dataset", "val_mean", "val_count", "method"], ascending=[True, False, False, True])
+            .groupby("dataset", as_index=False)
+            .head(1)
+        )
+        selected = df.merge(ranked[config_cols], on=config_cols, how="inner")
+        selected = selected.sort_values(["dataset", "model_seed", "eval_seed"])
     Path(args.output_csv).parent.mkdir(parents=True, exist_ok=True)
     selected.to_csv(args.output_csv, index=False)
     summary = selected.groupby("dataset")["test_acc"].agg(["count", "mean", "std", "min", "max"])
-    print("Selected candidates:")
+    print(f"Selected candidates (mode={args.mode}):")
     print(
         selected[
             [
@@ -70,6 +102,7 @@ def main() -> None:
                 "model_seed",
                 "method",
                 "prop_steps",
+                "selected_prop_steps",
                 "edge_drop",
                 "feat_drop",
                 "val_acc",
