@@ -1306,3 +1306,9 @@
   - 当前裁决：RAGC 的 raw/graph complement 机制保留；fixed concat、validation selector、全局 scaling 三个简单形态均不足以作为最终主方法。下一步 active subdirection 应是 Complement-Gated RAGC，使用无标签/协议一致的节点或图级 gate 判断 raw、learned 与 complement 的使用强度。
   - 已更新文档：`experiments/topvenue_gcl/docs/raw_anchored_graph_complement_candidate.md`、`experiments/topvenue_gcl/README.md`、`experiments/topvenue_gcl/docs/implementation_principles.md` 与本 `AGENTS.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/ragc_strong_table_s1-2_splits0-9_e50/partial_actor_aggregate.csv`；随后实现 `complement_gated_ragc`，先只跑 Actor targeted negatives（splits 5/7/8/9, seeds 1/2）与 positive controls（splits 0/2/3/6, seeds 1/2）。
+- 2026-06-29 方向重置：
+  - 用户明确决定放弃当前 idea 及其实验，不再继续推进 reliability-weighted GCL、RRNV 系列、BPRRNV、TNS、RAGC fixed concat、validation selector 或 complement-gated RAGC 的后续实验。
+  - 当前 active candidate 清空；既有实验与文档仅保留为负结果/经验记录，不再作为下一轮选题的默认起点。
+  - 下一步切换回 `academic-research-suite` -> `deep-research` -> `socratic` mode，重新进行研究方向构思。
+  - 新方向约束暂定延续：单卡 RTX 3060 12GB；优先节点分类；优先 Cora/CiteSeer/PubMed 与小中型 heterophily 数据集；避免大规模 OGB 主线；目标仍是 2026 年图学习方向顶会/顶刊投稿。
+  - 新一轮选题应先明确问题类型、目标失败模式、可复现实验边界与最小可发表贡献，再进入代码实现；避免在未形成清晰 RQ 前继续堆模块。
