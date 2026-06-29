@@ -1312,3 +1312,15 @@
   - 下一步切换回 `academic-research-suite` -> `deep-research` -> `socratic` mode，重新进行研究方向构思。
   - 新方向约束暂定延续：单卡 RTX 3060 12GB；优先节点分类；优先 Cora/CiteSeer/PubMed 与小中型 heterophily 数据集；避免大规模 OGB 主线；目标仍是 2026 年图学习方向顶会/顶刊投稿。
   - 新一轮选题应先明确问题类型、目标失败模式、可复现实验边界与最小可发表贡献，再进入代码实现；避免在未形成清晰 RQ 前继续堆模块。
+- 2026-06-29 同配图 1:1:8 新实验框架与 RPGCL-Auto：
+  - 用户要求放弃已有代码框架，重新进行实验，并确保同配图协议大部分为 `1:1:8`；本轮已停止旧 `experiments/topvenue_gcl` 批跑，不再沿用其训练框架作为新方法实现基础。
+  - 已新建独立工作区 `experiments/homophily_118_gcl/`，从零实现数据加载、分层 `train:val:test ~= 0.1:0.1:0.8` split、GCN encoder、sampled GRACE baseline、HPFS-GCL、RPGCL raw-preserved variants、validation-gated selector、统一 run 记录与汇总脚本。
+  - 后续主评估指标统一改为 **accuracy**；F1Mi/F1Ma 只作为附属记录，不作为主要裁决依据。
+  - 已验证 smoke：`cd experiments/homophily_118_gcl && bash scripts/run_smoke.sh`，Cora split0 实际比例为 train 272 / val 272 / test 2164，约 0.1004 / 0.1004 / 0.7991。
+  - 初始 HPFS-GCL（semantic positives + false-negative suppression）在 split0 上：Cora 约噪声级正向，CiteSeer 正向，PubMed 负向；因此 HPFS 单独方法降级，不作为当前主方法。
+  - 已实现 RPGCL-Auto：训练 HPFS encoder 后，在 HPFS embedding、raw features、raw+HPFS concat 三种表示中按 validation accuracy 选择最终表示；该方向当前解释为“同配图中应保护 raw feature separability，同时用 GCL graph context 补充信息”。
+  - RPGCL-Auto 早筛：Cora/CiteSeer/PubMed × splits0-2 × seed0 × 50 epoch，协议均为 1:1:8；输出目录 `experiments/homophily_118_gcl/runs/rpgcl_auto_homophily_splits0-2_e50/`。
+  - RPGCL-Auto vs 纯 GRACE 的 accuracy mean delta：Cora +0.002311（2/3 split 正，1/3 轻微负）、CiteSeer +0.013905（3/3 正）、PubMed +0.016653（3/3 正）、overall +0.010956（8/9 正）。
+  - 当前裁决：RPGCL-Auto 升级为 active candidate，但尚不能称为 SOTA；需要补 splits0-9、selector control（fixed HPFS / fixed raw-preserved / raw-only / oracle upper bound）、更强 baseline（至少 CCA-style/GraphECL 类轻量对照）与 selector margin。
+  - 已新增研究记录：`experiments/homophily_118_gcl/docs/rpgcl_auto_candidate_log.md`；已更新 `experiments/homophily_118_gcl/README.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/homophily_118_gcl && DATASETS="Cora CiteSeer PubMed" METHODS="raw_features grace rpgcl_auto" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/rpgcl_auto_homophily_splits0-9_e50" OVERWRITE=1 bash scripts/run_homophily_118_study.sh`；随后实现 selector controls 与 accuracy-only paper table。
