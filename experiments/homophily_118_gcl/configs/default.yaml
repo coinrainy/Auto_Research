@@ -21,6 +21,10 @@ neg_suppression: true
 neg_threshold: 0.35
 neg_temperature: 0.15
 neg_min_weight: 0.05
+gate_signal: edge_feature_cos_lift
+gate_threshold: 0.13
+gate_temperature: 0.02
+gate_hard: true
 split_train_ratio: 0.1
 split_val_ratio: 0.1
 split_base_seed: 2026

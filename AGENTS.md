@@ -1346,3 +1346,16 @@
   - 新 active subdirection：Complement-gated raw-preserved GCL。目标是在无标签、协议一致的条件下接近 Cora 的 HPFS-only 表现，同时接近 CiteSeer/PubMed 的 Raw+HPFS 表现。
   - 已更新 `experiments/homophily_118_gcl/docs/rpgcl_auto_candidate_log.md` 与 `experiments/homophily_118_gcl/README.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/homophily_118_gcl && python summarize_selector_controls.py --runs-vs runs/rpgcl_auto_selector_controls_splits0-9_e50/runs_vs_grace_light.csv --out runs/rpgcl_auto_selector_controls_splits0-9_e50/selector_control_pairs.csv --aggregate-out runs/rpgcl_auto_selector_controls_splits0-9_e50/selector_control_aggregate.csv && cat runs/rpgcl_auto_selector_controls_splits0-9_e50/selector_control_aggregate.csv`；随后实现 complement-gated variant。
+- 2026-06-29 Complement-gated HPFS 早筛：
+  - 已继续沿用独立工作区 `experiments/homophily_118_gcl/`，未参考或修改旧 `experiments/topvenue_gcl` 框架；评估主指标仍统一为 accuracy。
+  - 已新增 `analyze_complement_gate_signals.py`，从图结构、原始特征和已有 HPFS/Raw+HPFS 控制实验中计算无标签 gate 诊断；输出 `runs/rpgcl_auto_selector_controls_splits0-9_e50/complement_gate_signals.csv` 与 `complement_gate_signal_aggregate.csv`。
+  - 诊断发现 `edge_feature_cos_lift` 可区分当前三张同配图的 raw branch 需求：Cora raw branch gain=-0.020102、lift=0.111855；CiteSeer gain=+0.007178、lift=0.145687；PubMed gain=+0.017112、lift=0.200030。
+  - 已在 `train.py` 中新增方法 `cg_hpfs`：训练沿用 HPFS-GCL，表示阶段用无标签 `edge_feature_cos_lift >= 0.13` 的 hard gate 判断是否拼接 raw features；gate 不使用标签、split mask、validation accuracy 或 test accuracy。
+  - 已新增配置项 `gate_signal`、`gate_threshold`、`gate_temperature`、`gate_hard`；默认 `gate_threshold=0.13`、`gate_hard=true`。
+  - 已新增 `summarize_complement_gate.py`，对齐 GRACE-light、HPFS、Raw+HPFS、CG-HPFS 与 best fixed control；输出 `runs/complement_gate_splits0-9_e50/complement_gate_pairs.csv` 与 `complement_gate_aggregate.csv`。
+  - 已执行正式早筛：Cora/CiteSeer/PubMed × splits0-9 × model seed0 × 50 epoch，方法 `cg_hpfs`，协议均为分层 `1:1:8`；共 30/30 run 完成。
+  - Accuracy 汇总：Cora GRACE-light 0.792560、HPFS 0.799445、Raw+HPFS 0.779344、CG-HPFS 0.801710、best fixed 0.800185、CG-best +0.001525；CiteSeer 0.699324、0.711650、0.718828、0.717813、0.720669、CG-best -0.002856；PubMed 0.833095、0.834065、0.851176、0.851138、0.851176、CG-best -0.000038。
+  - 当前裁决：`cg_hpfs` 比 RPGCL-Auto validation selector 更符合无标签协议，暂时保留为候选方向；它能避开 Cora 的 Raw+HPFS 伤害，并基本保留 PubMed 的 Raw+HPFS 收益，但 CiteSeer 仍低于 best fixed，阈值也只在三张 Planetoid 同配图上早筛，不能声称 SOTA。
+  - 已验证：`python -m compileall train.py analyze_complement_gate_signals.py summarize_complement_gate.py src`、`python analyze_complement_gate_signals.py --runs-dir runs/rpgcl_auto_selector_controls_splits0-9_e50`、`python summarize_complement_gate.py --control-runs-dir runs/rpgcl_auto_selector_controls_splits0-9_e50 --gate-runs-dir runs/complement_gate_splits0-9_e50`。
+  - 已更新 `experiments/homophily_118_gcl/README.md` 与 `experiments/homophily_118_gcl/docs/rpgcl_auto_candidate_log.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/homophily_118_gcl && DATASETS="Cora CiteSeer PubMed" METHODS="grace hpfs_gcl rpgcl_hpfs cg_hpfs" SPLITS="0 1 2 3 4" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/complement_gate_seed_sanity_splits0-4_s1-2_e50" OVERWRITE=1 bash scripts/run_homophily_118_study.sh`；随后做 gate threshold sensitivity 与官方/强调参 GRACE/CCA-style baseline。

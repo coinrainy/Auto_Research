@@ -28,6 +28,7 @@ def parse_args():
             "hpfs_gcl",
             "rpgcl_grace",
             "rpgcl_hpfs",
+            "cg_hpfs",
             "rpgcl_auto",
         ],
     )
@@ -46,6 +47,9 @@ def parse_args():
     parser.add_argument("--neg-min-weight", type=float, default=None)
     parser.add_argument("--raw-weight", type=float, default=1.0)
     parser.add_argument("--gcl-weight", type=float, default=1.0)
+    parser.add_argument("--gate-threshold", type=float, default=None)
+    parser.add_argument("--gate-temperature", type=float, default=None)
+    parser.add_argument("--soft-gate", action="store_true")
     parser.add_argument("--shuffle-positives", action="store_true")
     parser.add_argument("--disable-neg-suppression", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
@@ -76,6 +80,12 @@ def merged_config(args):
         cfg["neg_threshold"] = args.neg_threshold
     if args.neg_min_weight is not None:
         cfg["neg_min_weight"] = args.neg_min_weight
+    if args.gate_threshold is not None:
+        cfg["gate_threshold"] = args.gate_threshold
+    if args.gate_temperature is not None:
+        cfg["gate_temperature"] = args.gate_temperature
+    if args.soft_gate:
+        cfg["gate_hard"] = False
     if args.disable_neg_suppression:
         cfg["neg_suppression"] = False
     return cfg
@@ -120,6 +130,43 @@ def negative_weights(keys, neg_idx, cfg):
     return weight.detach(), sim.detach()
 
 
+@torch.no_grad()
+def edge_feature_cosine_lift(x, edge_index):
+    x = F.normalize(x.detach().float(), dim=1)
+    src, dst = edge_index
+    edge_cos = (x[src] * x[dst]).sum(dim=1)
+    count = src.numel()
+    idx = torch.arange(count, device=edge_index.device)
+    # Deterministic pseudo-random node pairs avoid touching labels or split masks.
+    rand_src = (idx * 1103515245 + 12345) % x.size(0)
+    rand_dst = (idx * 1664525 + 1013904223) % x.size(0)
+    random_cos = (x[rand_src] * x[rand_dst]).sum(dim=1)
+    return float((edge_cos.mean() - random_cos.mean()).item())
+
+
+@torch.no_grad()
+def complement_gate_alpha(data, cfg):
+    signal = str(cfg.get("gate_signal", "edge_feature_cos_lift"))
+    if signal != "edge_feature_cos_lift":
+        raise ValueError(f"Unsupported gate_signal: {signal}")
+    value = edge_feature_cosine_lift(data.x, data.edge_index)
+    threshold = float(cfg["gate_threshold"])
+    temperature = max(float(cfg["gate_temperature"]), 1e-8)
+    soft_alpha = float(torch.sigmoid(torch.tensor((value - threshold) / temperature)).item())
+    alpha = 1.0 if bool(cfg.get("gate_hard", True)) and value >= threshold else 0.0
+    if not bool(cfg.get("gate_hard", True)):
+        alpha = soft_alpha
+    return {
+        "gate_signal": signal,
+        "gate_signal_value": value,
+        "gate_threshold": threshold,
+        "gate_temperature": temperature,
+        "gate_hard": bool(cfg.get("gate_hard", True)),
+        "gate_soft_alpha": soft_alpha,
+        "gate_alpha": float(alpha),
+    }
+
+
 def train_gcl(model, data, cfg, args, keys, semantic_pos):
     opt = torch.optim.Adam(
         model.parameters(),
@@ -139,12 +186,12 @@ def train_gcl(model, data, cfg, args, keys, semantic_pos):
         z1 = model.project(model.encode(x1, edge1))
         z2 = model.project(model.encode(x2, edge2))
         neg_idx = sample_negative_indices(data.num_nodes, int(cfg["num_negatives"]), data.x.device)
-        if args.method in {"hpfs_gcl", "rpgcl_hpfs", "rpgcl_auto"}:
+        if args.method in {"hpfs_gcl", "rpgcl_hpfs", "cg_hpfs", "rpgcl_auto"}:
             neg_weight, neg_sim = negative_weights(keys, neg_idx, cfg)
         else:
             neg_weight, neg_sim = None, None
         loss_self = sampled_contrastive(z1, z2, eye_pos, neg_idx, float(cfg["tau"]), neg_weight)
-        if args.method in {"hpfs_gcl", "rpgcl_hpfs", "rpgcl_auto"}:
+        if args.method in {"hpfs_gcl", "rpgcl_hpfs", "cg_hpfs", "rpgcl_auto"}:
             loss_sem = sampled_contrastive(z1, z2, semantic_pos, neg_idx, float(cfg["tau"]), neg_weight)
             loss = float(cfg["self_weight"]) * loss_self + float(cfg["semantic_weight"]) * loss_sem
         else:
@@ -217,19 +264,31 @@ def main():
                 float(args.raw_weight) * F.normalize(data.x.detach().float(), dim=1),
                 float(args.gcl_weight) * F.normalize(emb.detach().float(), dim=1),
             ], dim=1)
+        if args.method == "cg_hpfs":
+            gate = complement_gate_alpha(data, cfg)
+            emb = torch.cat([
+                gate["gate_alpha"] * float(args.raw_weight) * F.normalize(data.x.detach().float(), dim=1),
+                float(args.gcl_weight) * F.normalize(emb.detach().float(), dim=1),
+            ], dim=1)
     diagnostics = {
         "shuffle_positives": bool(args.shuffle_positives),
-        "neg_suppression": bool(args.method in {"hpfs_gcl", "rpgcl_hpfs", "rpgcl_auto"} and cfg.get("neg_suppression", True)),
+        "neg_suppression": bool(
+            args.method in {"hpfs_gcl", "rpgcl_hpfs", "cg_hpfs", "rpgcl_auto"}
+            and cfg.get("neg_suppression", True)
+        ),
         "semantic_topk": int(cfg["semantic_topk"]),
         "semantic_weight": float(cfg["semantic_weight"]),
         "num_negatives": int(cfg["num_negatives"]),
         "signature_hops": int(cfg["signature_hops"]),
         "signature_dim": int(keys.size(1)),
-        "raw_preserved": bool(args.method in {"rpgcl_grace", "rpgcl_hpfs"}),
+        "raw_preserved": bool(args.method in {"rpgcl_grace", "rpgcl_hpfs", "cg_hpfs"}),
         "raw_weight": float(args.raw_weight),
         "gcl_weight": float(args.gcl_weight),
     }
-    if args.method in {"hpfs_gcl", "rpgcl_hpfs", "rpgcl_auto"}:
+    if args.method == "cg_hpfs":
+        diagnostics.update(gate)
+        diagnostics["raw_preserved"] = bool(gate["gate_alpha"] > 0.0)
+    if args.method in {"hpfs_gcl", "rpgcl_hpfs", "cg_hpfs", "rpgcl_auto"}:
         first_pos = semantic_pos[:, 0]
         diagnostics["semantic_top1_key_sim"] = float((keys * keys[first_pos]).sum(dim=1).mean().item())
     if args.method == "rpgcl_auto":

@@ -100,6 +100,41 @@ RPGCL-Auto selector 降级为 **failed selector branch**，不再作为主方法
 
 后续 active subdirection：**Complement-gated raw-preserved GCL**。核心不再是用 validation accuracy 选全图表示，而是设计无标签、协议一致的 gate，避免 Cora 式 Raw+HPFS 伤害，同时保留 CiteSeer/PubMed 式 Raw+HPFS 互补增益。
 
+## Complement-gated HPFS 初筛
+
+新增方法：`cg_hpfs`。
+
+定义：
+
+- 训练仍使用 HPFS-GCL；
+- 表示阶段使用无标签 `edge_feature_cos_lift` 决定是否拼接 raw feature branch；
+- `edge_feature_cos_lift = edge feature cosine mean - deterministic random-pair feature cosine mean`；
+- 默认 hard gate：`edge_feature_cos_lift >= 0.13` 时使用 Raw+HPFS，否则使用 HPFS-only；
+- gate 不读取标签、validation accuracy、test accuracy 或 split mask。
+
+无标签信号与 raw branch 事后增益：
+
+| Dataset | Raw+HPFS - HPFS | edge feature cosine lift | gate alpha |
+| --- | ---: | ---: | ---: |
+| Cora | -0.020102 | 0.111855 | 0 |
+| CiteSeer | +0.007178 | 0.145687 | 1 |
+| PubMed | +0.017112 | 0.200030 | 1 |
+
+`cg_hpfs` 早筛：Cora/CiteSeer/PubMed × splits 0-9 × model seed 0 × 50 epoch。
+
+| Dataset | GRACE-light Acc | HPFS Acc | Raw+HPFS Acc | CG-HPFS Acc | Best fixed Acc | CG - Best fixed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Cora | 0.792560 | 0.799445 | 0.779344 | 0.801710 | 0.800185 | +0.001525 |
+| CiteSeer | 0.699324 | 0.711650 | 0.718828 | 0.717813 | 0.720669 | -0.002856 |
+| PubMed | 0.833095 | 0.834065 | 0.851176 | 0.851138 | 0.851176 | -0.000038 |
+
+当前裁决：
+
+- `cg_hpfs` 比 `rpgcl_auto` selector 更符合无标签协议，暂时保留；
+- 它能避开 Cora 的 Raw+HPFS 伤害，并保留 PubMed 的 Raw+HPFS 收益；
+- CiteSeer 上低于 best fixed 约 0.29 个百分点，因此尚不能升级为主方法；
+- 阈值只在三张 Planetoid 同配图上早筛，论文级主张必须补多 model seed、阈值敏感性、更多同配/中同配图和强 baseline。
+
 ## 下一步停止/推进标准
 
 推进：

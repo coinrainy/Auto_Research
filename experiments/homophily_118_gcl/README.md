@@ -12,7 +12,7 @@
 
 当前状态：**RPGCL-Auto selector 已降级**。它在 10 split 上优于 GRACE-light，但 selector-control 表明它没有超过 best fixed representation control，因此不再作为主方法继续扩大。
 
-下一步 active subdirection：**Complement-gated raw-preserved GCL**。核心问题从“用 validation accuracy 选全图表示”收缩为“无标签判断何时应保留 raw feature separability，何时应引入 graph contrastive complement”。
+当前 active subdirection：**Complement-gated raw-preserved GCL**。核心问题从“用 validation accuracy 选全图表示”收缩为“无标签判断何时应保留 raw feature separability，何时应引入 graph contrastive complement”。
 
 此前候选 **HPFS-GCL**：Homophily-Preserving positive expansion + False-negative Suppression，已保留为 RPGCL-Auto 的训练分支，但不是当前单独主方法。
 
@@ -46,10 +46,37 @@ RPGCL-Auto 在 Cora/CiteSeer/PubMed × splits 0-9 × model seed0 × 50 epoch 的
 - CiteSeer/PubMed 主要适合 Raw+HPFS；固定融合已经解释了 Auto 的收益。
 - 因此后续不继续调 validation selector，而是转向 complement gate。
 
+## Complement Gate 初筛
+
+新增 `cg_hpfs`：使用无标签 `edge_feature_cos_lift` 作为 raw branch gate。
+
+- `edge_feature_cos_lift = mean(cos(x_u, x_v) for edges) - mean(cos(x_i, x_j) for deterministic random pairs)`。
+- 默认阈值 `gate_threshold=0.13`，hard gate：低于阈值只用 HPFS embedding，高于阈值拼接 raw features + HPFS embedding。
+- gate 不读取标签、split mask、validation accuracy 或 test accuracy。
+
+无标签信号诊断：
+
+| Dataset | raw branch gain | edge feature cosine lift | gate alpha |
+| --- | ---: | ---: | ---: |
+| Cora | -0.020102 | 0.111855 | 0 |
+| CiteSeer | +0.007178 | 0.145687 | 1 |
+| PubMed | +0.017112 | 0.200030 | 1 |
+
+`cg_hpfs` 在 Cora/CiteSeer/PubMed × splits 0-9 × model seed0 × 50 epoch 的 accuracy 结果：
+
+| Dataset | GRACE-light | HPFS | Raw+HPFS | CG-HPFS | Best fixed | CG - Best fixed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Cora | 0.792560 | 0.799445 | 0.779344 | 0.801710 | 0.800185 | +0.001525 |
+| CiteSeer | 0.699324 | 0.711650 | 0.718828 | 0.717813 | 0.720669 | -0.002856 |
+| PubMed | 0.833095 | 0.834065 | 0.851176 | 0.851138 | 0.851176 | -0.000038 |
+
+当前裁决：`cg_hpfs` **暂时保留为候选方向，但不能声称 SOTA**。它比 validation selector 更干净，三图均高于 GRACE-light，并且成功避开 Cora 的 raw 分支伤害；但 CiteSeer 仍低于 best fixed，阈值也只在 3 个同配图上完成早筛。
+
 下一步必须通过的早筛：
 
 - complement gate 在 Cora 上接近 HPFS，同时在 CiteSeer/PubMed 上接近 Raw+HPFS；
 - 不能只靠 validation label selection；
+- 补充多 model seed、阈值敏感性与更多同配/中同配数据集；
 - 对齐官方/强调参 GRACE 与更多强 baseline，避免把 GRACE-light 的低数值误当作论文级结论。
 
 ## 快速运行
