@@ -1359,3 +1359,16 @@
   - 已验证：`python -m compileall train.py analyze_complement_gate_signals.py summarize_complement_gate.py src`、`python analyze_complement_gate_signals.py --runs-dir runs/rpgcl_auto_selector_controls_splits0-9_e50`、`python summarize_complement_gate.py --control-runs-dir runs/rpgcl_auto_selector_controls_splits0-9_e50 --gate-runs-dir runs/complement_gate_splits0-9_e50`。
   - 已更新 `experiments/homophily_118_gcl/README.md` 与 `experiments/homophily_118_gcl/docs/rpgcl_auto_candidate_log.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/homophily_118_gcl && DATASETS="Cora CiteSeer PubMed" METHODS="grace hpfs_gcl rpgcl_hpfs cg_hpfs" SPLITS="0 1 2 3 4" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/complement_gate_seed_sanity_splits0-4_s1-2_e50" OVERWRITE=1 bash scripts/run_homophily_118_study.sh`；随后做 gate threshold sensitivity 与官方/强调参 GRACE/CCA-style baseline。
+- 2026-06-29 文献重扫与 CBS-GCL 新方向：
+  - 用户要求放弃之前做过的路线，重新进行文献搜索与 idea 设计；已停止并删除未完成的 `experiments/homophily_118_gcl/runs/complement_gate_seed_sanity_splits0-4_s1-2_e50/`，不再继续 CG-HPFS/RPGCL/RAGC/reliability 等旧路线。
+  - 已使用 `academic-research-suite` deep-research / bibliography / devil's advocate 思路重新扫描 2024-2026 图对比学习与图自监督文献，重点包括 PROPGCL、SPGCL、CL-GCL、GraphECL、BLNN、PiNGDA、GraphPAE、GraphMAE、POT、SpCo 与 node distinguishability 相关工作。
+  - 已新增中文文献与 idea 设计备忘录：`docs/literature/homophily_gcl_idea_reset_2026-06-29.md`。
+  - 文献判断：传播/PROP 已是强基线；SPGCL 已占据 feature-wise Dirichlet energy positive sampling；CL-GCL 已占据 coarsening/manifold positives；GraphECL/SimMLP 已占据 MLP-GNN cross-model distillation；因此新 idea 不应再做全图 gate、validation selector、简单邻居正样本或 feature energy 分割。
+  - 新 active candidate：`CBS-GCL`（Core-Boundary Self-Guided Graph Contrastive Learning）。核心假设是节点级同配核心与疑似边界应使用不同自监督目标：核心节点做邻域/扩散 multi-positive compactness，边界节点做 residual/position preservation，避免过度平滑。
+  - 已新建独立目录 `experiments/cbs_gcl/`，并写入目录级 `AGENTS.md`；该目录不引用旧路线代码。
+  - 已实现阶段 0 诊断脚本 `experiments/cbs_gcl/analyze_core_boundary.py`，计算无标签 `core_score`、raw/propagation/residual linear probe accuracy、core 分桶 test error、top-k positive label agreement、edge label agreement 与 degree correlation。
+  - 已运行诊断：`python experiments/cbs_gcl/analyze_core_boundary.py --datasets Cora CiteSeer PubMed --splits 0 1 2 3 4 --out-dir experiments/cbs_gcl/runs/core_boundary_diagnostics_splits0-4 --chunk-size 512`；输出 `core_boundary_aggregate.csv`、`core_boundary_summary.csv`、`core_boundary_buckets.csv`、`core_boundary_view_results.csv`。
+  - 阶段 0 accuracy/诊断聚合：Cora raw 0.647505、prop1 0.820055、prop2 0.842144、prop+residual 0.817560、high-low topk agreement +0.069906、high-low raw error -0.136846；CiteSeer raw 0.657873、prop1 0.715145、prop2 0.724915、prop+residual 0.713717、high-low topk agreement +0.003381、high-low raw error -0.025397；PubMed raw 0.844278、prop1 0.850238、prop2 0.855031、prop+residual 0.861244、high-low topk agreement +0.024817、high-low raw error -0.006702。
+  - 当前裁决：CBS-GCL 未被阶段 0 淘汰，暂时保留为新 active candidate；`core_score` 与 degree 相关性接近 0，且 high-core 节点在三图上均有更低 test error。但 CiteSeer 的正样本质量差距很弱，PROP/prop2 本身非常强，下一步训练式 CBS-GCL 必须超过 Prop2 才值得继续。
+  - 已新增 `experiments/cbs_gcl/README.md` 记录当前结果、风险和停止标准。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/cbs_gcl && python train.py --dataset Cora --split-index 0 --method cbs_gcl --epochs 50`；在写训练前先实现 raw/prop2/GRACE-light 对齐 baseline，避免把弱训练模型误判为贡献。
