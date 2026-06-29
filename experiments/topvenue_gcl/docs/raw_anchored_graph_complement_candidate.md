@@ -129,14 +129,45 @@ RAGC normal vs `raw_features`：
 已实现 `--method ragc_auto_gcl`：
 
 - 训练阶段与 RAGC 相同。
-- 输出阶段在 `raw_features` 与 `raw+learned` 之间用验证集 F1Mi 选择。
-- 新增 `ragc_auto_min_val_margin`，默认 0.02；只有当 RAGC 验证 F1Mi 至少超过 raw 0.02 时才启用 learned branch。
+- 输出阶段在 `raw_features`、learned-only Natural-View embedding 与 `raw+learned` 三个候选表示之间用验证集 F1Mi 选择。
+- 新增 `ragc_auto_min_val_margin`，默认 0.02；只有当 learned-only 或 RAGC 验证 F1Mi 至少超过 raw 0.02 时才允许选择非 raw 候选。
 
 裁决：
 
 - 无 margin 的 validation selector 在 Actor split5 上失败：验证集选择 RAGC，但测试低于 raw。
 - margin=0.02 修复两个已知负例：Actor split5 与 Texas split1 均回退 raw。
-- 但 margin 可能牺牲多个小幅正向 split，因此 `ragc_auto_gcl` 暂作为 safety ablation，不替代固定 RAGC 主方法。
+- 三候选版本在 Texas split1 smoke 中可用：raw val=0.796610，RAGC val=0.779661，learned val=0.644068，选择 raw，测试 F1Mi=0.918919。
+- Planetoid 当前在 `eval_mode=auto` 下走 random linear-probe evaluation，不使用 mask validation；因此 `ragc_auto_gcl` 对 Cora/CiteSeer/PubMed 会落入 `no_validation_mask` fallback，不能作为 Planetoid auto-selection 证据。
+- margin 可能牺牲多个小幅正向 split，因此 `ragc_auto_gcl` 暂作为 safety ablation，不替代固定 RAGC 主方法。
+
+## Homophily safety
+
+输出目录：`runs/ragc_homophily_s0-4_e50/`
+
+设置：Cora/CiteSeer/PubMed × split0 × seeds0-4 × 50 epoch。当前 Planetoid 在本工作区使用 random linear-probe evaluation，因此这里的 seed 表示 linear-probe split seed 与模型 seed共同变化，不是多官方 split。
+
+RAGC vs `raw_features`：
+
+| Dataset | Raw F1Mi | RAGC F1Mi | ΔF1Mi | ΔF1Ma | Positive/negative seeds |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Cora | 0.634783 | 0.711348 | +0.076565 | +0.080923 | 5/0 |
+| CiteSeer | 0.648837 | 0.690640 | +0.041803 | +0.032818 | 5/0 |
+| PubMed | 0.846936 | 0.858868 | +0.011931 | +0.011212 | 5/0 |
+
+RAGC vs learned-only `gcn_mlp_gcl`：
+
+| Dataset | GCN-MLP F1Mi | RAGC F1Mi | ΔF1Mi | ΔF1Ma | Positive/negative seeds |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Cora | 0.763905 | 0.711348 | -0.052557 | -0.065799 | 0/5 |
+| CiteSeer | 0.692933 | 0.690640 | -0.002293 | +0.003085 | 2/3 |
+| PubMed | 0.843033 | 0.858868 | +0.015835 | +0.016020 | 5/0 |
+
+解释：
+
+- RAGC 明确通过 homophily non-degradation against raw-only，且三组 Planetoid 数据均是 5/5 seed 正向。
+- 但 RAGC 并不在所有 homophily 数据上优于 learned-only；Cora 上 learned-only Natural-View 明显更强。
+- PubMed 上 RAGC 同时超过 raw-only 与 learned-only，说明 raw+graph complement 在大同配图上仍可能有价值。
+- 论文表述应避免“homophily SOTA”口径，更适合说：RAGC 在 homophily 上对 raw-only 安全，且在 PubMed 上展示 complement gain；Cora 暴露了 fixed concatenation 的上界问题。
 
 ## 当前裁决
 
@@ -146,6 +177,7 @@ RAGC-GCL 升级为当前最强 active candidate，但仍不是最终成功主方
 
 - 在 Actor/Chameleon/Squirrel 三个异配数据集上，RAGC 对 raw-only 的增量在 splits0-2 全部为正。
 - 在 Actor/Chameleon/Squirrel/Texas 的 10-split seed0 均值上，RAGC 对 raw-only 全部为正。
+- 在 Cora/CiteSeer/PubMed 的 5-seed random-probe safety 中，RAGC 对 raw-only 全部为正。
 - Chameleon/Squirrel 正是许多前序候选的失败边界，本候选在这两个数据集上同时超过 raw-only 与 learned-only。
 - learned-branch shuffle/random controls 在 Chameleon/Squirrel 的 10-split 上明显失败，说明 normal learned branch 的节点对应关系有机制价值。
 - 论文切口比“再调 reliability weight”更清楚：raw feature anchor 负责安全性，graph SSL branch 只证明 complement value。
@@ -154,7 +186,7 @@ RAGC-GCL 升级为当前最强 active candidate，但仍不是最终成功主方
 
 - Texas 10-split 均值微正但 split 级不稳定，WebKB 小图仍需要 safety selector 或 learned-branch weight control。
 - 当前主要是 seed0 split study，仍需多 seed 与 homophily safety。
-- 当前没有 homophily safety；Cora/CiteSeer/PubMed 上若 raw-anchor 拼接拖累性能，方法仍不能作为通用 GCL。
+- Cora 上 learned-only 明显强于 RAGC，说明 fixed concatenation 不是全局最优；若要冲顶会，需要协议一致的 raw/learned/RAGC selector 或更细的 learned-branch scaling。
 
 ## 下一步硬门槛
 
@@ -164,6 +196,7 @@ RAGC-GCL 升级为当前最强 active candidate，但仍不是最终成功主方
 - Actor/Texas 的 10-split shuffle/random controls。
 - 多 seed 或更标准的 split/seed 分离复核。
 - 与 `gcn_mlp_gcl`、GRACE、SSPNV/BSPNV 等已实现强候选固化为同表比较。
+- 设计可用于 Planetoid random-probe 协议的 selector，或明确将 selector 只用于具有 validation mask 的 transductive split。
 
 建议下一步命令：
 

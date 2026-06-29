@@ -1512,7 +1512,7 @@ def _ragc_embeddings(raw_x, learned, config):
     return torch.cat([raw, learned], dim=1)
 
 
-def _select_ragc_auto_embeddings(raw_x, ragc_embeddings, data, dataset_name, split_index, config):
+def _select_ragc_auto_embeddings(raw_x, learned_embeddings, ragc_embeddings, data, dataset_name, split_index, config):
     if not should_use_mask_eval(dataset_name, data, split_index, config["eval_mode"]):
         return ragc_embeddings, {
             "ragc_auto_choice": "ragc",
@@ -1520,36 +1520,43 @@ def _select_ragc_auto_embeddings(raw_x, ragc_embeddings, data, dataset_name, spl
             "ragc_auto_min_val_margin": float(config.get("ragc_auto_min_val_margin", 0.0)),
             "ragc_auto_val_margin": 0.0,
             "ragc_auto_raw_val_F1Mi": -1.0,
+            "ragc_auto_learned_val_F1Mi": -1.0,
             "ragc_auto_ragc_val_F1Mi": -1.0,
         }
 
     train_mask, val_mask, _ = split_masks(data, split_index)
     raw = raw_x.detach().float()
-    raw_score = linear_probe_validation_score(raw, data.y, train_mask, val_mask)
-    ragc_score = linear_probe_validation_score(ragc_embeddings, data.y, train_mask, val_mask)
+    learned = learned_embeddings.detach().float()
+    candidates = {
+        "raw": raw,
+        "learned": learned,
+        "ragc": ragc_embeddings,
+    }
+    scores = {
+        name: linear_probe_validation_score(embedding, data.y, train_mask, val_mask)
+        for name, embedding in candidates.items()
+    }
+    raw_score = scores["raw"]
     raw_val = float(raw_score["val_F1Mi"])
-    ragc_val = float(ragc_score["val_F1Mi"])
     min_margin = float(config.get("ragc_auto_min_val_margin", 0.0))
-    if ragc_val > raw_val + min_margin:
-        return ragc_embeddings, {
-            "ragc_auto_choice": "ragc",
-            "ragc_auto_reason": "validation_F1Mi",
-            "ragc_auto_min_val_margin": min_margin,
-            "ragc_auto_val_margin": ragc_val - raw_val,
-            "ragc_auto_raw_val_F1Mi": raw_val,
-            "ragc_auto_ragc_val_F1Mi": ragc_val,
-            "ragc_auto_raw_best_c": raw_score["best_c"],
-            "ragc_auto_ragc_best_c": ragc_score["best_c"],
-        }
-    return raw, {
-        "ragc_auto_choice": "raw",
+    eligible = ["raw"] + [
+        name
+        for name in ["learned", "ragc"]
+        if float(scores[name]["val_F1Mi"]) > raw_val + min_margin
+    ]
+    choice = max(eligible, key=lambda name: float(scores[name]["val_F1Mi"]))
+    choice_val = float(scores[choice]["val_F1Mi"])
+    return candidates[choice], {
+        "ragc_auto_choice": choice,
         "ragc_auto_reason": "validation_F1Mi",
         "ragc_auto_min_val_margin": min_margin,
-        "ragc_auto_val_margin": ragc_val - raw_val,
+        "ragc_auto_val_margin": choice_val - raw_val,
         "ragc_auto_raw_val_F1Mi": raw_val,
-        "ragc_auto_ragc_val_F1Mi": ragc_val,
+        "ragc_auto_learned_val_F1Mi": float(scores["learned"]["val_F1Mi"]),
+        "ragc_auto_ragc_val_F1Mi": float(scores["ragc"]["val_F1Mi"]),
         "ragc_auto_raw_best_c": raw_score["best_c"],
-        "ragc_auto_ragc_best_c": ragc_score["best_c"],
+        "ragc_auto_learned_best_c": scores["learned"]["best_c"],
+        "ragc_auto_ragc_best_c": scores["ragc"]["best_c"],
     }
 
 
@@ -2689,12 +2696,14 @@ def main():
         ).to(device)
         embeddings, history, diagnostics = train_er_cache_gcl(model, data, config, args)
         if args.method in {"ragc_gcl", "ragc_auto_gcl"}:
-            learned_dim = int(embeddings.size(1))
-            ragc_embeddings = _ragc_embeddings(data.x, embeddings, config)
+            learned_embeddings = embeddings
+            learned_dim = int(learned_embeddings.size(1))
+            ragc_embeddings = _ragc_embeddings(data.x, learned_embeddings, config)
             ragc_control = config.get("ragc_control", "normal")
             if args.method == "ragc_auto_gcl":
                 embeddings, auto_diag = _select_ragc_auto_embeddings(
                     data.x,
+                    learned_embeddings,
                     ragc_embeddings,
                     data,
                     args.dataset,

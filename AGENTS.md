@@ -1273,3 +1273,14 @@
   - 当前裁决：RAGC-GCL 升级为当前最强 active candidate。论文主线建议收缩为 Raw-Anchored Graph Complement：保留 raw feature separability，只要求 learned Natural-View branch 提供可验证的互补增量；`ragc_auto_gcl` 作为 safety selector ablation，暂不作为主方法。
   - 已验证：`python -m compileall train.py src/eval.py`、`python train.py --help | grep -n "ragc_auto_gcl"`、Texas/Actor margin selector smoke、RAGC 10-split 主实验、Chameleon/Squirrel 10-split shuffle/random controls。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Cora CiteSeer PubMed" METHODS="raw_features ragc_gcl" SPLITS="0" SEEDS="0 1 2 3 4" EPOCHS=50 RUNS_DIR="runs/ragc_homophily_s0-4_e50" OVERWRITE=1 bash scripts/run_split_study.sh`；随后补 Actor/Texas 的 10-split shuffle/random controls，并把 RAGC 与 `gcn_mlp_gcl`、SSPNV/BSPNV、GRACE 的最终对齐表固化为 paper table。
+- 2026-06-29 RAGC homophily safety 与 learned-only 边界：
+  - 已执行 homophily safety：Cora/CiteSeer/PubMed × split0 × seeds0-4 × 50 epoch，方法为 `raw_features` 与 `ragc_gcl`；输出目录 `experiments/topvenue_gcl/runs/ragc_homophily_s0-4_e50/`。
+  - RAGC vs `raw_features` F1Mi/F1Ma mean delta：Cora +0.076565/+0.080923，CiteSeer +0.041803/+0.032818，PubMed +0.011931/+0.011212；三者均为 5/5 seed 正向。
+  - 已补同目录 learned-only 强控制 `gcn_mlp_gcl`，并重新生成 `aggregate_vs_raw.csv` 与 `aggregate_vs_gcn_mlp.csv`。
+  - RAGC vs `gcn_mlp_gcl` F1Mi/F1Ma mean delta：Cora -0.052557/-0.065799（0/5 正向），CiteSeer -0.002293/+0.003085（2/5 正向），PubMed +0.015835/+0.016020（5/5 正向）。
+  - 裁决：RAGC 通过 homophily non-degradation against raw-only，但不能声称 homophily SOTA；在 Cora 上 learned-only Natural-View 明显更强，在 PubMed 上 raw+learned complement 明显更强，CiteSeer 近似持平。
+  - 已将 `ragc_auto_gcl` 从 raw/RAGC 二选一扩展为 raw/learned/RAGC 三候选 validation selector，并新增诊断字段 `ragc_auto_learned_val_F1Mi` 与 `ragc_auto_learned_best_c`。
+  - 已验证三候选 selector 在 Texas split1 smoke 中可用：raw val=0.796610，RAGC val=0.779661，learned val=0.644068，选择 raw，测试 F1Mi=0.918919。
+  - Planetoid 当前在 `eval_mode=auto` 下仍走 random linear-probe evaluation，不使用 mask validation；因此 `ragc_auto_gcl` 对 Cora/CiteSeer/PubMed 会落入 `no_validation_mask` fallback，暂不能作为 Planetoid auto-selection 证据。
+  - 当前方法定位更新：固定 RAGC 是强 active candidate；下一代若要冲更高层级，应把 raw/learned/RAGC 输出选择做成协议一致且可解释的 selector，而不是只固定拼接。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Actor Texas" METHODS="ragc_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/ragc_controls_actor_texas_s0_splits0-9_e50" RUN_TAG="shuffle" EXTRA_ARGS="--ragc-control shuffle" OVERWRITE=1 bash scripts/run_split_study.sh`；随后补 `RUN_TAG="random" EXTRA_ARGS="--ragc-control random"` 并汇总完整 controls。
