@@ -1292,3 +1292,14 @@
   - 当前裁决：RAGC 继续作为最强 active candidate，但仍不是“已找到 SOTA 论文方法”。下一步必须补多 seed、强 baseline paper table，并推进协议一致的 raw/learned/RAGC selector；若不能在 strong baseline table 中保持至少 3 个异配数据集稳定正向，应收缩为机制诊断论文路线或放弃固定拼接主方法。
   - 已更新文档：`experiments/topvenue_gcl/docs/raw_anchored_graph_complement_candidate.md`、`experiments/topvenue_gcl/README.md`、`experiments/topvenue_gcl/docs/implementation_principles.md` 与本 `AGENTS.md`。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Actor Chameleon Squirrel Texas" METHODS="grace gcn_mlp_gcl raw_features ragc_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/ragc_strong_table_s1-2_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh`。
+- 2026-06-29 RAGC Actor seeds1-2 strong-table partial audit 与 selector/scaling 裁决：
+  - 已继续使用 `academic-research-suite` experiment-agent 路线，按“失败形态及时放弃”的原则推进。
+  - 原计划运行 Actor/Chameleon/Squirrel/Texas × splits0-9 × seeds1-2 × `grace/gcn_mlp_gcl/raw_features/ragc_gcl`，输出目录 `experiments/topvenue_gcl/runs/ragc_strong_table_s1-2_splits0-9_e50/`；在 Actor 完整完成 80 个 run 后主动中止进入 Chameleon，因为 Actor 已暴露 fixed concat 的核心缺陷。
+  - Actor seeds1-2 × splits0-9 聚合：GRACE F1Mi=0.271809，GCN-MLP Natural View=0.351118，raw_features=0.351711，RAGC fixed concat=0.358618。
+  - RAGC - raw mean=+0.006908（13/20 正、1/20 持平、6/20 负）；RAGC - learned-only mean=+0.007500（16/20 正、4/20 负）；RAGC - best(raw, learned-only) mean=+0.002434（12/20 正、1/20 持平、7/20 负）。
+  - 关键 fixed concat 负例：Actor split7 seed1 raw=0.363816、learned=0.346711、RAGC=0.353947；split5 seed1 raw=0.357895、learned=0.365132、RAGC=0.356579；split9 seed1 raw=0.375658、learned=0.381579、RAGC=0.374342。
+  - 已测试 `ragc_auto_gcl` validation selector：默认 margin=0.02 在 split0 seed1 过保守，回退 raw 错过 RAGC gain；margin=0 在 split5 seed1 验证集选择 RAGC，但测试 F1Mi=0.353947，低于 raw 与 learned-only。裁决：validation selector 过拟合 split-level validation，不作为主方法。
+  - 已测试全局 learned-branch scaling：`ragc_learned_weight=0.5` 在 split0 seed1/2 降至 0.355921/0.353289，低于 raw 与 w=1.0；`ragc_learned_weight=0.75` 在 split5/7 负例上只部分缓解，不能修复 raw-safety。裁决：不继续扫全局 learned weight。
+  - 当前裁决：RAGC 的 raw/graph complement 机制保留；fixed concat、validation selector、全局 scaling 三个简单形态均不足以作为最终主方法。下一步 active subdirection 应是 Complement-Gated RAGC，使用无标签/协议一致的节点或图级 gate 判断 raw、learned 与 complement 的使用强度。
+  - 已更新文档：`experiments/topvenue_gcl/docs/raw_anchored_graph_complement_candidate.md`、`experiments/topvenue_gcl/README.md`、`experiments/topvenue_gcl/docs/implementation_principles.md` 与本 `AGENTS.md`。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && cat runs/ragc_strong_table_s1-2_splits0-9_e50/partial_actor_aggregate.csv`；随后实现 `complement_gated_ragc`，先只跑 Actor targeted negatives（splits 5/7/8/9, seeds 1/2）与 positive controls（splits 0/2/3/6, seeds 1/2）。

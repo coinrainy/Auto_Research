@@ -185,9 +185,61 @@ RAGC vs learned-only `gcn_mlp_gcl`：
 - PubMed 上 RAGC 同时超过 raw-only 与 learned-only，说明 raw+graph complement 在大同配图上仍可能有价值。
 - 论文表述应避免“homophily SOTA”口径，更适合说：RAGC 在 homophily 上对 raw-only 安全，且在 PubMed 上展示 complement gain；Cora 暴露了 fixed concatenation 的上界问题。
 
+## Strong-table partial audit: Actor seeds1-2
+
+输出目录：`runs/ragc_strong_table_s1-2_splits0-9_e50/`
+
+本轮原计划执行 Actor/Chameleon/Squirrel/Texas × splits0-9 × seeds1-2 × `grace/gcn_mlp_gcl/raw_features/ragc_gcl`。在 Actor 完整完成 80 个 run 后主动中止进入 Chameleon 的循环，因为 Actor 已经暴露 fixed concat 的方法缺陷，继续全量跑固定拼接的边际价值低于先修正方法形态。
+
+Actor seeds1-2 × splits0-9 聚合：
+
+| Method | F1Mi mean | F1Ma mean |
+| --- | ---: | ---: |
+| GRACE | 0.271809 | 0.209560 |
+| GCN-MLP Natural View | 0.351118 | 0.318049 |
+| Raw features | 0.351711 | 0.328359 |
+| RAGC fixed concat | 0.358618 | 0.332527 |
+
+逐 split/seed 对照：
+
+- RAGC - raw mean = +0.006908，13/20 正、1/20 持平、6/20 负。
+- RAGC - learned-only mean = +0.007500，16/20 正、4/20 负。
+- RAGC - best(raw, learned-only) mean = +0.002434，12/20 正、1/20 持平、7/20 负。
+- oracle best(raw, learned-only, RAGC) - RAGC mean = +0.002039，说明 RAGC 接近但不是稳定最优。
+- 最明显 fixed concat 负例包括：
+  - split7 seed1：raw 0.363816、learned 0.346711、RAGC 0.353947；
+  - split5 seed1：raw 0.357895、learned 0.365132、RAGC 0.356579；
+  - split9 seed1：raw 0.375658、learned 0.381579、RAGC 0.374342。
+
+解释：
+
+- RAGC 的互补信号是真实的：相对 raw 与 learned-only 的均值都为正，且 GRACE 已不是主要竞争者。
+- fixed 1:1 concat 不是最终主方法：在 raw 强或 learned-only 强的 split 上，拼接可能拖后腿。
+- 论文级方法必须从“固定拼接”升级为“何时保留 raw、何时信任 learned branch、何时使用 complement concat”的可解释选择/门控机制。
+
+## Selector 与 scaling 负结果
+
+### Validation selector
+
+已测试 `ragc_auto_gcl` 的两个版本：
+
+- 默认 `ragc_auto_min_val_margin=0.02`：在 Actor split0 seed1 中验证集显示 RAGC 比 raw 高约 0.0119，但因未过 0.02 margin 回退 raw，测试 F1Mi=0.356579，错过 RAGC 正向。
+- `ragc_auto_min_val_margin=0.0` targeted run：split0 seed1/2 选择 RAGC 且表现较好，F1Mi=0.365132/0.365789；但 split5 seed1 验证集强烈选择 RAGC，测试 F1Mi=0.353947，低于 raw 0.357895 与 learned-only 0.365132。
+
+裁决：单纯验证集三候选 selector 过拟合 split-level validation，不作为主方法。它可作为 upper-bound / safety ablation，但不能解决 fixed concat 的核心风险。
+
+### Global learned-branch scaling
+
+已测试：
+
+- `ragc_learned_weight=0.5`：Actor split0 seed1/2 分别为 0.355921/0.353289，低于 raw 与 w=1.0；过度压制 learned complement。
+- `ragc_learned_weight=0.75` targeted negative run：split5 seed1 从 w=1.0 的 0.356579 提到 0.357237，但仍低于 raw 0.357895；split5 seed2 低于 w=1.0；split7 seed1 仍明显低于 raw。
+
+裁决：单一全局 learned weight 不能同时保留 complement gain 与 raw safety，不继续扫 `ragc_learned_weight`。
+
 ## 当前裁决
 
-RAGC-GCL 升级为当前最强 active candidate，但仍不是最终成功主方法。
+RAGC-GCL 的核心机制继续保留，但 **fixed concat 形态降级为 strong-but-insufficient candidate**，不再视为最终成功主方法。
 
 保留理由：
 
@@ -197,12 +249,20 @@ RAGC-GCL 升级为当前最强 active candidate，但仍不是最终成功主方
 - Chameleon/Squirrel 正是许多前序候选的失败边界，本候选在这两个数据集上同时超过 raw-only 与 learned-only。
 - learned-branch shuffle/random controls 在 Actor/Chameleon/Squirrel 的 10-split 上明显失败，说明 normal learned branch 的节点对应关系有机制价值。
 - 论文切口比“再调 reliability weight”更清楚：raw feature anchor 负责安全性，graph SSL branch 只证明 complement value。
+- Actor seeds1-2 strong table 显示 RAGC 同时超过 raw-only 与 learned-only 均值，证明该信号不只存在 seed0。
 
 主要风险：
 
 - Texas 10-split 均值微正但 split 级不稳定，且 shuffle control 均值略高于 normal；WebKB 小图仍需要 safety selector 或 learned-branch weight control。
 - 当前主要是 seed0 split study，仍需多 seed 与更强 baseline 对齐。
 - Cora 上 learned-only 明显强于 RAGC，说明 fixed concatenation 不是全局最优；若要冲顶会，需要协议一致的 raw/learned/RAGC selector 或更细的 learned-branch scaling。
+- Actor seeds1-2 已证明 fixed concat 有 raw-safety 漏洞；validation selector 与 global learned-branch scaling 都未修复。
+
+下一步 active subdirection：
+
+- 设计 **Complement-Gated RAGC**：不是全局固定拼接，也不是验证集三选一，而是用无标签/轻监督可解释信号估计 raw 与 learned branch 的互补风险。
+- 候选 gate 信号可包括 raw/learned prediction confidence gap、raw-neighborhood conflict、ego-graph embedding agreement、degree/local homophily proxy、branch entropy 或 representation residual；但必须避免引入过多启发式。
+- 最小通过标准：在 Actor targeted negatives 上修复 split5/7/9 的 safety 问题，同时不破坏 split0/2/3/6 的 complement gain；随后再回到 Chameleon/Squirrel/Texas 和 homophily safety。
 
 ## 下一步硬门槛
 
@@ -210,8 +270,8 @@ RAGC-GCL 升级为当前最强 active candidate，但仍不是最终成功主方
 
 - 多 seed 或更标准的 split/seed 分离复核。
 - 与 `gcn_mlp_gcl`、GRACE、SSPNV/BSPNV 等已实现强候选固化为同表比较。
-- 设计可用于 Planetoid random-probe 协议的 selector，或明确将 selector 只用于具有 validation mask 的 transductive split。
-- 若 RAGC 不能在 strong baseline table 中保持至少 3 个异配数据集稳定正向，或 selector 无法修复 Texas/Cora 边界，应收缩为机制诊断论文路线或放弃固定拼接主方法。
+- 设计可用于 Planetoid random-probe 协议的 label-free / protocol-consistent complement gate，或明确将 supervised selector 只作为 upper-bound ablation。
+- 若 Complement-Gated RAGC 不能修复 Actor targeted negatives，或在 Chameleon/Squirrel 上伤害现有 gains，应收缩为机制诊断论文路线或放弃 RAGC 主方法。
 
 建议下一步命令：
 
@@ -220,5 +280,5 @@ cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl
 cat runs/ragc_s0_splits0-9_e50/aggregate_vs_raw.csv
 cat runs/ragc_controls_wiki_s0_splits0-9_e50/split_study_aggregate.csv
 cat runs/ragc_controls_actor_texas_s0_splits0-9_e50/split_study_aggregate.csv
-DATASETS="Actor Chameleon Squirrel Texas" METHODS="grace gcn_mlp_gcl raw_features ragc_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="1 2" EPOCHS=50 RUNS_DIR="runs/ragc_strong_table_s1-2_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh
+cat runs/ragc_strong_table_s1-2_splits0-9_e50/partial_actor_aggregate.csv
 ```
