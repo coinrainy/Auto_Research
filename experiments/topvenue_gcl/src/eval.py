@@ -60,6 +60,29 @@ def linear_probe_with_masks(embeddings, labels, train_mask, val_mask, test_mask)
     }
 
 
+def linear_probe_validation_score(embeddings, labels, train_mask, val_mask):
+    x = normalize(embeddings.detach().cpu().numpy(), norm="l2")
+    y = labels.detach().cpu().numpy()
+    if y.ndim > 1:
+        y = y.reshape(-1)
+    train_mask = _to_numpy_mask(train_mask)
+    val_mask = _to_numpy_mask(val_mask)
+    if val_mask is None or not val_mask.any():
+        return {"val_F1Mi": -1.0, "best_c": None}
+
+    c_values = 2.0 ** np.arange(-10, 10)
+    best_c = c_values[0]
+    best_score = -1.0
+    for c_value in c_values:
+        clf = _fit_logreg(x[train_mask], y[train_mask], c_value)
+        pred = clf.predict(x[val_mask])
+        score = f1_score(y[val_mask], pred, average="micro", zero_division=0)
+        if score > best_score:
+            best_score = score
+            best_c = c_value
+    return {"val_F1Mi": float(best_score), "best_c": float(best_c)}
+
+
 def linear_probe_random(embeddings, labels, ratio, seed, repeats=3):
     x = normalize(embeddings.detach().cpu().numpy(), norm="l2")
     y = labels.detach().cpu().numpy().reshape(-1, 1)
@@ -92,4 +115,3 @@ def linear_probe_random(embeddings, labels, ratio, seed, repeats=3):
         })
     keys = metrics[0].keys()
     return {key: float(np.mean([item[key] for item in metrics])) for key in keys}
-

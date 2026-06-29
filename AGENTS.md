@@ -1258,3 +1258,18 @@
   - 已更新 `experiments/topvenue_gcl/docs/raw_anchored_graph_complement_candidate.md`、`experiments/topvenue_gcl/README.md`、`experiments/topvenue_gcl/docs/implementation_principles.md`、`train.py`、`configs/default.yaml` 与 `summarize_split_study.py`。
   - 已验证：`python -m compileall train.py summarize_split_study.py src`、`python train.py --help | rg "ragc-control|ragc"`、Texas/Chameleon control smoke、完整 splits0-2 control gate。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Actor Chameleon Squirrel Texas" METHODS="raw_features ragc_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/ragc_s0_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh`；随后单独补 `--ragc-control shuffle/random` 的 10 split controls。
+- 2026-06-29 RAGC 10-split 扩展、safe selector 尝试与 Wiki 控制实验：
+  - 已继续按用户要求自主推进，使用 `academic-research-suite` experiment-agent/code-runner 思路，不向用户追问；判定标准仍是“均值增益 + 控制诊断 + 失败分支及时降级”。
+  - 已执行 RAGC vs `raw_features` 的 10-split seed0 扩展：`Actor Chameleon Squirrel Texas × splits0-9 × seed0 × 50 epoch`，输出目录 `experiments/topvenue_gcl/runs/ragc_s0_splits0-9_e50/`。
+  - 10-split RAGC normal vs `raw_features` F1Mi/F1Ma mean delta：Actor +0.009408/+0.003346，Chameleon +0.016886/+0.018412，Squirrel +0.007397/+0.009380，Texas +0.005405/+0.000600。
+  - 10-split positive/negative split 数：Actor 9/1，Chameleon 9/1，Squirrel 9/1，Texas 5/2（其余为持平）。结论：固定 RAGC 在四个目标异配数据集上均值均高于 raw-only，但仍存在 split 级 safety 风险。
+  - 已实现 `experiments/topvenue_gcl/train.py --method ragc_auto_gcl`：复用 RAGC 训练，最终在 `raw_features` 与 `raw+learned` 两个候选表示之间用验证集 F1Mi 选择；新增 `linear_probe_validation_score` 与 `ragc_auto_min_val_margin`，默认 margin=0.02。
+  - 无 margin 的 validation selector 在 Actor split5 上失败：验证集选择 RAGC，但测试 F1Mi 低于 raw；因此无阈值 `ragc_auto_gcl` 降级为失败分支，不作为主方法。
+  - margin=0.02 修复了两个已知负例 smoke：Actor split5 回退 raw，F1Mi=0.357895；Texas split1 回退 raw，F1Mi=0.918919。但 margin 可能牺牲小幅正向 split，当前仅作为 safety ablation，不替代固定 RAGC。
+  - 已补 10-split learned-branch controls（Chameleon/Squirrel，seed0，50 epoch），输出目录 `experiments/topvenue_gcl/runs/ragc_controls_wiki_s0_splits0-9_e50/`。
+  - Chameleon F1Mi mean：normal 0.474781、raw 0.457895、shuffle 0.434211、random 0.383114；normal-shuffle +0.040570，normal-random +0.091667。
+  - Squirrel F1Mi mean：normal 0.338136、raw 0.330740、shuffle 0.319500、random 0.299712；normal-shuffle +0.018636，normal-random +0.038425。
+  - 机制解释：Chameleon/Squirrel 上，shuffle 与 random 均显著低于 normal；random 还显著低于 raw，排除了“额外 256 维随机特征/维度扩张”解释。Squirrel split3 出现 shuffle 高于 normal 的局部反例，应在论文中如实报告。
+  - 当前裁决：RAGC-GCL 升级为当前最强 active candidate。论文主线建议收缩为 Raw-Anchored Graph Complement：保留 raw feature separability，只要求 learned Natural-View branch 提供可验证的互补增量；`ragc_auto_gcl` 作为 safety selector ablation，暂不作为主方法。
+  - 已验证：`python -m compileall train.py src/eval.py`、`python train.py --help | grep -n "ragc_auto_gcl"`、Texas/Actor margin selector smoke、RAGC 10-split 主实验、Chameleon/Squirrel 10-split shuffle/random controls。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Cora CiteSeer PubMed" METHODS="raw_features ragc_gcl" SPLITS="0" SEEDS="0 1 2 3 4" EPOCHS=50 RUNS_DIR="runs/ragc_homophily_s0-4_e50" OVERWRITE=1 bash scripts/run_split_study.sh`；随后补 Actor/Texas 的 10-split shuffle/random controls，并把 RAGC 与 `gcn_mlp_gcl`、SSPNV/BSPNV、GRACE 的最终对齐表固化为 paper table。

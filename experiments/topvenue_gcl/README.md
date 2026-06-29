@@ -4,7 +4,7 @@
 
 当前 active foundation：**GCN-MLP Natural View GCL**。它在 Texas/Actor/Chameleon/Squirrel 的轻量 split sanity 中稳定超过 GRACE，但本身不够创新；后续 candidate 必须在它之上给出新机制和增益。`ER-Cache`、`ER-Residual`、`Energy-SPGCL`、`DANV` 与 `FDNV` 均已降级为失败/条件性消融。
 
-当前 active candidate：**RAGC-GCL / Raw-Anchored Graph Complement GCL**，入口为 `--method ragc_gcl`；强基线 `raw_features` 入口为 `--method raw_features`。RAGC 保留 `gcn_mlp_gcl` 的 Natural-View bootstrap 训练，但最终表示拼接 L2-normalized raw features 与 learned Natural-View embedding，用于验证“图 SSL 是否提供 raw 之外的互补信息”。splits0-2、seed0、50 epoch 下，RAGC 相对 `raw_features` 在 Actor/Chameleon/Squirrel 全部正向；最新 control gate 中 F1Mi/F1Ma mean delta 为 Actor +0.011184/+0.009989、Chameleon +0.027047/+0.029025、Squirrel +0.016651/+0.024313。`--ragc-control shuffle/random` 在三者上均低于 raw-only，normal-vs-shuffle F1Mi gap 分别为 +0.018860、+0.051170、+0.032341，说明 learned branch 的节点对应关系有价值。Texas 为 -0.018018/-0.070973，说明 WebKB 小图需要 safety selector。
+当前 active candidate：**RAGC-GCL / Raw-Anchored Graph Complement GCL**，入口为 `--method ragc_gcl`；强基线 `raw_features` 入口为 `--method raw_features`。RAGC 保留 `gcn_mlp_gcl` 的 Natural-View bootstrap 训练，但最终表示拼接 L2-normalized raw features 与 learned Natural-View embedding，用于验证“图 SSL 是否提供 raw 之外的互补信息”。Actor/Chameleon/Squirrel/Texas × splits0-9 × seed0 × 50 epoch 下，RAGC 相对 `raw_features` 的 F1Mi mean delta 分别为 +0.009408、+0.016886、+0.007397、+0.005405；positive/negative split 数分别为 9/1、9/1、9/1、5/2。Chameleon/Squirrel 的 10-split learned-branch controls 已通过：Chameleon normal/shuffle/random F1Mi=0.474781/0.434211/0.383114，Squirrel normal/shuffle/random F1Mi=0.338136/0.319500/0.299712。`--method ragc_auto_gcl` 已作为验证集 safety selector ablation 实现，但无 margin 版本在 Actor split5 失败，margin=0.02 只作为可选安全分支，暂不替代固定 RAGC 主方法。
 
 **TNS-GCL / Trusted Negative Suppression GCL** 入口为 `--method tns_gcl`，已降级为失败/诊断资产。它在 Natural-View bootstrap 上加入 raw-signature trusted-negative repulsion，并支持 `--tns-shuffle-weight` / `--tns-uniform-weight` controls；Actor split0 有正向，但 Texas/Chameleon/Squirrel split0 均低于 `gcn_mlp_gcl`，且默认实现曾在 Actor 上因 raw signature 展开 OOM，已改为分块计算。结论：直接 sampled negative repulsion 当前不作为主线，后续不继续调 `tns_margin`、threshold 或 weight。
 
@@ -48,7 +48,7 @@ Density-adaptive Invariance RRNV (DIRRNV) 已降级为失败 safety 变体，入
 - SRGNV 尝试蒸馏 graph view 的 structure residual，但 split0 early gate 已失败，当前只保留为 negative result；
 - PCNV 尝试用 prototype-level natural-view assignment consistency 缓解 instance-level positive/negative 噪声，但 shuffled control、Squirrel 失败与 prototype collapse 仍未过，当前只保留为条件性/诊断资产；
 - LCOS/LCM 尝试节点级局部冲突 objective selection 与 final-only representation mix，但 Texas micro 失败且 shuffled control 不干净，当前只保留诊断线索；
-- 当前最值得继续推进的是 RAGC-GCL：它不再试图让 GCL embedding 替代 raw features，而是显式保留 raw separability，再检验 learned graph context 的互补增益。RAGC 已通过 splits0-2 learned-branch shuffle/random 打假；下一步必须补 10 splits、多 seed、Texas/WebKB safety selector 与 homophily safety。
+- 当前最值得继续推进的是 RAGC-GCL：它不再试图让 GCL embedding 替代 raw features，而是显式保留 raw separability，再检验 learned graph context 的互补增益。RAGC 已通过 10-split raw baseline 扩展，并在 Chameleon/Squirrel 上通过 10-split learned-branch shuffle/random 打假；下一步必须补 homophily safety、Actor/Texas 10-split controls、多 seed，以及与强候选/强 baseline 的统一 paper table。
 - EAIRRNV 已验证单一 graph-level energy attenuation 不够：strength=0.6 在 Texas/Chameleon 最强，但 Squirrel 仍负；strength=0.3/0.9 不能修复 Squirrel。DARRNV 保护 Squirrel 但伤 Texas。下一代若继续 RRNV，必须显式学习或规则化“何时替代 bootstrap、何时只作为辅助正则”，而不是只调全局 scale。
 
 最小 smoke：

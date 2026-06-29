@@ -89,30 +89,81 @@ Control vs `raw_features`：
 - Chameleon/Squirrel 的 normal-control gap 很大，支持 learned graph context 具有节点对应的互补信号，而不是高维拼接或验证集 C 搜索造成的假增益。
 - Texas 仍低于 raw-only，但 normal 也高于 shuffle/random；该数据集主要暴露 safety selector 问题，而不是 learned branch 完全无效。
 
+### splits0-9 seed0 50 epoch
+
+输出目录：`runs/ragc_s0_splits0-9_e50/`
+
+RAGC normal vs `raw_features`：
+
+| Dataset | Raw F1Mi | RAGC F1Mi | ΔF1Mi | ΔF1Ma | Positive/negative splits |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Actor | 0.351711 | 0.361118 | +0.009408 | +0.003346 | 9/1 |
+| Chameleon | 0.457895 | 0.474781 | +0.016886 | +0.018412 | 9/1 |
+| Squirrel | 0.330740 | 0.338136 | +0.007397 | +0.009380 | 9/1 |
+| Texas | 0.808108 | 0.813514 | +0.005405 | +0.000600 | 5/2 |
+
+解释：
+
+- 固定 RAGC 在四个目标异配数据集的 10-split 均值上均高于 raw-only。
+- Actor/Chameleon/Squirrel 的 split 级方向较稳定，均为 9/10 split 正向、1/10 split 负向。
+- Texas 从 splits0-2 的负向转为 10-split 均值微正，但只有 5/10 split 正向、2/10 负向、其余持平；因此 WebKB safety 仍不能忽略。
+
+### Wiki 10-split learned-branch controls
+
+输出目录：`runs/ragc_controls_wiki_s0_splits0-9_e50/`
+
+| Dataset | Normal F1Mi | Raw F1Mi | Shuffle F1Mi | Random F1Mi | Normal - Shuffle | Normal - Random |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Chameleon | 0.474781 | 0.457895 | 0.434211 | 0.383114 | +0.040570 | +0.091667 |
+| Squirrel | 0.338136 | 0.330740 | 0.319500 | 0.299712 | +0.018636 | +0.038425 |
+
+解释：
+
+- Chameleon/Squirrel 上，normal learned branch 明显优于 shuffle 与 random controls。
+- random control 显著低于 raw-only，排除“额外 256 维随机特征/维度扩张”解释。
+- shuffle control 保留 learned embedding 分布但破坏节点对应关系；normal-shuffle gap 说明节点对应的 graph complement 是核心信号。
+- Squirrel split3 中 shuffle 高于 normal，是需要保留的局部反例；当前机制主张应基于均值与大多数 split，而不是声称逐 split 全胜。
+
+## Safety selector 尝试
+
+已实现 `--method ragc_auto_gcl`：
+
+- 训练阶段与 RAGC 相同。
+- 输出阶段在 `raw_features` 与 `raw+learned` 之间用验证集 F1Mi 选择。
+- 新增 `ragc_auto_min_val_margin`，默认 0.02；只有当 RAGC 验证 F1Mi 至少超过 raw 0.02 时才启用 learned branch。
+
+裁决：
+
+- 无 margin 的 validation selector 在 Actor split5 上失败：验证集选择 RAGC，但测试低于 raw。
+- margin=0.02 修复两个已知负例：Actor split5 与 Texas split1 均回退 raw。
+- 但 margin 可能牺牲多个小幅正向 split，因此 `ragc_auto_gcl` 暂作为 safety ablation，不替代固定 RAGC 主方法。
+
 ## 当前裁决
 
-RAGC-GCL 继续保留为 active candidate，但仍不是最终成功主方法。
+RAGC-GCL 升级为当前最强 active candidate，但仍不是最终成功主方法。
 
 保留理由：
 
 - 在 Actor/Chameleon/Squirrel 三个异配数据集上，RAGC 对 raw-only 的增量在 splits0-2 全部为正。
+- 在 Actor/Chameleon/Squirrel/Texas 的 10-split seed0 均值上，RAGC 对 raw-only 全部为正。
 - Chameleon/Squirrel 正是许多前序候选的失败边界，本候选在这两个数据集上同时超过 raw-only 与 learned-only。
-- learned-branch shuffle/random controls 在 Actor/Chameleon/Squirrel 上全部失败，说明 normal learned branch 的节点对应关系有机制价值。
+- learned-branch shuffle/random controls 在 Chameleon/Squirrel 的 10-split 上明显失败，说明 normal learned branch 的节点对应关系有机制价值。
 - 论文切口比“再调 reliability weight”更清楚：raw feature anchor 负责安全性，graph SSL branch 只证明 complement value。
 
 主要风险：
 
-- Texas splits0-2 平均为负，尤其 macro 退化明显，WebKB 小图需要 safety selector。
-- 当前只完成 seed0 splits0-2，仍需扩展到 splits0-9 与多 seed。
+- Texas 10-split 均值微正但 split 级不稳定，WebKB 小图仍需要 safety selector 或 learned-branch weight control。
+- 当前主要是 seed0 split study，仍需多 seed 与 homophily safety。
 - 当前没有 homophily safety；Cora/CiteSeer/PubMed 上若 raw-anchor 拼接拖累性能，方法仍不能作为通用 GCL。
 
 ## 下一步硬门槛
 
 必须补做：
 
-- `ragc_gcl` vs `raw_features` 的 splits0-9 seed0。
-- Texas/WebKB safety selector：当 learned complement 不可靠时回退 raw-only 或降低 learned weight。
 - Cora/CiteSeer/PubMed homophily safety。
+- Actor/Texas 的 10-split shuffle/random controls。
+- 多 seed 或更标准的 split/seed 分离复核。
+- 与 `gcn_mlp_gcl`、GRACE、SSPNV/BSPNV 等已实现强候选固化为同表比较。
 
 建议下一步命令：
 
@@ -120,4 +171,5 @@ RAGC-GCL 继续保留为 active candidate，但仍不是最终成功主方法。
 cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl
 DATASETS="Actor Chameleon Squirrel Texas" METHODS="raw_features ragc_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/ragc_s0_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh
 python summarize_split_study.py --runs-dir runs/ragc_s0_splits0-9_e50 --baseline-method raw_features --out runs/ragc_s0_splits0-9_e50/runs_vs_raw.csv --aggregate-out runs/ragc_s0_splits0-9_e50/aggregate_vs_raw.csv
+DATASETS="Cora CiteSeer PubMed" METHODS="raw_features ragc_gcl" SPLITS="0" SEEDS="0 1 2 3 4" EPOCHS=50 RUNS_DIR="runs/ragc_homophily_s0-4_e50" OVERWRITE=1 bash scripts/run_split_study.sh
 ```
