@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+import torch
+from torch_geometric.datasets import Amazon, Coauthor, Planetoid
+from torch_geometric.data import Data
+
+
+PLANETOID_NAMES = {
+    "cora": "Cora",
+    "citeseer": "CiteSeer",
+    "pubmed": "PubMed",
+}
+
+
+@dataclass
+class LoadedGraph:
+    name: str
+    data: Data
+    num_features: int
+    num_classes: int
+    split_protocol: str
+    split_index: int
+
+
+def _select_mask(mask: torch.Tensor, split_index: int) -> torch.Tensor:
+    if mask.dim() == 1:
+        if split_index != 0:
+            raise ValueError("1D public mask only supports split_index=0")
+        return mask.bool()
+    if split_index < 0 or split_index >= mask.size(1):
+        raise ValueError(f"split_index={split_index} outside mask shape {tuple(mask.shape)}")
+    return mask[:, split_index].bool()
+
+
+def load_graph(
+    name: str,
+    root: str = "data",
+    split: str = "public",
+    split_index: int = 0,
+) -> LoadedGraph:
+    key = name.lower()
+    if key in PLANETOID_NAMES:
+        dataset_name = PLANETOID_NAMES[key]
+        dataset = Planetoid(root=str(Path(root) / "Planetoid"), name=dataset_name, split=split)
+        split_protocol = f"Planetoid:{split}"
+    elif key in {"computers", "photo"}:
+        dataset_name = "Computers" if key == "computers" else "Photo"
+        dataset = Amazon(root=str(Path(root) / "Amazon"), name=dataset_name)
+        split_protocol = "Amazon:random_not_implemented"
+    elif key in {"cs", "physics"}:
+        dataset_name = "CS" if key == "cs" else "Physics"
+        dataset = Coauthor(root=str(Path(root) / "Coauthor"), name=dataset_name)
+        split_protocol = "Coauthor:random_not_implemented"
+    else:
+        raise ValueError(f"Unsupported dataset: {name}")
+
+    data = dataset[0]
+    if not hasattr(data, "train_mask") or data.train_mask is None:
+        raise ValueError(
+            f"{name} has no built-in train/val/test masks in this prototype. "
+            "Use Planetoid datasets for the first smoke-test loop."
+        )
+
+    data.train_mask = _select_mask(data.train_mask, split_index)
+    data.val_mask = _select_mask(data.val_mask, split_index)
+    data.test_mask = _select_mask(data.test_mask, split_index)
+    return LoadedGraph(
+        name=dataset.name,
+        data=data,
+        num_features=dataset.num_features,
+        num_classes=dataset.num_classes,
+        split_protocol=split_protocol,
+        split_index=split_index,
+    )
+
+
+def mask_counts(data: Data) -> dict[str, int]:
+    return {
+        "train": int(data.train_mask.sum().item()),
+        "val": int(data.val_mask.sum().item()),
+        "test": int(data.test_mask.sum().item()),
+    }
+
+
+def edge_homophily(data: Data) -> float:
+    row, col = data.edge_index
+    same = data.y[row] == data.y[col]
+    return float(same.float().mean().item())

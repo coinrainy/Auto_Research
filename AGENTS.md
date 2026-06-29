@@ -11,22 +11,29 @@
 ## 当前状态
 
 - 日期：2026-06-29（UTC）。
-- 当前仓库处于协议保留状态。
-- 当前没有已选定的研究方向或方法实现。
-- 保留内容仅限项目协作规则与实验协议：数据划分、评估口径、随机种子记录、metadata、baseline 公平性和 GitHub 协作规则等。
+- 当前研究方向：图对比学习，优先同配图节点分类。
+- 已建立 `homogcl/` 原型工作区、`scripts/` 运行脚本和 `results/` 早筛结果。
+- 原 `homogcl` 候选（同配增强 + 多正样本 InfoNCE）未通过 smoke test，已标记为失败候选，不应继续包装为主方法。
+- 新增 `horp` / `horpgcl` 诊断路线；`horpgcl` 在 Cora 快速测试中未超过传播证伪器，暂判失败。
+- 新增 `autopropcat`：基于无标签传播残差平台期自动选择传播深度，当前作为后续 GCL 候选必须击败的强证伪器。
+- 当前单 seed public split 快速结果：Cora 0.831（K=6）、CiteSeer 0.726（K=6）、PubMed 0.789（K=7）。
 - 协议细节见：
   - `docs/gcl_experiment_protocol_checklist.md`
   - `docs/context_reset_protocol_only_2026-06-29.md`
+  - `docs/homogcl_research_brief_2026-06-29.md`
+  - `docs/homogcl_experiment_plan_2026-06-29.md`
 
 ## 后续原则
 
-- 新一轮研究需要先定义 research question、目标任务、主评估指标、baseline 清单、数据划分协议和最小可发表证据。
-- 如果需要写代码，应新建清晰隔离的工作区。
-- 允许复用或重写协议工具，但需要确认它们只包含通用实验流程。
+- 下一轮研究主线应围绕“如何超过 AutoProp 传播充分性边界”，不要继续微调已失败的 `homogcl` / `horpgcl`。
+- 若继续做学习式 GCL，必须纳入 HomoGCL(KDD 2023)、PROPGCL、IRGCL、RELGCL、SGRL、BGRL、CCA-SSG 等强 baseline。
+- 论文级证据必须扩展到多 split、多 seed、更大同配图，并报告测试集不可见的超参选择规则。
+- 如果需要写新方法，应保持在当前仓库内清晰隔离，不能参考其他目录代码。
 
 ## 建议后续命令
 
 ```bash
 git status --short
-ls -R docs
+bash scripts/run_autoprop_smoke.sh
+python -m homogcl.summarize --input-dir results/autoprop --output-csv results/autoprop_summary.csv
 ```
