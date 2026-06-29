@@ -1,6 +1,6 @@
 # 同配图 GCL / 传播证伪原型
 
-本工作区用于快速证伪和孵化“优先面向同配图”的图对比学习研究想法。当前结论很明确：最初的 `homogcl` 候选没有通过 smoke test，不应继续包装为主方法；当前主线候选是 `specprop`，即在 AutoProp 传播边界之上加入无标签谱集中度门控和低秩去噪。
+本工作区用于快速证伪和孵化“优先面向同配图”的图对比学习研究想法。当前结论很明确：最初的 `homogcl` 候选没有通过 smoke test，不应继续包装为主方法；当前主线候选是 `corespecprop`，即在 AutoProp 传播边界之上加入无标签谱集中度门控和参与秩自适应核心压缩。
 
 ## 当前方法入口
 
@@ -9,6 +9,7 @@
 - `propcat`：多阶传播银行 `[X, SX, ..., S^KX]`。
 - `autopropcat`：用无标签传播残差平台期自动选择 `K` 的传播银行；当前作为所有 GCL 候选必须击败的强证伪器。
 - `specprop`：AutoProp + 安全谱集中度门控。只有传播银行 top-10 PCA 能量占比达到 0.34 时才压缩到 rank=32，否则回退到 AutoProp。
+- `corespecprop`：AutoProp + 安全谱集中度门控 + 参与秩自适应核心压缩。top-10 PCA 能量占比低于 0.34 时回退到 AutoProp；触发压缩时按参与秩选择核心 rank，并裁剪到 16-32。
 - `grace` / `gracecat`：随机增强 InfoNCE 及其传播拼接诊断。
 - `homogcl`：失败候选；同配保真增强 + 多正样本 InfoNCE。
 - `horp`：HoRP 教师表示；节点级传播残差门控 + 传播轨迹/残差拼接。
@@ -35,6 +36,10 @@
 - `specprop` safe gate 在 Amazon class-random seeds 0/1/2 上取得：
   - Photo：平均 0.9071 vs AutoProp 0.8745，delta +0.0326，3 胜 0 负，rank=32。
   - Computers：平均 0.7965 vs AutoProp 0.7965，完全回退持平，修复了低阈值版本的压缩损伤。
+- `corespecprop` 当前优于固定 rank 的 `specprop`，主要证据为：
+  - PubMed class-random seeds 0-9：0.7739 vs AutoProp 0.7541，delta +0.0198，10 胜 0 负。
+  - Photo class-random seeds 0-9：0.9002 vs AutoProp 0.8817，delta +0.0185，10 胜 0 负。
+  - WikiCS 官方 20 split：0.7702 vs AutoProp 0.7636，delta +0.0066，18 胜 2 负。
 - 这些结果只能作为早筛，不足以支撑 SOTA 或顶会投稿结论。
 
 ## 快速运行
@@ -53,6 +58,10 @@ bash scripts/run_specprop_smoke.sh
 bash scripts/run_specprop_multisplit.sh
 bash scripts/run_specprop_amazon_smoke.sh
 bash scripts/run_specprop_amazon_multisplit.sh
+bash scripts/run_corespecprop_smoke.sh
+bash scripts/run_corespecprop_multisplit.sh
+bash scripts/run_corespecprop_key_multisplit.sh
+bash scripts/run_corespecprop_wikics_multisplit.sh
 ```
 
 ## 当前协议

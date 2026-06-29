@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
-from torch_geometric.datasets import Amazon, Coauthor, Planetoid
+from torch_geometric.datasets import Amazon, Coauthor, Planetoid, WikiCS
 from torch_geometric.data import Data
 
 
@@ -26,9 +26,9 @@ class LoadedGraph:
     split_seed: int
 
 
-def _select_mask(mask: torch.Tensor, split_index: int) -> torch.Tensor:
+def _select_mask(mask: torch.Tensor, split_index: int, reuse_1d: bool = False) -> torch.Tensor:
     if mask.dim() == 1:
-        if split_index != 0:
+        if split_index != 0 and not reuse_1d:
             raise ValueError("1D public mask only supports split_index=0")
         return mask.bool()
     if split_index < 0 or split_index >= mask.size(1):
@@ -102,10 +102,15 @@ def load_graph(
         dataset_name = "CS" if key == "cs" else "Physics"
         dataset = Coauthor(root=str(Path(root) / "Coauthor"), name=dataset_name)
         split_protocol = f"Coauthor:{split}"
+    elif key in {"wikics", "wiki-cs", "wiki_cs"}:
+        dataset_name = "WikiCS"
+        dataset = WikiCS(root=str(Path(root) / "WikiCS"), is_undirected=True)
+        split_protocol = f"WikiCS:{split}"
     else:
         raise ValueError(f"Unsupported dataset: {name}")
 
     data = dataset[0]
+    graph_name = getattr(dataset, "name", dataset_name)
     actual_seed = split_index if split_seed is None else split_seed
     if split in {"class-random", "random"}:
         data.train_mask, data.val_mask, data.test_mask = _class_balanced_random_masks(
@@ -126,11 +131,12 @@ def load_graph(
             "Use --split class-random for datasets without built-in masks."
         )
     else:
+        reuse_test = key in {"wikics", "wiki-cs", "wiki_cs"}
         data.train_mask = _select_mask(data.train_mask, split_index)
         data.val_mask = _select_mask(data.val_mask, split_index)
-        data.test_mask = _select_mask(data.test_mask, split_index)
+        data.test_mask = _select_mask(data.test_mask, split_index, reuse_1d=reuse_test)
     return LoadedGraph(
-        name=dataset.name,
+        name=graph_name,
         data=data,
         num_features=dataset.num_features,
         num_classes=dataset.num_classes,

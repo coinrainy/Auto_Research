@@ -47,16 +47,27 @@
 
 诊断结果一致：PubMed top-10 谱能量约 0.3555、参与秩约 44.73；Photo top-10 谱能量约 0.3691、参与秩约 46.46。二者均触发压缩，选择 rank=16。
 
+### WikiCS 官方 20 split 扩展
+
+WikiCS 使用 PyG 官方 public split：20 个 train/val mask，固定 test mask。对比 `autopropcat`：
+
+| Dataset | AutoProp Mean | CoreSpecProp Mean | Mean Delta | Std Delta | Min Delta | Wins/Losses | Wilcoxon greater p |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| WikiCS | 0.7636 | 0.7702 | +0.0066 | 0.0056 | -0.0039 | 18/2 | 0.000182 |
+
+WikiCS 的谱集中度明显更高：top-10 谱能量约 0.6278、参与秩约 14.97，触发压缩并选择 rank=16。这个结果支持“谱核心压缩总体有效”，但也暴露出一个重要边界：即使图级谱诊断稳定，split-level test 表现仍可能出现少数负例。因此后续不能声称 `CoreSpecProp` 严格逐 split 无损，只能声称在当前协议下总体稳定提升，并继续研究更细的安全门控。
+
 ## 失败边界
 
 - Cora、CiteSeer、Computers 当前只证明“不伤害”，不是性能贡献。
-- 10-split 压力测试只覆盖两个正例图，仍不足以支撑顶会主表。
+- PubMed/Photo 10-split 是强正例；WikiCS 20-split 是较温和正例，但出现 2 个负 split，说明安全门控还不完备。
 - 当前实现是训练免费传播谱去噪，不应被包装成传统 augment-contrast GCL；更合理的论文叙事是“传播充分性之后的谱核心去噪”，再讨论它对 GCL 表征学习的启发。
 - 现有评估仍缺少官方强 baseline；若 PROPGCL 或 BGRL/CCA-SSG 在相同协议下显著更强，必须承认本方法只是高效证伪器或辅助模块。
+- 按用户要求，Coauthor CS/Physics 暂缓，不作为当前下一步实验。
 
 ## 下一步门槛
 
-1. 扩展更多同配数据集：WikiCS、Coauthor CS/Physics、ogbn-arxiv 或其他可承受规模数据。
+1. 扩展更多非 Coauthor 同配数据集：ogbn-arxiv 或其他可承受规模数据；Coauthor CS/Physics 暂缓。
 2. 将 `CoreSpecProp` 与 PROPGCL/PROP、BGRL、CCA-SSG、GRACE/GCA、HomoGCL、SGRL/RELGCL/IRGCL 做同 split、公平 probe 对比。
 3. 加入消融：固定 rank=16/32、无 gate、只 AutoProp、只 PCA 原特征、不同高谱阈值。
 4. 若学习式 GCL 继续推进，应把 `CoreSpecProp` 作为 teacher/filter，而不是重新引入容易过拟合的随机增强 encoder。
