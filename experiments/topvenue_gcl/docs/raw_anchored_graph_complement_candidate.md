@@ -25,6 +25,8 @@ python train.py --dataset Chameleon --method raw_features --epochs 50 --split-in
 - `ragc_gcl`：训练目标与 `gcn_mlp_gcl` 一致，使用 ego/graph Natural-View bootstrap。
 - 最终表示：`concat(ragc_raw_weight * normalize(raw_x), ragc_learned_weight * normalize(learned_embedding))`。
 - 默认 `ragc_raw_weight=1.0`，`ragc_learned_weight=1.0`。
+- `--ragc-control shuffle`：保留 learned embedding 分布但打乱节点对应关系。
+- `--ragc-control random`：用同维随机向量替代 learned branch。
 
 ## 初筛结果
 
@@ -59,20 +61,49 @@ RAGC vs `raw_features`：
 | Squirrel | +0.013128 | +0.020016 | 3/0 |
 | Texas | -0.009009 | -0.057181 | 0/1 |
 
+### learned-branch control gate
+
+输出目录：`runs/ragc_control_splits0-2_e50/`
+
+RAGC normal vs `raw_features`：
+
+| Dataset | Delta F1Mi mean | Delta F1Ma mean | Positive/negative splits |
+| --- | ---: | ---: | ---: |
+| Actor | +0.011184 | +0.009989 | 3/0 |
+| Chameleon | +0.027047 | +0.029025 | 3/0 |
+| Squirrel | +0.016651 | +0.024313 | 3/0 |
+| Texas | -0.018018 | -0.070973 | 0/1 |
+
+Control vs `raw_features`：
+
+| Dataset | Shuffle ΔF1Mi | Random ΔF1Mi | Normal - Shuffle | Normal - Random |
+| --- | ---: | ---: | ---: | ---: |
+| Actor | -0.007675 | -0.020614 | +0.018860 | +0.031798 |
+| Chameleon | -0.024123 | -0.073099 | +0.051170 | +0.100146 |
+| Squirrel | -0.015690 | -0.039065 | +0.032341 | +0.055716 |
+| Texas | -0.027027 | -0.117117 | +0.009009 | +0.099099 |
+
+解释：
+
+- Actor/Chameleon/Squirrel 上，normal 同时超过 raw、shuffle 与 random；shuffle/random 均低于 raw-only。
+- Chameleon/Squirrel 的 normal-control gap 很大，支持 learned graph context 具有节点对应的互补信号，而不是高维拼接或验证集 C 搜索造成的假增益。
+- Texas 仍低于 raw-only，但 normal 也高于 shuffle/random；该数据集主要暴露 safety selector 问题，而不是 learned branch 完全无效。
+
 ## 当前裁决
 
-RAGC-GCL 升级为新的 active candidate，但仍不是最终成功主方法。
+RAGC-GCL 继续保留为 active candidate，但仍不是最终成功主方法。
 
 保留理由：
 
 - 在 Actor/Chameleon/Squirrel 三个异配数据集上，RAGC 对 raw-only 的增量在 splits0-2 全部为正。
 - Chameleon/Squirrel 正是许多前序候选的失败边界，本候选在这两个数据集上同时超过 raw-only 与 learned-only。
+- learned-branch shuffle/random controls 在 Actor/Chameleon/Squirrel 上全部失败，说明 normal learned branch 的节点对应关系有机制价值。
 - 论文切口比“再调 reliability weight”更清楚：raw feature anchor 负责安全性，graph SSL branch 只证明 complement value。
 
 主要风险：
 
 - Texas splits0-2 平均为负，尤其 macro 退化明显，WebKB 小图需要 safety selector。
-- 当前还没有 learned-branch shuffled/random control，无法排除高维拼接或验证集 C 搜索带来的偶然收益。
+- 当前只完成 seed0 splits0-2，仍需扩展到 splits0-9 与多 seed。
 - 当前没有 homophily safety；Cora/CiteSeer/PubMed 上若 raw-anchor 拼接拖累性能，方法仍不能作为通用 GCL。
 
 ## 下一步硬门槛
@@ -80,7 +111,6 @@ RAGC-GCL 升级为新的 active candidate，但仍不是最终成功主方法。
 必须补做：
 
 - `ragc_gcl` vs `raw_features` 的 splits0-9 seed0。
-- `ragc_gcl` vs learned-branch shuffled/random control，确认 learned context 的节点对应关系有效。
 - Texas/WebKB safety selector：当 learned complement 不可靠时回退 raw-only 或降低 learned weight。
 - Cora/CiteSeer/PubMed homophily safety。
 

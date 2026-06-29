@@ -168,6 +168,7 @@ def read_run_json(path):
         "raw_feature_dim": diagnostics.get("raw_feature_dim"),
         "ragc_raw_weight": diagnostics.get("ragc_raw_weight"),
         "ragc_learned_weight": diagnostics.get("ragc_learned_weight"),
+        "ragc_control": diagnostics.get("ragc_control"),
         "ragc_raw_dim": diagnostics.get("ragc_raw_dim"),
         "ragc_learned_dim": diagnostics.get("ragc_learned_dim"),
         "ragc_output_dim": diagnostics.get("ragc_output_dim"),

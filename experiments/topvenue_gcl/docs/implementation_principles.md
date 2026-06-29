@@ -27,7 +27,7 @@
 
 当前 active foundation 是 `gcn_mlp_gcl`。它是必须击败的 strong control，但不是论文主贡献。
 
-当前 active candidate 是 `ragc_gcl`，Raw-Anchored Graph Complement GCL。它沿用 `gcn_mlp_gcl` 的 Natural-View bootstrap 训练，但最终表示拼接 normalized raw features 与 learned Natural-View embedding；`raw_features` 是必须报告的强基线。splits0-2、seed0、50 epoch 下，RAGC 相对 `raw_features` 在 Actor/Chameleon/Squirrel 的 mean F1Mi delta 分别为 +0.009649、+0.031433、+0.013128，三者均为 3/3 splits 正向；Texas 为 -0.009009，说明 WebKB 小图需要 safety selector。当前状态是 active candidate，不是最终成功方法；下一轮必须加入 learned branch shuffled/random control、10 splits、多 seed 与 homophily safety。
+当前 active candidate 是 `ragc_gcl`，Raw-Anchored Graph Complement GCL。它沿用 `gcn_mlp_gcl` 的 Natural-View bootstrap 训练，但最终表示拼接 normalized raw features 与 learned Natural-View embedding；`raw_features` 是必须报告的强基线。splits0-2、seed0、50 epoch control gate 下，RAGC normal 相对 `raw_features` 在 Actor/Chameleon/Squirrel 的 mean F1Mi delta 分别为 +0.011184、+0.027047、+0.016651，三者均为 3/3 splits 正向；`--ragc-control shuffle/random` 在三者上均低于 raw-only，normal-vs-shuffle F1Mi gap 分别为 +0.018860、+0.051170、+0.032341。Texas 为 -0.018018，说明 WebKB 小图需要 safety selector。当前状态是 active candidate，不是最终成功方法；下一轮必须扩展 10 splits、多 seed 与 homophily safety。
 
 `tns_gcl` 已降级为失败/诊断资产：它尝试在 Natural-View bootstrap 上加入 trusted-negative repulsion，但 split0 seed0 只有 Actor 正向，Texas/Chameleon/Squirrel 均低于 `gcn_mlp_gcl`。该路线不继续调 margin、threshold 或 weight。
 

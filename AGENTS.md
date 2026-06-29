@@ -1247,3 +1247,14 @@
   - 已新增文档：`experiments/topvenue_gcl/docs/raw_anchored_graph_complement_candidate.md`；已更新 `experiments/topvenue_gcl/README.md`、`experiments/topvenue_gcl/docs/implementation_principles.md`、`train.py`、`configs/default.yaml` 与 `summarize_split_study.py`。
   - 已验证：`python -m compileall train.py summarize_split_study.py src`、`python train.py --help`、Texas/Actor TNS smoke、Texas raw/RAGC smoke、TNS split0 probes、RAGC split0 与 splits0-2 early gate。
   - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Actor Chameleon Squirrel Texas" METHODS="raw_features ragc_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/ragc_s0_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh`；随后实现 learned-branch shuffled/random control。
+- 2026-06-29 RAGC learned-branch control gate：
+  - 已为 `ragc_gcl` 新增 `--ragc-control normal|shuffle|random`。`shuffle` 保留 learned embedding 分布但打乱节点对应；`random` 用同维随机向量替代 learned branch。
+  - 已执行 RAGC control gate：Actor/Chameleon/Squirrel/Texas × splits0-2 × seed0 × 50 epoch；输出目录 `experiments/topvenue_gcl/runs/ragc_control_splits0-2_e50/`。
+  - Normal vs `raw_features` F1Mi/F1Ma mean delta：Actor +0.011184/+0.009989，Chameleon +0.027047/+0.029025，Squirrel +0.016651/+0.024313，Texas -0.018018/-0.070973。
+  - Shuffle vs `raw_features` F1Mi mean delta：Actor -0.007675，Chameleon -0.024123，Squirrel -0.015690，Texas -0.027027。
+  - Random vs `raw_features` F1Mi mean delta：Actor -0.020614，Chameleon -0.073099，Squirrel -0.039065，Texas -0.117117。
+  - Normal-vs-shuffle / normal-vs-random F1Mi gaps：Actor +0.018860/+0.031798，Chameleon +0.051170/+0.100146，Squirrel +0.032341/+0.055716，Texas +0.009009/+0.099099。
+  - 当前裁决：RAGC 通过 learned-branch 打假，继续作为 active candidate；但 Texas 仍明显低于 raw-only，下一步必须做 10 splits、多 seed、Texas/WebKB safety selector 与 Cora/CiteSeer/PubMed homophily safety。
+  - 已更新 `experiments/topvenue_gcl/docs/raw_anchored_graph_complement_candidate.md`、`experiments/topvenue_gcl/README.md`、`experiments/topvenue_gcl/docs/implementation_principles.md`、`train.py`、`configs/default.yaml` 与 `summarize_split_study.py`。
+  - 已验证：`python -m compileall train.py summarize_split_study.py src`、`python train.py --help | rg "ragc-control|ragc"`、Texas/Chameleon control smoke、完整 splits0-2 control gate。
+  - 下一步建议命令：`cd /root/autodl-tmp/Auto_Research/experiments/topvenue_gcl && DATASETS="Actor Chameleon Squirrel Texas" METHODS="raw_features ragc_gcl" SPLITS="0 1 2 3 4 5 6 7 8 9" SEEDS="0" EPOCHS=50 RUNS_DIR="runs/ragc_s0_splits0-9_e50" OVERWRITE=1 bash scripts/run_split_study.sh`；随后单独补 `--ragc-control shuffle/random` 的 10 split controls。

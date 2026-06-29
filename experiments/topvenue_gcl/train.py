@@ -214,6 +214,8 @@ def parse_args():
     parser.add_argument("--tns-uniform-weight", action="store_true")
     parser.add_argument("--ragc-raw-weight", type=float, default=None)
     parser.add_argument("--ragc-learned-weight", type=float, default=None)
+    parser.add_argument("--ragc-control", default=None,
+                        choices=[None, "normal", "shuffle", "random"])
     parser.add_argument("--shuffle-cache", action="store_true")
     parser.add_argument("--disable-cache", action="store_true")
     parser.add_argument("--skip-eval", action="store_true")
@@ -488,6 +490,8 @@ def override_config(config, args):
         merged["ragc_raw_weight"] = args.ragc_raw_weight
     if args.ragc_learned_weight is not None:
         merged["ragc_learned_weight"] = args.ragc_learned_weight
+    if args.ragc_control is not None:
+        merged["ragc_control"] = args.ragc_control
     return merged
 
 
@@ -1488,6 +1492,13 @@ def _cache_diagnostics(parts, cache_idx, cache_keys, cache_weight=None):
 def _ragc_embeddings(raw_x, learned, config):
     raw = F.normalize(raw_x.detach().float(), dim=1)
     learned = F.normalize(learned.detach().float(), dim=1)
+    control = config.get("ragc_control", "normal")
+    if control == "shuffle":
+        learned = learned[torch.randperm(learned.size(0), device=learned.device)]
+    elif control == "random":
+        learned = F.normalize(torch.randn_like(learned), dim=1)
+    elif control not in {"normal", None}:
+        raise ValueError(f"Unknown RAGC control: {control}")
     raw = float(config["ragc_raw_weight"]) * raw
     learned = float(config["ragc_learned_weight"]) * learned
     return torch.cat([raw, learned], dim=1)
@@ -2629,9 +2640,15 @@ def main():
         if args.method == "ragc_gcl":
             learned_dim = int(embeddings.size(1))
             embeddings = _ragc_embeddings(data.x, embeddings, config)
-            diagnostics["cache_control"] = "ragc_raw_anchor"
+            ragc_control = config.get("ragc_control", "normal")
+            diagnostics["cache_control"] = (
+                "ragc_raw_anchor"
+                if ragc_control in {"normal", None}
+                else f"ragc_{ragc_control}"
+            )
             diagnostics["ragc_raw_weight"] = float(config["ragc_raw_weight"])
             diagnostics["ragc_learned_weight"] = float(config["ragc_learned_weight"])
+            diagnostics["ragc_control"] = ragc_control
             diagnostics["ragc_raw_dim"] = int(data.x.size(1))
             diagnostics["ragc_learned_dim"] = learned_dim
             diagnostics["ragc_output_dim"] = int(embeddings.size(1))
